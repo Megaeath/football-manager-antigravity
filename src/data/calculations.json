@@ -1,0 +1,87 @@
+{
+    "actions": {
+        "short_pass": {
+            "attacker_formula": "(passing * 1.0) + (vision * 0.8) + (composure * 0.5)",
+            "defender_formula": "(tackling * 0.8) + (positioning * 1.0) + (bravery * 0.5)",
+            "attacker_bonus": [
+                {
+                    "stat": "agility",
+                    "threshold": 15,
+                    "bonus": 5
+                },
+                {
+                    "stat": "teamwork",
+                    "threshold": 15,
+                    "bonus": 3
+                }
+            ],
+            "defender_bonus": [
+                {
+                    "stat": "aggression",
+                    "threshold": 16,
+                    "bonus": 4
+                }
+            ]
+        },
+        "long_pass": {
+            "attacker_formula": "(passing * 1.2) + (vision * 1.0) + (setPieces * 0.6)",
+            "defender_formula": "(positioning * 1.2) + (heading * 0.8) + (pace * 0.5)",
+            "attacker_bonus": [
+                {
+                    "stat": "vision",
+                    "threshold": 16,
+                    "bonus": 5
+                }
+            ],
+            "defender_bonus": [
+                {
+                    "stat": "positioning",
+                    "threshold": 15,
+                    "bonus": 4
+                }
+            ]
+        },
+        "dribble": {
+            "attacker_formula": "(dribbling * 1.2) + (pace * 0.8) + (agility * 0.8)",
+            "defender_formula": "(tackling * 1.0) + (strength * 0.8) + (pace * 0.6)",
+            "attacker_bonus": [
+                {
+                    "stat": "balance",
+                    "threshold": 14,
+                    "bonus": 4
+                }
+            ],
+            "defender_bonus": [
+                {
+                    "stat": "tackling",
+                    "threshold": 17,
+                    "bonus": 5
+                }
+            ]
+        },
+        "shoot": {
+            "attacker_formula": "(shooting * 1.3) + (composure * 1.0) + (dribbling * 0.5)",
+            "defender_formula": "(positioning * 0.8) + (bravery * 1.0)",
+            "attacker_bonus": [
+                {
+                    "stat": "shooting",
+                    "threshold": 16,
+                    "bonus": 5
+                }
+            ],
+            "defender_bonus": []
+        },
+        "save": {
+            "attacker_formula": "(shooting * 1.0)",
+            "defender_formula": "(handling * 1.2) + (agility * 1.2) + (positioning * 1.0)",
+            "attacker_bonus": [],
+            "defender_bonus": [
+                {
+                    "stat": "agility",
+                    "threshold": 16,
+                    "bonus": 6
+                }
+            ]
+        }
+    }
+}

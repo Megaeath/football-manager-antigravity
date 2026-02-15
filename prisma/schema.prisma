@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model League {
+  id        String   @id @default(cuid())
+  name      String
+  season    Int      @default(1)
+  teams     Team[]
+  history   SeasonHistory[]
+}
+
+model GlobalGameSettings {
+  id            Int      @id @default(1)
+  currentDate   DateTime @default(dbgenerated("'2026-01-01'"))
+  currentSeason Int      @default(1)
+  isConfigured  Boolean  @default(false)
+  userTeamId    String?
+}
+
+model SeasonHistory {
+  id        String   @id @default(cuid())
+  leagueId  String
+  season    Int
+  year      Int
+  standings String   // JSON string of the final table
+  winnerId  String?
+  league    League   @relation(fields: [leagueId], references: [id])
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  leagueId  String?
+  league    League?  @relation(fields: [leagueId], references: [id])
+  
+  // Tactics
+  formation String   @default("4-4-2")
+  mentality String   @default("NORMAL")
+  passing   String   @default("MIXED")
+  tackling  String   @default("NORMAL")
+
+  // Relations
+  players   Player[]
+  homeMatches Match[] @relation("HomeTeam")
+  awayMatches Match[] @relation("AwayTeam")
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  name      String
+  age       Int
+  teamId    String
+  
+  // Primary Position (Natural)
+  naturalPosition String // Stored as string, e.g. "GK", "FWR"
+
+  // Attributes (0-20) - Technical
+  handling  Int @default(5)
+  tackling  Int
+  passing   Int
+  shooting  Int
+  heading   Int
+  dribbling Int
+  setPieces Int
+
+  // Attributes (0-20) - Mental
+  aggression  Int
+  positioning Int
+  vision      Int
+  bravery     Int
+  leadership  Int
+  teamwork    Int
+  composure   Int
+
+  // Attributes (0-20) - Physical
+  pace         Int
+  acceleration Int
+  stamina      Int @default(15) 
+  strength     Int
+  agility      Int
+  balance      Int
+  
+  // Dynamic State
+  morale    Int  @default(100)
+  condition Int  @default(100) // Match Fitness (0-100)
+  tacticalPosition String? // E.g. "GK", "DR", "DC_L", "DC_R", "FW_L", "FW_R" - if null, not starting
+  
+  // Stats (Season Aggregate)
+  goals     Int @default(0)
+  assists   Int @default(0)
+  apps      Int @default(0)
+  yellowCards Int @default(0)
+  redCards    Int @default(0)
+  avgRating Float @default(0.0)
+
+  // Season Stats (Aggregates)
+  passesAttempted Int @default(0)
+  passesCompleted Int @default(0)
+
+  // Aging & Retirement
+  birthDate     DateTime @default(now())
+  retirementAge Int      @default(38)
+  isRetired     Boolean  @default(false)
+  motmCount     Int      @default(0)
+  
+  // Relations
+  matchStats PlayerMatchStats[]
+  team       Team?              @relation(fields: [teamId], references: [id])
+  motmMatches Match[]           @relation("MatchMotM")
+}
+
+model Match {
+  id          String   @id @default(cuid())
+  date        DateTime
+  season      Int      @default(1)
+  homeTeamId  String
+  awayTeamId  String
+  homeScore   Int?
+  awayScore   Int?
+  isPlayed    Boolean  @default(false)
+  
+  // Awards
+  motmPlayerId String?
+  motmPlayer   Player? @relation("MatchMotM", fields: [motmPlayerId], references: [id])
+  stats       String?  // JSON string: { home: { possession, corners, offsides, fouls, yellow, red, passes, shots }, away: { ... } }
+  
+  homeTeam    Team     @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team     @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  
+  events      MatchEvent[]
+  playerStats PlayerMatchStats[]
+}
+
+model MatchEvent {
+  id        String   @id @default(cuid())
+  matchId   String
+  minute    Int
+  text      String
+  type      String
+  teamId    String?
+  playerId  String?
+  match     Match    @relation(fields: [matchId], references: [id])
+}
+
+model PlayerMatchStats {
+  id        String   @id @default(cuid())
+  matchId   String
+  playerId  String
+  teamId    String
+  
+  // Performance
+  rating    Float    @default(6.0) // 1-10
+  minutes   Int      @default(0)
+  goals     Int      @default(0)
+  assists   Int      @default(0)
+  
+  // Detailed Stats
+  passesAttempted   Int @default(0)
+  passesCompleted   Int @default(0)
+  shots             Int @default(0)
+  shotsOnTarget     Int @default(0)
+  tacklesAttempted  Int @default(0)
+  tacklesWon        Int @default(0)
+  dribblesAttempted Int @default(0)
+  dribblesWon       Int @default(0)
+  saves             Int @default(0) // GK
+  yellowCards       Int @default(0)
+  redCards          Int @default(0)
+  
+  match     Match    @relation(fields: [matchId], references: [id])
+  player    Player   @relation(fields: [playerId], references: [id])
+}

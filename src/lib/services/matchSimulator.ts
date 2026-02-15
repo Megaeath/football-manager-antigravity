@@ -1,0 +1,149 @@
+import prisma from '@/lib/prisma';
+import { simulateMatch } from '../engine/match';
+import { TeamState, PlayerState, Position, EnginePlayerMatchStats } from '../engine/types';
+
+function mapPlayer(p: any): PlayerState {
+    return {
+        id: p.id,
+        name: p.name,
+        position: p.naturalPosition as Position,
+        attributes: {
+            handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
+            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces,
+            aggression: p.aggression, positioning: p.positioning, vision: p.vision, bravery: p.bravery,
+            leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
+            pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
+            agility: p.agility, balance: p.balance,
+        },
+        condition: p.condition,
+        morale: p.morale,
+        tacticalPosition: p.tacticalPosition,
+        cards: { yellow: 0, red: 0 },
+        stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }
+    };
+}
+
+export async function processMatch(matchId: string) {
+    const matchDB = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: {
+            homeTeam: { include: { players: { where: { isRetired: false } } } },
+            awayTeam: { include: { players: { where: { isRetired: false } } } }
+        }
+    });
+
+    if (!matchDB || matchDB.isPlayed) return null;
+
+    const homeTeam: TeamState = {
+        id: matchDB.homeTeam.id,
+        name: matchDB.homeTeam.name,
+        tactics: {
+            formation: matchDB.homeTeam.formation,
+            mentality: matchDB.homeTeam.mentality,
+            passing: matchDB.homeTeam.passing,
+            tackling: matchDB.homeTeam.tackling
+        },
+        players: matchDB.homeTeam.players.map(mapPlayer)
+    };
+
+    const awayTeam: TeamState = {
+        id: matchDB.awayTeam.id,
+        name: matchDB.awayTeam.name,
+        tactics: {
+            formation: matchDB.awayTeam.formation,
+            mentality: matchDB.awayTeam.mentality,
+            passing: matchDB.awayTeam.passing,
+            tackling: matchDB.awayTeam.tackling
+        },
+        players: matchDB.awayTeam.players.map(mapPlayer)
+    };
+
+    const result = simulateMatch(homeTeam, awayTeam);
+    let motm: EnginePlayerMatchStats | null = null;
+
+    await prisma.$transaction(async (tx) => {
+        // Determine Man of the Match (highest rating)
+        const playerStats = Object.values(result.playerStats) as EnginePlayerMatchStats[];
+        if (playerStats.length > 0) {
+            motm = playerStats.reduce((prev, current) => (prev.rating > current.rating) ? prev : current);
+        }
+
+        await tx.match.update({
+            where: { id: matchId },
+            data: {
+                homeScore: result.homeScore,
+                awayScore: result.awayScore,
+                isPlayed: true,
+                stats: JSON.stringify(result.teamStats),
+                motmPlayerId: motm ? motm.playerId : null
+            }
+        });
+
+        if (motm) {
+            await tx.player.update({
+                where: { id: motm.playerId },
+                data: { motmCount: { increment: 1 } }
+            });
+        }
+
+        if (result.events.length > 0) {
+            await tx.matchEvent.createMany({
+                data: result.events.map(e => ({
+                    matchId: matchId,
+                    minute: e.minute,
+                    text: e.text,
+                    type: e.type,
+                    teamId: e.teamId,
+                    playerId: e.playerId
+                }))
+            });
+        }
+
+        const statsToCreate = playerStats.map((stat: EnginePlayerMatchStats) => ({
+            matchId: matchId,
+            playerId: stat.playerId,
+            teamId: stat.teamId,
+            rating: stat.rating,
+            minutes: stat.minutes,
+            goals: stat.goals,
+            assists: stat.assists,
+            passesAttempted: stat.passesAttempted,
+            passesCompleted: stat.passesCompleted,
+            shots: stat.shots,
+            shotsOnTarget: stat.shotsOnTarget,
+            tacklesAttempted: stat.tacklesAttempted,
+            tacklesWon: stat.tacklesWon,
+            dribblesAttempted: stat.dribblesAttempted,
+            dribblesWon: stat.dribblesWon,
+            saves: stat.saves,
+            yellowCards: stat.yellowCards,
+            redCards: stat.redCards
+        }));
+
+        if (statsToCreate.length > 0) {
+            await tx.playerMatchStats.createMany({ data: statsToCreate });
+        }
+
+        for (const stat of playerStats) {
+            await tx.player.update({
+                where: { id: stat.playerId },
+                data: {
+                    goals: { increment: stat.goals },
+                    assists: { increment: stat.assists },
+                    apps: { increment: stat.minutes > 0 ? 1 : 0 },
+                    yellowCards: { increment: stat.yellowCards },
+                    redCards: { increment: stat.redCards },
+                    passesAttempted: { increment: stat.passesAttempted },
+                    passesCompleted: { increment: stat.passesCompleted }
+                }
+            });
+        }
+    });
+
+    return {
+        ...result,
+        homeTeamName: matchDB.homeTeam.name,
+        awayTeamName: matchDB.awayTeam.name,
+        motmPlayerId: (motm as any)?.playerId || null
+    };
+}
