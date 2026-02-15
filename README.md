@@ -92,9 +92,4 @@ Contributions are what make the open-source community such an amazing place to l
 Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
-
-## 🇹🇭 สรุปโปรเจกต์ (Thai Summary)
-โปรเจกต์นี้คือเกมคุมทีมฟุตบอลแนว Text-Based ที่เน้นความสมจริงของตัวเลขสถิติ โดยใช้ Match Engine ที่จำลองเหตุการณ์จริงทุกนาที มีการคำนวณการส่งบอล (300-600 ครั้งต่อเกม) การสกัดบอล และระบบพัฒนาการของนักเตะ (การแก่ตัวและรีไทร์) พัฒนาด้วย Next.js และ Prisma เพื่อความรวดเร็วและแม่นยำในการจัดการข้อมูล
-
----
 *Developed with ❤️ for the Football Management community.*
