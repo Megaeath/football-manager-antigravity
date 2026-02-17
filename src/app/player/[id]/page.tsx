@@ -38,6 +38,11 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         </div>
     );
 
+    const derivedAvgRating = player.matchStats.length > 0
+        ? player.matchStats.reduce((sum: number, stat: any) => sum + (stat.rating || 0), 0) / player.matchStats.length
+        : 0;
+    const displayAvgRating = player.avgRating > 0 ? player.avgRating : derivedAvgRating;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <BreadcrumbRegister segment={id} name={player.name} />
@@ -60,7 +65,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                 </div>
                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                     <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Average Rating</div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--accent)' }}>{player.avgRating.toFixed(2)}</div>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--accent)' }}>{displayAvgRating.toFixed(2)}</div>
                 </div>
             </div>
 
@@ -77,6 +82,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                             <AttributeItem label="Shooting" value={player.shooting} />
                             <AttributeItem label="Heading" value={player.heading} />
                             <AttributeItem label="Dribbling" value={player.dribbling} />
+                            <AttributeItem label="Crossing" value={player.crossing} />
                             <AttributeItem label="Set Pieces" value={player.setPieces} />
                         </div>
                         <div>
@@ -124,6 +130,25 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                                 </div>
                             </div>
                             <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เปิดบอลสำเร็จ (Cross)</div>
+                                <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                                    {player.crossesCompleted} / {player.crossesAttempted}
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'normal' }}>
+                                        ({player.crossesAttempted > 0 ? ((player.crossesCompleted / player.crossesAttempted) * 100).toFixed(1) : 0}%)
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เลี้ยงบอลสำเร็จ</div>
+                                <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                                    {player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesWon, 0)} / {player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0)}
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'normal' }}>
+                                        ({player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0) > 0 ?
+                                            ((player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesWon, 0) / player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0)) * 100).toFixed(1) : 0}%)
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ผู้เล่นยอดเยี่ยม (MotM)</div>
                                 <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>🌟 {player.motmCount || 0}</div>
                             </div>
@@ -142,7 +167,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                         <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>ฟอร์มล่าสุด</h3>
                         {player.matchStats.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>ยังไม่มีบันทึกการแข่ง</p>}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {player.matchStats.slice(0, 5).map(stat => (
+                            {player.matchStats.slice(0, 5).map((stat: any) => (
                                 <div key={stat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
                                     <div>
                                         <div style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>

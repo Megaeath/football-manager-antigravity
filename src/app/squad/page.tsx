@@ -1,24 +1,35 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 import { calculateSuitability } from '../../lib/engine/suitability';
 import { PlayerAttributes } from '../../lib/engine/types';
 import SquadClient from './SquadClient';
 
-const prisma = new PrismaClient();
+async function getUserTeam() {
+    const settings = await prisma.globalGameSettings.findUnique({
+        where: { id: 1 }
+    });
 
-async function getRedFC() {
-    const team = await prisma.team.findFirst({
-        where: { name: 'Red FC' },
+    if (settings?.userTeamId) {
+        return prisma.team.findUnique({
+            where: { id: settings.userTeamId },
+            include: {
+                players: {
+                    where: { isRetired: false }
+                }
+            }
+        });
+    }
+
+    return prisma.team.findFirst({
         include: {
             players: {
                 where: { isRetired: false }
             }
         }
     });
-    return team;
 }
 
 export default async function SquadPage() {
-    const team = await getRedFC();
+    const team = await getUserTeam();
 
     if (!team) return <div>Team not found. Please seed the database.</div>;
 

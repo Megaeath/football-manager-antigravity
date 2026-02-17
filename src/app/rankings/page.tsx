@@ -30,6 +30,10 @@ export default async function RankingsPage({
             SUM(pms.passesAttempted) as passesAttempted,
             SUM(pms.tacklesWon) as tacklesWon,
             SUM(pms.tacklesAttempted) as tacklesAttempted,
+            SUM(pms.dribblesWon) as dribblesWon,
+            SUM(pms.dribblesAttempted) as dribblesAttempted,
+            SUM(pms.crossesCompleted) as crossesCompleted,
+            SUM(pms.crossesAttempted) as crossesAttempted,
             AVG(pms.rating) as avgRating,
             p.motmCount as motmCount
         FROM PlayerMatchStats pms
@@ -53,9 +57,14 @@ export default async function RankingsPage({
         passesAttempted: Number(s.passesAttempted || 0),
         tacklesWon: Number(s.tacklesWon || 0),
         tacklesAttempted: Number(s.tacklesAttempted || 0),
+        dribblesWon: Number(s.dribblesWon || 0),
+        dribblesAttempted: Number(s.dribblesAttempted || 0),
+        crossesCompleted: Number(s.crossesCompleted || 0),
+        crossesAttempted: Number(s.crossesAttempted || 0),
         avgRating: Number(s.avgRating || 0),
         motmCount: Number(s.motmCount || 0),
-        passAccuracy: s.passesAttempted > 0 ? (Number(s.passesCompleted) / Number(s.passesAttempted) * 100) : 0
+        passAccuracy: s.passesAttempted > 0 ? (Number(s.passesCompleted) / Number(s.passesAttempted) * 100) : 0,
+        crossAccuracy: s.crossesAttempted > 0 ? (Number(s.crossesCompleted) / Number(s.crossesAttempted) * 100) : 0
     }));
 
     // Sort based on active tab
@@ -64,6 +73,8 @@ export default async function RankingsPage({
         if (activeTab === 'assists') return b.assists - a.assists || b.avgRating - a.avgRating;
         if (activeTab === 'cards') return (b.yellowCards + b.redCards * 2) - (a.yellowCards + a.redCards * 2);
         if (activeTab === 'passing') return b.passAccuracy - a.passAccuracy;
+        if (activeTab === 'crossing') return b.crossesCompleted - a.crossesCompleted || b.crossAccuracy - a.crossAccuracy;
+        if (activeTab === 'dribbling') return b.dribblesWon - a.dribblesWon;
         if (activeTab === 'tackles') return b.tacklesWon - a.tacklesWon;
         if (activeTab === 'motm') return b.motmCount - a.motmCount || b.avgRating - a.avgRating;
         return b.avgRating - a.avgRating;
@@ -73,6 +84,8 @@ export default async function RankingsPage({
         { id: 'goals', name: 'ดาวซัลโว', icon: '⚽' },
         { id: 'assists', name: 'จอมแอสซิสต์', icon: '👟' },
         { id: 'passing', name: 'ความแม่นยำ', icon: '🎯' },
+        { id: 'crossing', name: 'จอมเปิดบอล', icon: '📐' },
+        { id: 'dribbling', name: 'ยอดคลิกเลี้ยง', icon: '🏃' },
         { id: 'tackles', name: 'การสกัดกั้น', icon: '🛡️' },
         { id: 'motm', name: 'ยอดเยี่ยม', icon: '🌟' },
         { id: 'cards', name: 'ระเบียบวินัย', icon: '🟨' },
@@ -110,7 +123,13 @@ export default async function RankingsPage({
                             <th style={{ padding: '16px', textAlign: 'left' }}>นักเตะ / ทีม</th>
                             <th style={{ padding: '16px', textAlign: 'center' }}>ลงเล่น (นาที)</th>
                             <th style={{ padding: '16px', textAlign: 'center' }}>
-                                {activeTab === 'goals' ? 'ประตู' : activeTab === 'assists' ? 'แอสซิสต์' : activeTab === 'passing' ? 'ผ่านบอล %' : activeTab === 'tackles' ? 'สกัดบอล' : activeTab === 'motm' ? 'M.O.T.M' : 'ใบเหลือง/แดง'}
+                                {activeTab === 'goals' ? 'ประตู' :
+                                    activeTab === 'assists' ? 'แอสซิสต์' :
+                                        activeTab === 'passing' ? 'ผ่านบอล %' :
+                                            activeTab === 'crossing' ? 'เปิดบอลสำเร็จ' :
+                                                activeTab === 'dribbling' ? 'เลี้ยงผ่าน' :
+                                                    activeTab === 'tackles' ? 'สกัดบอล' :
+                                                        activeTab === 'motm' ? 'M.O.T.M' : 'ใบเหลือง/แดง'}
                             </th>
                             <th style={{ padding: '16px', textAlign: 'center' }}>เรตติ้ง</th>
                         </tr>
@@ -134,9 +153,11 @@ export default async function RankingsPage({
                                     {activeTab === 'goals' ? p.goals :
                                         activeTab === 'assists' ? p.assists :
                                             activeTab === 'passing' ? `${Math.round(p.passAccuracy)}%` :
-                                                activeTab === 'tackles' ? p.tacklesWon :
-                                                    activeTab === 'motm' ? p.motmCount :
-                                                        `${p.yellowCards}/${p.redCards}`}
+                                                activeTab === 'crossing' ? p.crossesCompleted :
+                                                    activeTab === 'dribbling' ? p.dribblesWon :
+                                                        activeTab === 'tackles' ? p.tacklesWon :
+                                                            activeTab === 'motm' ? p.motmCount :
+                                                                `${p.yellowCards}/${p.redCards}`}
                                 </td>
                                 <td style={{ padding: '16px', textAlign: 'center' }}>
                                     <span style={{

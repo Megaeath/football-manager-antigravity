@@ -18,6 +18,7 @@ function mapPlayer(p: any): PlayerState {
             shooting: p.shooting,
             heading: p.heading,
             dribbling: p.dribbling,
+            crossing: p.crossing || 10,
             setPieces: p.setPieces,
             aggression: p.aggression,
             positioning: p.positioning,

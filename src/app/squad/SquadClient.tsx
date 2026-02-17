@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { updateTacticalPosition, updateTeamTactics } from '../actions';
+import { bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updateTacticalPosition, updateTeamTactics } from '../actions';
 import { calculateSuitability } from '../../lib/engine/suitability';
 import Link from 'next/link';
 
@@ -96,14 +96,70 @@ export default function SquadClient({ teamId, players, currentTactics }: {
 
     const handleAssign = async (posId: string, playerId: string) => {
         setLoading(true);
-        await updateTacticalPosition(playerId, teamId, posId);
-        setLoading(false);
+        try {
+            if (!playerId) {
+                await clearTacticalPosition(teamId, posId);
+                return;
+            }
+            await updateTacticalPosition(playerId, teamId, posId);
+        } catch (error) {
+            console.error('Failed to assign player', error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleUpdateTactics = async (field: string, value: string) => {
         setLoading(true);
-        await updateTeamTactics(teamId, { [field]: value });
-        setLoading(false);
+        try {
+            await updateTeamTactics(teamId, { [field]: value });
+        } catch (error) {
+            console.error('Failed to update tactics', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleClearAll = async () => {
+        setLoading(true);
+        try {
+            await clearAllTacticalPositions(teamId);
+        } catch (error) {
+            console.error('Failed to clear all positions', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAutoSelect = async () => {
+        setLoading(true);
+        try {
+            const usedPlayers = new Set<string>();
+            const assignments: { playerId: string; position: string }[] = [];
+
+            for (const slot of slots) {
+                const slotBase = slot.id.split('_')[0];
+                const bestPlayer = sortedPlayers
+                    .filter(p => !usedPlayers.has(p.id))
+                    .map(p => ({
+                        playerId: p.id,
+                        position: slot.id,
+                        suitability: calculateSuitability(p.rawAttributes, slotBase)
+                    }))
+                    .sort((a, b) => b.suitability - a.suitability)[0];
+
+                if (bestPlayer) {
+                    assignments.push({ playerId: bestPlayer.playerId, position: bestPlayer.position });
+                    usedPlayers.add(bestPlayer.playerId);
+                }
+            }
+
+            await bulkAssignTacticalPositions(teamId, assignments);
+        } catch (error) {
+            console.error('Failed to auto select lineup', error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const getPlayerInPos = (posId: string) => players.find(p => p.tacticalPosition === posId);
@@ -173,6 +229,14 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                         <option value="NORMAL">Normal</option>
                         <option value="HARD">Hard</option>
                     </select>
+                </div>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                    <button onClick={handleAutoSelect} disabled={loading} className="btn btn-sm" style={{ height: '32px' }}>
+                        Auto Select
+                    </button>
+                    <button onClick={handleClearAll} disabled={loading} className="btn btn-sm" style={{ height: '32px' }}>
+                        Clear All
+                    </button>
                 </div>
             </div>
 

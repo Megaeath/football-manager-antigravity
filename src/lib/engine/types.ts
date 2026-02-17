@@ -14,6 +14,7 @@ export interface PlayerAttributes {
     shooting: number;
     heading: number;
     dribbling: number;
+    crossing: number;
     setPieces: number;
 
     // Mental
@@ -72,6 +73,8 @@ export interface EnginePlayerMatchStats {
 
     passesAttempted: number;
     passesCompleted: number;
+    crossesAttempted: number;
+    crossesCompleted: number;
     shots: number;
     shotsOnTarget: number;
     tacklesAttempted: number;
@@ -95,6 +98,8 @@ export interface TeamMatchStats {
     shotsOnTarget: number;
     passesAttempted: number;
     passesCompleted: number;
+    crossesAttempted: number;
+    crossesCompleted: number;
 }
 
 export interface MatchState {

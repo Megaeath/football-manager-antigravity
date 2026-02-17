@@ -9,7 +9,7 @@ function mapPlayer(p: any): PlayerState {
         position: p.naturalPosition as Position,
         attributes: {
             handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
-            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces,
+            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, crossing: p.crossing,
             aggression: p.aggression, positioning: p.positioning, vision: p.vision, bravery: p.bravery,
             leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
             pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
@@ -30,7 +30,7 @@ export async function processMatch(matchId: string) {
             homeTeam: { include: { players: { where: { isRetired: false } } } },
             awayTeam: { include: { players: { where: { isRetired: false } } } }
         }
-    });
+    }) as any;
 
     if (!matchDB || matchDB.isPlayed) return null;
 
@@ -59,6 +59,43 @@ export async function processMatch(matchId: string) {
     };
 
     const result = simulateMatch(homeTeam, awayTeam);
+
+    const defaultTeamStats = {
+        possession: 50,
+        corners: 0,
+        offsides: 0,
+        fouls: 0,
+        yellowCards: 0,
+        redCards: 0,
+        shots: 0,
+        shotsOnTarget: 0,
+        passesAttempted: 0,
+        passesCompleted: 0,
+        crossesAttempted: 0,
+        crossesCompleted: 0
+    };
+
+    const derivedTeamStats = {
+        home: { ...defaultTeamStats },
+        away: { ...defaultTeamStats }
+    };
+
+    Object.values(result.playerStats).forEach((stat: EnginePlayerMatchStats) => {
+        const bucket = stat.teamId === result.homeTeamId ? derivedTeamStats.home : derivedTeamStats.away;
+        bucket.shots += stat.shots || 0;
+        bucket.shotsOnTarget += stat.shotsOnTarget || 0;
+        bucket.passesAttempted += stat.passesAttempted || 0;
+        bucket.passesCompleted += stat.passesCompleted || 0;
+        bucket.crossesAttempted += stat.crossesAttempted || 0;
+        bucket.crossesCompleted += stat.crossesCompleted || 0;
+        bucket.yellowCards += stat.yellowCards || 0;
+        bucket.redCards += stat.redCards || 0;
+    });
+
+    const mergedTeamStats = {
+        home: { ...defaultTeamStats, ...result.teamStats.home, ...derivedTeamStats.home },
+        away: { ...defaultTeamStats, ...result.teamStats.away, ...derivedTeamStats.away }
+    };
     let motm: EnginePlayerMatchStats | null = null;
 
     await prisma.$transaction(async (tx) => {
@@ -68,19 +105,19 @@ export async function processMatch(matchId: string) {
             motm = playerStats.reduce((prev, current) => (prev.rating > current.rating) ? prev : current);
         }
 
-        await tx.match.update({
+        await (tx.match as any).update({
             where: { id: matchId },
             data: {
                 homeScore: result.homeScore,
                 awayScore: result.awayScore,
                 isPlayed: true,
-                stats: JSON.stringify(result.teamStats),
+                stats: JSON.stringify(mergedTeamStats),
                 motmPlayerId: motm ? motm.playerId : null
             }
         });
 
         if (motm) {
-            await tx.player.update({
+            await (tx.player as any).update({
                 where: { id: motm.playerId },
                 data: { motmCount: { increment: 1 } }
             });
@@ -109,6 +146,8 @@ export async function processMatch(matchId: string) {
             assists: stat.assists,
             passesAttempted: stat.passesAttempted,
             passesCompleted: stat.passesCompleted,
+            crossesAttempted: stat.crossesAttempted,
+            crossesCompleted: stat.crossesCompleted,
             shots: stat.shots,
             shotsOnTarget: stat.shotsOnTarget,
             tacklesAttempted: stat.tacklesAttempted,
@@ -125,7 +164,7 @@ export async function processMatch(matchId: string) {
         }
 
         for (const stat of playerStats) {
-            await tx.player.update({
+            await (tx.player as any).update({
                 where: { id: stat.playerId },
                 data: {
                     goals: { increment: stat.goals },
@@ -134,7 +173,9 @@ export async function processMatch(matchId: string) {
                     yellowCards: { increment: stat.yellowCards },
                     redCards: { increment: stat.redCards },
                     passesAttempted: { increment: stat.passesAttempted },
-                    passesCompleted: { increment: stat.passesCompleted }
+                    passesCompleted: { increment: stat.passesCompleted },
+                    crossesAttempted: { increment: stat.crossesAttempted },
+                    crossesCompleted: { increment: stat.crossesCompleted }
                 }
             });
         }
@@ -142,8 +183,9 @@ export async function processMatch(matchId: string) {
 
     return {
         ...result,
-        homeTeamName: matchDB.homeTeam.name,
-        awayTeamName: matchDB.awayTeam.name,
+        teamStats: mergedTeamStats,
+        homeTeamName: (matchDB as any).homeTeam.name,
+        awayTeamName: (matchDB as any).awayTeam.name,
         motmPlayerId: (motm as any)?.playerId || null
     };
 }

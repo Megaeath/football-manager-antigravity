@@ -1,85 +1,103 @@
 {
     "actions": {
         "short_pass": {
-            "attacker_formula": "(passing * 1.0) + (vision * 0.8) + (composure * 0.5)",
-            "defender_formula": "(tackling * 0.8) + (positioning * 1.0) + (bravery * 0.5)",
+            "attacker_formula": "(passing * 0.43) + (vision * 0.35) + (composure * 0.22)",
+            "defender_formula": "(tackling * 0.35) + (positioning * 0.43) + (bravery * 0.22)",
             "attacker_bonus": [
                 {
                     "stat": "agility",
                     "threshold": 15,
-                    "bonus": 5
+                    "bonus": 1
                 },
                 {
                     "stat": "teamwork",
                     "threshold": 15,
-                    "bonus": 3
+                    "bonus": 1
                 }
             ],
             "defender_bonus": [
                 {
                     "stat": "aggression",
                     "threshold": 16,
-                    "bonus": 4
+                    "bonus": 1
                 }
             ]
         },
         "long_pass": {
-            "attacker_formula": "(passing * 1.2) + (vision * 1.0) + (setPieces * 0.6)",
-            "defender_formula": "(positioning * 1.2) + (heading * 0.8) + (pace * 0.5)",
+            "attacker_formula": "(passing * 0.43) + (vision * 0.36) + (setPieces * 0.21)",
+            "defender_formula": "(positioning * 0.48) + (heading * 0.32) + (pace * 0.20)",
             "attacker_bonus": [
                 {
                     "stat": "vision",
                     "threshold": 16,
-                    "bonus": 5
+                    "bonus": 1
                 }
             ],
             "defender_bonus": [
                 {
                     "stat": "positioning",
                     "threshold": 15,
-                    "bonus": 4
+                    "bonus": 1
                 }
             ]
         },
         "dribble": {
-            "attacker_formula": "(dribbling * 1.2) + (pace * 0.8) + (agility * 0.8)",
-            "defender_formula": "(tackling * 1.0) + (strength * 0.8) + (pace * 0.6)",
+            "attacker_formula": "(dribbling * 0.43) + (pace * 0.29) + (agility * 0.29)",
+            "defender_formula": "(tackling * 0.42) + (strength * 0.33) + (pace * 0.25)",
             "attacker_bonus": [
                 {
                     "stat": "balance",
                     "threshold": 14,
-                    "bonus": 4
+                    "bonus": 1
                 }
             ],
             "defender_bonus": [
                 {
                     "stat": "tackling",
                     "threshold": 17,
-                    "bonus": 5
+                    "bonus": 1
                 }
             ]
         },
         "shoot": {
-            "attacker_formula": "(shooting * 1.3) + (composure * 1.0) + (dribbling * 0.5)",
-            "defender_formula": "(positioning * 0.8) + (bravery * 1.0)",
+            "attacker_formula": "(shooting * 1.0) ",
+            "defender_formula": "(positioning * 0.8) + (bravery * 0.2)",
             "attacker_bonus": [
                 {
                     "stat": "shooting",
                     "threshold": 16,
-                    "bonus": 5
+                    "bonus": 1
                 }
             ],
             "defender_bonus": []
         },
         "save": {
             "attacker_formula": "(shooting * 1.0)",
-            "defender_formula": "(handling * 1.2) + (agility * 1.2) + (positioning * 1.0)",
+            "defender_formula": "(handling * 0.67) + ((agility + positioning) * 0.17)",
             "attacker_bonus": [],
             "defender_bonus": [
                 {
                     "stat": "agility",
                     "threshold": 16,
-                    "bonus": 6
+                    "bonus": 1
+                }
+            ]
+        },
+        "crossing": {
+            "attacker_formula": "(crossing * 0.48) + (vision * 0.32) + (composure * 0.20)",
+            "defender_formula": "(positioning * 0.37) + (heading * 0.44) + (tackling * 0.19)",
+            "attacker_bonus": [
+                {
+                    "stat": "vision",
+                    "threshold": 15,
+                    "bonus": 1
+                }
+            ],
+            "defender_bonus": [
+                {
+                    "stat": "heading",
+                    "threshold": 16,
+                    "bonus": 1
                 }
             ]
         }

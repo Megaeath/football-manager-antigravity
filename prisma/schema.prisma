@@ -67,6 +67,7 @@ model Player {
   shooting  Int
   heading   Int
   dribbling Int
+  crossing  Int @default(10)
   setPieces Int
 
   // Attributes (0-20) - Mental
@@ -102,6 +103,8 @@ model Player {
   // Season Stats (Aggregates)
   passesAttempted Int @default(0)
   passesCompleted Int @default(0)
+  crossesAttempted Int @default(0)
+  crossesCompleted Int @default(0)
 
   // Aging & Retirement
   birthDate     DateTime @default(now())
@@ -163,6 +166,8 @@ model PlayerMatchStats {
   // Detailed Stats
   passesAttempted   Int @default(0)
   passesCompleted   Int @default(0)
+  crossesAttempted  Int @default(0)
+  crossesCompleted  Int @default(0)
   shots             Int @default(0)
   shotsOnTarget     Int @default(0)
   tacklesAttempted  Int @default(0)

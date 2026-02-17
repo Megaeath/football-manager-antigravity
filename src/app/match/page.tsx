@@ -16,6 +16,8 @@ type TeamMatchStats = {
     shotsOnTarget: number;
     passesAttempted: number;
     passesCompleted: number;
+    crossesAttempted: number;
+    crossesCompleted: number;
 }
 
 type MatchData = {
@@ -301,6 +303,11 @@ function MatchContent() {
                                     awayVal={Math.round((matchData.teamStats.away.passesCompleted / (matchData.teamStats.away.passesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
+                                <StatRow label="Cross Accuracy"
+                                    homeVal={Math.round((matchData.teamStats.home.crossesCompleted / (matchData.teamStats.home.crossesAttempted || 1)) * 100)}
+                                    awayVal={Math.round((matchData.teamStats.away.crossesCompleted / (matchData.teamStats.away.crossesAttempted || 1)) * 100)}
+                                    isPercentage
+                                />
                                 <StatRow label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
                                 <StatRow label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
                                 <StatRow label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
@@ -352,7 +359,9 @@ function MatchContent() {
                                         <th style={{ padding: '12px', textAlign: 'center' }}>RAT</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>SHOTS</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>PASSES</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>TACKLES</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }}>CROSS</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }}>DRIBBLE</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }}>TACKLE</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>EVENTS</th>
                                     </tr>
                                 </thead>
@@ -395,6 +404,12 @@ function MatchContent() {
                                                     </td>
                                                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
                                                         {p.minutes > 0 ? `${p.passesCompleted}/${p.passesAttempted}` : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? `${p.crossesCompleted}/${p.crossesAttempted}` : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? `${p.dribblesWon}/${p.dribblesAttempted}` : '-'}
                                                     </td>
                                                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
                                                         {p.minutes > 0 ? `${p.tacklesWon}/${p.tacklesAttempted}` : '-'}
