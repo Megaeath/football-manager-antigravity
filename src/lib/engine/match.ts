@@ -1,6 +1,36 @@
 import { TeamState, MatchState, MatchEventLog, PlayerState, EnginePlayerMatchStats, TeamMatchStats } from './types';
 import { calculateActionScore } from './formulas';
 
+type Intensity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+function getMentalityBuff(mentality: string) {
+    switch (mentality) {
+        case 'ALL_OUT_ATTACK':
+            return { shooting: 1.1, dribble: 1.4, tackling: 0.8, save: 0.8, attackChance: 1.1, fatigue: 1.3 };
+        case 'ATTACKING':
+            return { shooting: 1.05, dribble: 1.2, tackling: 0.9, save: 0.9, attackChance: 1.05, fatigue: 1.2 };
+        case 'ULTRA_DEFENSIVE':
+            return { shooting: 1.2, dribble: 0.6, tackling: 1.4, save: 1.4, attackChance: 0.8, fatigue: 1.0 };
+        case 'DEFENSIVE':
+            return { shooting: 1.1, dribble: 0.8, tackling: 1.2, save: 1.2, attackChance: 0.9, fatigue: 1.0 };
+        default:
+            return { shooting: 1.0, dribble: 1.0, tackling: 1.0, save: 1.0, attackChance: 1.0, fatigue: 1.0 };
+    }
+}
+
+function getDrainForIntensity(intensity: Intensity) {
+    if (intensity === 'HIGH') return 0.22;
+    if (intensity === 'MEDIUM') return 0.12;
+    return 0.06;
+}
+
+function applyActionDrain(player: PlayerState, intensity: Intensity, fatigueMultiplier: number) {
+    const base = getDrainForIntensity(intensity) * fatigueMultiplier;
+    const staminaFactor = Math.max(0.7, 1 - (player.attributes.stamina - 10) * 0.02);
+    const drain = base * staminaFactor;
+    player.condition = Math.max(0, player.condition - drain);
+}
+
 function initializePlayerStats(team: TeamState): Record<string, EnginePlayerMatchStats> {
     const stats: Record<string, EnginePlayerMatchStats> = {};
     team.players.forEach(p => {
@@ -95,10 +125,12 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
         const attackingStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
         const defendingStats = isHomeAttacking ? matchState.teamStats.away : matchState.teamStats.home;
 
+        const attackingBuff = getMentalityBuff(attackingTeam.tactics.mentality);
+
         // Background Stats (Passes/Tackles that happenทุกนาที)
         resolveBackgroundStats(attackingTeam, defendingTeam, matchState, attackingStats, defendingStats);
 
-        const actionRoll = Math.random() * 100;
+        const actionRoll = Math.min(100, Math.random() * 100 * attackingBuff.attackChance);
 
         // Foul / Card Chance (influenced by tackling style)
         let foulThreshold = 5;
@@ -125,6 +157,18 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
         updateFitness(awayTeam);
     }
 
+    // Recalculate score from player goals to avoid mismatches
+    const goalTotals = Object.values(matchState.playerStats).reduce(
+        (acc, stat) => {
+            if (stat.teamId === matchState.homeTeamId) acc.home += stat.goals;
+            if (stat.teamId === matchState.awayTeamId) acc.away += stat.goals;
+            return acc;
+        },
+        { home: 0, away: 0 }
+    );
+    matchState.homeScore = goalTotals.home;
+    matchState.awayScore = goalTotals.away;
+
     // Calculate final possession % estimate based on successful passes? 
     // or just randomize it around 50 +/- 10 for display since we didn't track it minute by minute strictly
     matchState.teamStats.home.possession = 50 + Math.floor(Math.random() * 10 - 5);
@@ -144,6 +188,7 @@ function resolveFoul(minute: number, attackerTeam: TeamState, defenderTeam: Team
     if (defender && attacker) {
         matchState.playerStats[defender.id].fouls++;
         defStats.fouls++;
+        applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
 
         const cardRoll = Math.random();
         if (cardRoll > 0.95) {
@@ -186,19 +231,21 @@ function resolveBackgroundStats(attackerTeam: TeamState, defenderTeam: TeamState
             if (prefersCrossing) {
                 matchState.playerStats[player.id].crossesAttempted++;
                 attStats.crossesAttempted++;
-                const crossChance = 0.6 + (player.attributes.crossing / 100) * 0.2;
-                if (Math.random() < crossChance) {
+                const crossScore = calculateActionScore('crossing', player.attributes, 'attacker', player.condition);
+                if (crossScore > Math.random() * 20) {
                     matchState.playerStats[player.id].crossesCompleted++;
                     attStats.crossesCompleted++;
                 }
+                applyActionDrain(player, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
             } else {
                 matchState.playerStats[player.id].passesAttempted++;
                 attStats.passesAttempted++;
-                const successChance = 0.75 + (player.attributes.passing / 100) * 0.15;
-                if (Math.random() < successChance) {
+                const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
+                if (passScore > Math.random() * 20) {
                     matchState.playerStats[player.id].passesCompleted++;
                     attStats.passesCompleted++;
                 }
+                applyActionDrain(player, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
             }
         }
     }
@@ -213,14 +260,17 @@ function resolveBackgroundStats(attackerTeam: TeamState, defenderTeam: TeamState
             matchState.playerStats[attacker.id].dribblesAttempted++;
             matchState.playerStats[defender.id].tacklesAttempted++;
 
-            const dribbleScore = calculateActionScore('dribble', attacker.attributes, 'attacker', attacker.condition);
-            const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition);
+            const dribbleScore = calculateActionScore('dribble', attacker.attributes, 'attacker', attacker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).dribble;
+            const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition) * getMentalityBuff(defenderTeam.tactics.mentality).tackling;
 
             if (tackleScore * (0.8 + Math.random() * 0.4) > dribbleScore * (0.8 + Math.random() * 0.4)) {
                 matchState.playerStats[defender.id].tacklesWon++;
             } else {
                 matchState.playerStats[attacker.id].dribblesWon++;
             }
+
+            applyActionDrain(attacker, 'MEDIUM', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
+            applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
         }
     }
 }
@@ -234,10 +284,12 @@ function resolveBuildUp(minute: number, attackerTeam: TeamState, defenderTeam: T
     matchState.playerStats[attacker.id].passesAttempted += 2;
     attStats.passesAttempted += 2;
 
-    if (Math.random() > 0.3) {
+    const passScore = calculateActionScore('short_pass', attacker.attributes, 'attacker', attacker.condition);
+    if (passScore > Math.random() * 20) {
         matchState.playerStats[attacker.id].passesCompleted += 2;
         attStats.passesCompleted += 2;
     }
+    applyActionDrain(attacker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
 }
 
 function resolveShootingChance(minute: number, attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, isHomeAttacking: boolean, attStats: TeamMatchStats, defStats: TeamMatchStats) {
@@ -268,20 +320,40 @@ function resolveShootingChance(minute: number, attackerTeam: TeamState, defender
     matchState.playerStats[attacker.id].shots++;
     attStats.shots++;
 
+    applyActionDrain(attacker, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
+    applyActionDrain(gk, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
+
     // Shoot vs Save
-    const shootScore = calculateActionScore('shoot', attacker.attributes, 'attacker', attacker.condition);
-    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition);
-    console.log(`Shoot: ${shootScore}, Save: ${saveScore}`);
-    const finalShoot = (shootScore * (0.9 + Math.random() * 0.2)) ;
-    const finalSave = (saveScore * (0.9 + Math.random() * 0.2));
-    console.log(`Final Shoot: ${finalShoot}, Final Save: ${finalSave}`);
+    const shootScore = calculateActionScore('shoot', attacker.attributes, 'attacker', attacker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).shooting;
+    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) * getMentalityBuff(defenderTeam.tactics.mentality).save;
+
+    const variance = minute >= 80 ? 0.35 : 0.2;
+    let finalShoot = shootScore * (1 - variance / 2 + Math.random() * variance);
+    let finalSave = saveScore * (1 - variance / 2 + Math.random() * variance);
+
+    const miracleChance = minute >= 80 ? 0.03 : 0.02;
+    const blunderChance = minute >= 80 ? 0.03 : 0.02;
+    const miracle = Math.random() < miracleChance;
+    const blunder = Math.random() < blunderChance;
+
+    if (blunder) {
+        finalSave *= 0.4;
+    }
+
+    if (miracle) {
+        finalSave = Math.max(0.1, finalSave);
+        // Ensure a big boost against the save
+        if (finalShoot <= finalSave) {
+            finalShoot = finalSave * 1.6 + 0.01;
+        }
+    }
 
     if (finalShoot > finalSave) {
         // GOAL
         matchState.events.push({
             minute,
             type: 'GOAL',
-            text: `GOAL! ${attacker.name} scores with a clinical finish!`,
+            text: miracle ? `MIRACLE GOAL! ${attacker.name} scores against the odds!` : `GOAL! ${attacker.name} scores with a clinical finish!`,
             teamId: attackerTeam.id,
             playerId: attacker.id
         });
@@ -357,8 +429,10 @@ function resolveSetPiece(minute: number, attackerTeam: TeamState, defenderTeam: 
         matchState.playerStats[taker.id].shots++;
         attStats.shots++;
 
-        const score = calculateActionScore('shoot', taker.attributes, 'attacker', taker.condition) + (taker.attributes.setPieces / 2);
-        const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition);
+        applyActionDrain(taker, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
+
+        const score = calculateActionScore('shoot', taker.attributes, 'attacker', taker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).shooting;
+        const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) * getMentalityBuff(defenderTeam.tactics.mentality).save;
 
         if (score > saveScore) {
             matchState.events.push({ minute, type: 'GOAL', text: `STUNNING! ${taker.name} scores directly from the free kick!`, teamId: attackerTeam.id, playerId: taker.id });
@@ -375,19 +449,21 @@ function resolveSetPiece(minute: number, attackerTeam: TeamState, defenderTeam: 
         matchState.playerStats[taker.id].passesAttempted++;
         attStats.passesAttempted++;
         const receiver = getRandomPlayer(attackerTeam, ['MC', 'AMC', 'FWC', 'DC']);
-        if (receiver && Math.random() < 0.8) {
+        const passScore = calculateActionScore('short_pass', taker.attributes, 'attacker', taker.condition);
+        if (receiver && passScore > Math.random() * 20) {
             matchState.playerStats[taker.id].passesCompleted++;
             attStats.passesCompleted++;
             matchState.events.push({ minute, type: 'PASS', text: `${taker.name} plays a short ${type === 'CORNER' ? 'corner' : 'free kick'} to ${receiver.name}.`, teamId: attackerTeam.id, playerId: taker.id });
         }
+        applyActionDrain(taker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
     } else {
         // Cross / Long Ball into Box
         matchState.playerStats[taker.id].crossesAttempted++;
         attStats.crossesAttempted++;
         const target = getRandomPlayer(attackerTeam, ['FWC', 'DC', 'AMC']);
         if (target) {
-            const crossSuccess = 0.4 + (taker.attributes.crossing / 100) * 0.3;
-            if (Math.random() < crossSuccess) {
+            const crossScore = calculateActionScore('crossing', taker.attributes, 'attacker', taker.condition);
+            if (crossScore > Math.random() * 20) {
                 matchState.playerStats[taker.id].crossesCompleted++;
                 attStats.crossesCompleted++;
 
@@ -407,10 +483,12 @@ function resolveSetPiece(minute: number, attackerTeam: TeamState, defenderTeam: 
                 } else {
                     matchState.events.push({ minute, type: 'MISS', text: `${taker.name} crosses into the box, but the defense clears it.`, teamId: attackerTeam.id, playerId: taker.id });
                 }
+                applyActionDrain(target, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
             } else {
                 matchState.events.push({ minute, type: 'MISS', text: `${taker.name}'s ${type.toLowerCase()} into the box is too long.`, teamId: attackerTeam.id, playerId: taker.id });
             }
         }
+        applyActionDrain(taker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
     }
 }
 
@@ -434,9 +512,9 @@ function getRandomPlayer(team: TeamState, positions: string[]): PlayerState | un
 function updateFitness(team: TeamState) {
     team.players.forEach(p => {
         if (p.tacticalPosition !== null) {
-            const baseDrain = 0.5;
-            const staminaFactor = Math.max(0, (p.attributes.stamina - 10) * 0.02);
-            const drain = baseDrain * (1 - staminaFactor);
+            const baseDrain = 0.4;
+            const staminaFactor = Math.max(0.7, 1 - (p.attributes.stamina - 10) * 0.02);
+            const drain = baseDrain * staminaFactor * getMentalityBuff(team.tactics.mentality).fatigue;
             p.condition = Math.max(0, p.condition - drain);
         }
     });

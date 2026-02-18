@@ -57,11 +57,8 @@ export function calculateActionScore(
         }
     });
 
-    // 3. Apply Fitness Penalty
-    if (condition < 70) {
-        const penaltyFactor = (70 - condition) / 100; // e.g. 50 condition -> 0.2 penalty (20%)
-        score = score * (1 - penaltyFactor);
-    }
+    // 3. Apply Condition Impact (0-100)
+    score = score * (condition / 100);
 
     return score;
 }

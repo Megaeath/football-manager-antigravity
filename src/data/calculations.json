@@ -1,8 +1,8 @@
 {
     "actions": {
         "short_pass": {
-            "attacker_formula": "(passing * 0.43) + (vision * 0.35) + (composure * 0.22)",
-            "defender_formula": "(tackling * 0.35) + (positioning * 0.43) + (bravery * 0.22)",
+            "attacker_formula": "(passing * 0.5) + (vision * 0.4) + (teamwork * 0.1)",
+            "defender_formula": "(tackling * 0.5) + (positioning * 0.3) + (bravery * 0.2)",
             "attacker_bonus": [
                 {
                     "stat": "agility",
@@ -24,7 +24,7 @@
             ]
         },
         "long_pass": {
-            "attacker_formula": "(passing * 0.43) + (vision * 0.36) + (setPieces * 0.21)",
+            "attacker_formula": "(crossing*0.3)+ (passing * 0.2) + (vision * 0.3) + (setPieces * 0.2)",
             "defender_formula": "(positioning * 0.48) + (heading * 0.32) + (pace * 0.20)",
             "attacker_bonus": [
                 {
@@ -42,7 +42,7 @@
             ]
         },
         "dribble": {
-            "attacker_formula": "(dribbling * 0.43) + (pace * 0.29) + (agility * 0.29)",
+            "attacker_formula": "(dribbling * 0.6) + (pace * 0.2) + (agility * 0.2)",
             "defender_formula": "(tackling * 0.42) + (strength * 0.33) + (pace * 0.25)",
             "attacker_bonus": [
                 {
@@ -60,7 +60,7 @@
             ]
         },
         "shoot": {
-            "attacker_formula": "(shooting * 1.0) ",
+            "attacker_formula": "(shooting * 0.7)+(composure * 0.2)+(acceleration * 0.1)",
             "defender_formula": "(positioning * 0.8) + (bravery * 0.2)",
             "attacker_bonus": [
                 {
@@ -72,19 +72,19 @@
             "defender_bonus": []
         },
         "save": {
-            "attacker_formula": "(shooting * 1.0)",
-            "defender_formula": "(handling * 0.67) + ((agility + positioning) * 0.17)",
+            "attacker_formula": "(shooting * 0.9)",
+            "defender_formula": "(handling * 0.7) + ((agility + positioning) * 0.3)",
             "attacker_bonus": [],
             "defender_bonus": [
                 {
-                    "stat": "agility",
+                    "stat": "handling",
                     "threshold": 16,
                     "bonus": 1
                 }
             ]
         },
         "crossing": {
-            "attacker_formula": "(crossing * 0.48) + (vision * 0.32) + (composure * 0.20)",
+            "attacker_formula": "(crossing * 0.6) + (vision * 0.3) + (teamwork * 0.1)",
             "defender_formula": "(positioning * 0.37) + (heading * 0.44) + (tackling * 0.19)",
             "attacker_bonus": [
                 {
