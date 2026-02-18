@@ -1,7 +1,60 @@
-import { TeamState, MatchState, MatchEventLog, PlayerState, EnginePlayerMatchStats, TeamMatchStats } from './types';
+import { TeamState, MatchState, PlayerState, EnginePlayerMatchStats, TeamMatchStats } from './types';
 import { calculateActionScore } from './formulas';
 
+type ActionType = 'PASS_SHORT' | 'PASS_LONG' | 'DRIBBLE' | 'SHOOT';
 type Intensity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+interface BallState {
+    position: number; // 0-100 (0=home goal, 100=away goal)
+    possession: 'home' | 'away';
+    carrier: PlayerState | null;
+}
+
+function calculateActionWeights(
+    player: PlayerState,
+    ballPosition: number,
+    isAttacking: boolean
+): Record<ActionType, number> {
+    const distance = isAttacking ? 100 - ballPosition : ballPosition;
+    const distanceToGoal = distance;
+
+    const weights = {
+        PASS_SHORT: player.attributes.passing * 0.5,
+        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3,
+        DRIBBLE: player.attributes.dribbling * 0.4,
+        SHOOT: 0
+    };
+
+    // Increase shooting weight when close to goal
+    if (distanceToGoal <= 30) {
+        weights.SHOOT = player.attributes.shooting * 1.5;
+    } else if (distanceToGoal <= 40) {
+        weights.SHOOT = player.attributes.shooting * 0.5;
+    }
+
+    // Apply condition multiplier to all weights
+    const conditionFactor = player.condition / 100;
+    Object.keys(weights).forEach(key => {
+        weights[key as ActionType] *= conditionFactor;
+    });
+
+    return weights;
+}
+
+function chooseAction(weights: Record<ActionType, number>): ActionType {
+    const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
+    if (total === 0) return 'PASS_SHORT';
+
+    const roll = Math.random() * total;
+    let cumulative = 0;
+
+    for (const [action, weight] of Object.entries(weights)) {
+        cumulative += weight;
+        if (roll <= cumulative) return action as ActionType;
+    }
+
+    return 'PASS_SHORT';
+}
 
 function getMentalityBuff(mentality: string) {
     switch (mentality) {
@@ -29,6 +82,277 @@ function applyActionDrain(player: PlayerState, intensity: Intensity, fatigueMult
     const staminaFactor = Math.max(0.7, 1 - (player.attributes.stamina - 10) * 0.02);
     const drain = base * staminaFactor;
     player.condition = Math.max(0, player.condition - drain);
+}
+
+function executePassShort(
+    ball: BallState,
+    player: PlayerState,
+    matchState: MatchState,
+    attackingTeam: TeamState,
+    defendingTeam: TeamState,
+    isHomeAttacking: boolean
+): void {
+    const stats = matchState.playerStats[player.id];
+    const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+
+    stats.passesAttempted++;
+    teamStats.passesAttempted++;
+
+    const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
+    const defenseScore = Math.random() * 10;
+
+    const skillBonus = player.attributes.passing > 15 ? 1.15 : 1.0;
+    const success = (passScore * skillBonus) > defenseScore;
+
+    if (success) {
+        stats.passesCompleted++;
+        teamStats.passesCompleted++;
+        const movement = 2 + Math.random() * 3; // +2 to +5
+        ball.position = isHomeAttacking
+            ? Math.min(100, ball.position + movement)
+            : Math.max(0, ball.position - movement);
+        // Reassign carrier based on new position
+        ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
+    } else {
+        // Failed pass - possession changes
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
+    }
+
+    applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
+}
+
+function executePassLong(
+    ball: BallState,
+    player: PlayerState,
+    matchState: MatchState,
+    attackingTeam: TeamState,
+    defendingTeam: TeamState,
+    isHomeAttacking: boolean
+): void {
+    const stats = matchState.playerStats[player.id];
+    const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+
+    stats.passesAttempted++;
+    teamStats.passesAttempted++;
+
+    const passScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
+    const defenseScore = Math.random() * 15;
+
+    const skillBonus = (player.attributes.passing > 15 && player.attributes.vision > 15) ? 1.2 : 1.0;
+    const success = (passScore * skillBonus) > defenseScore;
+
+    const movement = 10 + Math.random() * 10; // +10 to +20
+    const targetPosition = isHomeAttacking
+        ? Math.min(100, ball.position + movement)
+        : Math.max(0, ball.position - movement);
+
+    if (success) {
+        stats.passesCompleted++;
+        teamStats.passesCompleted++;
+        ball.position = targetPosition;
+        // Reassign carrier based on new position
+        ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
+    } else {
+        // Failed long pass - possession changes at target position
+        ball.position = targetPosition;
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'FWC']) || null;
+    }
+
+    applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
+}
+
+function executeDribble(
+    ball: BallState,
+    player: PlayerState,
+    matchState: MatchState,
+    attackingTeam: TeamState,
+    defendingTeam: TeamState,
+    isHomeAttacking: boolean
+): void {
+    const stats = matchState.playerStats[player.id];
+    const defender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']);
+
+    if (!defender) return;
+
+    stats.dribblesAttempted++;
+    matchState.playerStats[defender.id].tacklesAttempted++;
+
+    const dribbleScore = calculateActionScore('dribble', player.attributes, 'attacker', player.condition) 
+        * getMentalityBuff(attackingTeam.tactics.mentality).dribble;
+    const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition) 
+        * getMentalityBuff(defendingTeam.tactics.mentality).tackling;
+
+    const skillBonus = player.attributes.dribbling > 15 ? 1.15 : 1.0;
+    const success = (dribbleScore * skillBonus * (0.8 + Math.random() * 0.4)) > (tackleScore * (0.8 + Math.random() * 0.4));
+
+    if (success) {
+        stats.dribblesWon++;
+        const movement = 3 + Math.random() * 5; // +3 to +8
+        ball.position = isHomeAttacking
+            ? Math.min(100, ball.position + movement)
+            : Math.max(0, ball.position - movement);
+        // Keep same carrier after dribble (they beat the defender)
+        // No reassignment needed
+    } else {
+        matchState.playerStats[defender.id].tacklesWon++;
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        ball.carrier = defender;
+    }
+
+    applyActionDrain(player, 'MEDIUM', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
+    applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
+}
+
+function executeShoot(
+    ball: BallState,
+    player: PlayerState,
+    minute: number,
+    matchState: MatchState,
+    attackingTeam: TeamState,
+    defendingTeam: TeamState,
+    isHomeAttacking: boolean,
+    homeTeam: TeamState,
+    awayTeam: TeamState
+): void {
+    const stats = matchState.playerStats[player.id];
+    const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+
+    stats.shots++;
+    teamStats.shots++;
+
+    // Find goalkeeper
+    const gk = defendingTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK') 
+        || defendingTeam.players.find(p => p.position === 'GK') 
+        || defendingTeam.players[0];
+
+    // Calculate distance to goal
+    const distanceToGoal = isHomeAttacking ? 100 - ball.position : ball.position;
+    const positionFactor = Math.max(0.3, (100 - distanceToGoal) / 100);
+
+    // Shooting effectiveness decreases with distance
+    const shootScore = calculateActionScore('shoot', player.attributes, 'attacker', player.condition) 
+        * getMentalityBuff(attackingTeam.tactics.mentality).shooting 
+        * positionFactor;
+
+    // GK save effectiveness increases with distance (easier saves from far)
+    const saveEffectiveness = distanceToGoal < 20 ? 0.7 : (distanceToGoal < 10 ? 0.5 : 1.0);
+    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) 
+        * getMentalityBuff(defendingTeam.tactics.mentality).save 
+        * saveEffectiveness;
+
+    // Apply variance
+    const variance = minute >= 80 ? 0.35 : 0.2;
+    let finalShoot = shootScore * (1 - variance / 2 + Math.random() * variance);
+    let finalSave = saveScore * (1 - variance / 2 + Math.random() * variance);
+
+    // Miracle/blunder chances
+    const miracleChance = minute >= 80 ? 0.03 : 0.02;
+    const blunderChance = minute >= 80 ? 0.03 : 0.02;
+    const miracle = Math.random() < miracleChance;
+    const blunder = Math.random() < blunderChance;
+
+    if (blunder) {
+        finalSave *= 0.4;
+    }
+
+    if (miracle) {
+        finalSave = Math.max(0.1, finalSave);
+        if (finalShoot <= finalSave) {
+            finalShoot = finalSave * 1.6 + 0.01;
+        }
+    }
+
+    if (finalShoot > finalSave) {
+        // GOAL!
+        stats.goals++;
+        stats.shotsOnTarget++;
+        teamStats.shotsOnTarget++;
+
+        matchState.events.push({
+            minute,
+            type: 'GOAL',
+            text: miracle 
+                ? `MIRACLE GOAL! ${player.name} scores from ${distanceToGoal.toFixed(0)}m out!`
+                : `GOAL! ${player.name} scores with a clinical finish from ${distanceToGoal.toFixed(0)}m!`,
+            teamId: attackingTeam.id,
+            playerId: player.id
+        });
+
+        // Potential assist
+        if (Math.random() > 0.4) {
+            const assistPlayer = getRandomPlayer(attackingTeam, ['MC', 'AMC', 'MR', 'ML', 'AMR', 'AML']);
+            if (assistPlayer && assistPlayer.id !== player.id) {
+                matchState.playerStats[assistPlayer.id].assists++;
+            }
+        }
+
+        // Reset ball to center, kick-off from non-GK
+        ball.position = 50;
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        const kickoffTeam = ball.possession === 'home' ? homeTeam : awayTeam;
+        const kickoffIsHomeAttacking = ball.possession === 'home';
+        ball.carrier = getCarrierByPosition(kickoffTeam, 50, kickoffIsHomeAttacking);
+    } else {
+        // Save or miss
+        const isOnTarget = Math.random() > 0.4;
+
+        if (isOnTarget) {
+            matchState.playerStats[gk.id].saves++;
+            stats.shotsOnTarget++;
+            teamStats.shotsOnTarget++;
+            matchState.events.push({
+                minute,
+                type: 'MISS',
+                text: `${player.name} shoots from ${distanceToGoal.toFixed(0)}m... but ${gk.name} makes the save!`,
+                teamId: attackingTeam.id,
+                playerId: player.id
+            });
+        } else {
+            matchState.events.push({
+                minute,
+                type: 'MISS',
+                text: `${player.name} shoots wide from ${distanceToGoal.toFixed(0)}m!`,
+                teamId: attackingTeam.id,
+                playerId: player.id
+            });
+        }
+
+        // GK distributes to defender immediately (goal kick / distribution)
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        const defender = getRandomPlayer(defendingTeam, ['DC', 'DR', 'DL', 'DMC']) || defendingTeam.players[1]; // Avoid GK at index 0
+        ball.carrier = defender;
+        ball.position = isHomeAttacking ? 10 : 90; // Slightly further up field
+    }
+
+    applyActionDrain(player, 'HIGH', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
+    applyActionDrain(gk, 'MEDIUM', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
+}
+
+function checkDefensiveInterruption(
+    ball: BallState,
+    defendingTeam: TeamState
+): boolean {
+    const defenderPool = defendingTeam.players.filter(p => p.tacticalPosition !== null);
+    if (defenderPool.length === 0) return false;
+
+    // Calculate average defensive capability
+    const avgTackling = defenderPool.reduce((sum, p) => sum + p.attributes.tackling, 0) / defenderPool.length;
+    const avgPositioning = defenderPool.reduce((sum, p) => sum + p.attributes.positioning, 0) / defenderPool.length;
+
+    // Base intercept chance around 8% per tick
+    const interruptChance = ((avgTackling + avgPositioning) / 40) * 0.08;
+
+    if (Math.random() < interruptChance) {
+        // Interception! Pick a random defender
+        const interceptor = defenderPool[Math.floor(Math.random() * defenderPool.length)];
+        ball.possession = ball.possession === 'home' ? 'away' : 'home';
+        ball.carrier = interceptor;
+        return true;
+    }
+
+    return false;
 }
 
 function initializePlayerStats(team: TeamState): Record<string, EnginePlayerMatchStats> {
@@ -103,54 +427,64 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
         }
     });
 
-    let currentPossession: 'home' | 'away' = 'home';
+    // Initialize ball state
+    const ball: BallState = {
+        position: 50,
+        possession: 'home',
+        carrier: null
+    };
 
+    // BALL PROGRESSION SYSTEM: 90 minutes, 3 ticks per minute = 270 game ticks
     for (let minute = 1; minute <= 90; minute++) {
         matchState.minute = minute;
 
-        // TACTICS: Mentality affects possession/defense
-        let homePossessionBonus = 0;
-        if (homeTeam.tactics.mentality === 'ULTRA_DEFENSIVE') homePossessionBonus -= 10;
-        if (homeTeam.tactics.mentality === 'DEFENSIVE') homePossessionBonus -= 5;
-        if (homeTeam.tactics.mentality === 'ATTACKING') homePossessionBonus += 5;
-        if (homeTeam.tactics.mentality === 'ALL_OUT_ATTACK') homePossessionBonus += 10;
+        const ticksPerMinute = 3;
+        for (let tick = 0; tick < ticksPerMinute; tick++) {
+            const isHomeAttacking = ball.possession === 'home';
+            const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
+            const defendingTeam = isHomeAttacking ? awayTeam : homeTeam;
 
-        // Possesion Battle
-        const possessionRoll = Math.random() * 100 + homePossessionBonus;
-        currentPossession = possessionRoll > 50 ? 'home' : 'away';
+            // Assign carrier based on ball position (never GK)
+            if (!ball.carrier) {
+                ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
+            }
 
-        const attackingTeam = currentPossession === 'home' ? homeTeam : awayTeam;
-        const defendingTeam = currentPossession === 'home' ? awayTeam : homeTeam;
-        const isHomeAttacking = currentPossession === 'home';
-        const attackingStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
-        const defendingStats = isHomeAttacking ? matchState.teamStats.away : matchState.teamStats.home;
+            // Skip if carrier is somehow still GK (safety check)
+            if (ball.carrier && ball.carrier.position === 'GK') {
+                ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
+            }
 
-        const attackingBuff = getMentalityBuff(attackingTeam.tactics.mentality);
+            // Check for defensive interruption (interception)
+            if (checkDefensiveInterruption(ball, defendingTeam)) {
+                continue; // Possession changed, skip this tick
+            }
 
-        // Background Stats (Passes/Tackles that happenทุกนาที)
-        resolveBackgroundStats(attackingTeam, defendingTeam, matchState, attackingStats, defendingStats);
+            // AI chooses action based on player attributes and ball position
+            const weights = calculateActionWeights(ball.carrier, ball.position, isHomeAttacking);
+            const action = chooseAction(weights);
 
-        const actionRoll = Math.min(100, Math.random() * 100 * attackingBuff.attackChance);
+            // Execute the chosen action
+            switch (action) {
+                case 'PASS_SHORT':
+                    executePassShort(ball, ball.carrier, matchState, attackingTeam, defendingTeam, isHomeAttacking);
+                    break;
+                case 'PASS_LONG':
+                    executePassLong(ball, ball.carrier, matchState, attackingTeam, defendingTeam, isHomeAttacking);
+                    break;
+                case 'DRIBBLE':
+                    executeDribble(ball, ball.carrier, matchState, attackingTeam, defendingTeam, isHomeAttacking);
+                    break;
+                case 'SHOOT':
+                    executeShoot(ball, ball.carrier, minute, matchState, attackingTeam, defendingTeam, isHomeAttacking, homeTeam, awayTeam);
+                    break;
+            }
 
-        // Foul / Card Chance (influenced by tackling style)
-        let foulThreshold = 5;
-        if (defendingTeam.tactics.tackling === 'HARD') foulThreshold = 8;
-        if (defendingTeam.tactics.tackling === 'SOFT') foulThreshold = 2;
-
-        // 85+ Shooting
-        if (actionRoll > 85) {
-            resolveShootingChance(minute, attackingTeam, defendingTeam, matchState, isHomeAttacking, attackingStats, defendingStats);
-        }
-        // 75-85 Set Piece Opportunity
-        else if (actionRoll > 75) {
-            resolveSetPiece(minute, attackingTeam, defendingTeam, matchState, isHomeAttacking, attackingStats, defendingStats, 'FREE_KICK');
-        }
-        // 55-75 Build Up
-        else if (actionRoll > 55) {
-            resolveBuildUp(minute, attackingTeam, defendingTeam, matchState, attackingStats, defendingStats);
-        }
-        else if (actionRoll < foulThreshold) {
-            resolveFoul(minute, attackingTeam, defendingTeam, matchState, attackingStats, defendingStats);
+            // Clamp ball position to field boundaries
+            if (ball.possession === 'home' && ball.position >= 100) {
+                ball.position = 100;
+            } else if (ball.possession === 'away' && ball.position <= 0) {
+                ball.position = 0;
+            }
         }
 
         updateFitness(homeTeam);
@@ -169,8 +503,7 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
     matchState.homeScore = goalTotals.home;
     matchState.awayScore = goalTotals.away;
 
-    // Calculate final possession % estimate based on successful passes? 
-    // or just randomize it around 50 +/- 10 for display since we didn't track it minute by minute strictly
+    // Calculate final possession % estimate based on successful passes
     matchState.teamStats.home.possession = 50 + Math.floor(Math.random() * 10 - 5);
     matchState.teamStats.away.possession = 100 - matchState.teamStats.home.possession;
 
@@ -181,315 +514,71 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
     return matchState;
 }
 
-function resolveFoul(minute: number, attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, attStats: TeamMatchStats, defStats: TeamMatchStats) {
-    const defender = getRandomPlayer(defenderTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']);
-    const attacker = getRandomPlayer(attackerTeam, ['FWC', 'AMC', 'MC', 'AMR', 'AML']); // fouled player
-
-    if (defender && attacker) {
-        matchState.playerStats[defender.id].fouls++;
-        defStats.fouls++;
-        applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
-
-        const cardRoll = Math.random();
-        if (cardRoll > 0.95) {
-            // RED CARD
-            matchState.playerStats[defender.id].redCards++;
-            defStats.redCards++;
-            matchState.events.push({
-                minute, type: 'CARD_RED', text: `RED CARD! ${defender.name} makes a horror tackle!`, teamId: defenderTeam.id, playerId: defender.id
-            });
-        } else if (cardRoll > 0.7) {
-            // YELLOW CARD
-            matchState.playerStats[defender.id].yellowCards++;
-            defStats.yellowCards++;
-            matchState.events.push({
-                minute, type: 'CARD_YELLOW', text: `Yellow Card for ${defender.name}.`, teamId: defenderTeam.id, playerId: defender.id
-            });
-        } else {
-            // Just Foul
-            matchState.events.push({
-                minute, type: 'FOUL', text: `Foul by ${defender.name}.`, teamId: defenderTeam.id, playerId: defender.id
-            });
-        }
-    }
-}
-
-function resolveBackgroundStats(attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, attStats: TeamMatchStats, defStats: TeamMatchStats) {
-    // 1. PASSING VOLUME (Average 4-7 passes per minute for the team with possession)
-    const passVolume = 4 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < passVolume; i++) {
-        // Distribute passes: Midfielders get more, then Defenders, then Forwards
-        const roll = Math.random();
-        let positionKey: string[] = ['MC', 'MR', 'ML', 'DMC', 'AMC']; // Midfield (60%)
-        if (roll > 0.6) positionKey = ['DC', 'DR', 'DL']; // Defense (30%)
-        if (roll > 0.9) positionKey = ['FWC', 'FWR', 'FWL']; // Attack (10%)
-
-        const player = getRandomPlayer(attackerTeam, positionKey);
-        if (player) {
-            const prefersCrossing = ['MR', 'ML', 'AMR', 'AML', 'FWR', 'FWL', 'DR', 'DL'].includes(player.position) && Math.random() > 0.6;
-
-            if (prefersCrossing) {
-                matchState.playerStats[player.id].crossesAttempted++;
-                attStats.crossesAttempted++;
-                const crossScore = calculateActionScore('crossing', player.attributes, 'attacker', player.condition);
-                if (crossScore > Math.random() * 20) {
-                    matchState.playerStats[player.id].crossesCompleted++;
-                    attStats.crossesCompleted++;
-                }
-                applyActionDrain(player, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-            } else {
-                matchState.playerStats[player.id].passesAttempted++;
-                attStats.passesAttempted++;
-                const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
-                if (passScore > Math.random() * 20) {
-                    matchState.playerStats[player.id].passesCompleted++;
-                    attStats.passesCompleted++;
-                }
-                applyActionDrain(player, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-            }
-        }
-    }
-
-    // 2. DEFENSIVE VOLUME (Tackling/Dribbling interactions)
-    if (Math.random() > 0.4) {
-        const defender = getRandomPlayer(defenderTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']);
-        const attackerIdx = Math.floor(Math.random() * attackerTeam.players.length);
-        const attacker = attackerTeam.players[attackerIdx];
-
-        if (defender && attacker && attacker.tacticalPosition !== null) {
-            matchState.playerStats[attacker.id].dribblesAttempted++;
-            matchState.playerStats[defender.id].tacklesAttempted++;
-
-            const dribbleScore = calculateActionScore('dribble', attacker.attributes, 'attacker', attacker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).dribble;
-            const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition) * getMentalityBuff(defenderTeam.tactics.mentality).tackling;
-
-            if (tackleScore * (0.8 + Math.random() * 0.4) > dribbleScore * (0.8 + Math.random() * 0.4)) {
-                matchState.playerStats[defender.id].tacklesWon++;
-            } else {
-                matchState.playerStats[attacker.id].dribblesWon++;
-            }
-
-            applyActionDrain(attacker, 'MEDIUM', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-            applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
-        }
-    }
-}
-
-function resolveBuildUp(minute: number, attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, attStats: TeamMatchStats, defStats: TeamMatchStats) {
-    // Build up represents a dangerous transition or successful sequences
-    const attacker = getRandomPlayer(attackerTeam, ['MC', 'MR', 'ML', 'AMC', 'AMR', 'AML']);
-    if (!attacker) return;
-
-    // Extra stats for the high-impact move
-    matchState.playerStats[attacker.id].passesAttempted += 2;
-    attStats.passesAttempted += 2;
-
-    const passScore = calculateActionScore('short_pass', attacker.attributes, 'attacker', attacker.condition);
-    if (passScore > Math.random() * 20) {
-        matchState.playerStats[attacker.id].passesCompleted += 2;
-        attStats.passesCompleted += 2;
-    }
-    applyActionDrain(attacker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-}
-
-function resolveShootingChance(minute: number, attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, isHomeAttacking: boolean, attStats: TeamMatchStats, defStats: TeamMatchStats) {
-
-    const attacker = getRandomPlayer(attackerTeam, ['FWC', 'FWR', 'FWL', 'AMC', 'AML', 'AMR']); // Use helper
-    const gk = defenderTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK') ||
-        defenderTeam.players.find(p => p.position === 'GK') ||
-        defenderTeam.players[0];
-
-    if (!attacker) return;
-
-    // Offsides
-    if (Math.random() > 0.95) {
-        matchState.playerStats[attacker.id].offsides++;
-        attStats.offsides++;
-        matchState.events.push({
-            minute, type: 'OFFSIDE', text: `Offside flag goes up against ${attacker.name}.`, teamId: attackerTeam.id, playerId: attacker.id
-        });
-        return;
-    }
-
-    // Corners
-    if (Math.random() > 0.9) {
-        resolveSetPiece(minute, attackerTeam, defenderTeam, matchState, isHomeAttacking, attStats, defStats, 'CORNER');
-        return;
-    }
-
-    matchState.playerStats[attacker.id].shots++;
-    attStats.shots++;
-
-    applyActionDrain(attacker, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-    applyActionDrain(gk, 'MEDIUM', getMentalityBuff(defenderTeam.tactics.mentality).fatigue);
-
-    // Shoot vs Save
-    const shootScore = calculateActionScore('shoot', attacker.attributes, 'attacker', attacker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).shooting;
-    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) * getMentalityBuff(defenderTeam.tactics.mentality).save;
-
-    const variance = minute >= 80 ? 0.35 : 0.2;
-    let finalShoot = shootScore * (1 - variance / 2 + Math.random() * variance);
-    let finalSave = saveScore * (1 - variance / 2 + Math.random() * variance);
-
-    const miracleChance = minute >= 80 ? 0.03 : 0.02;
-    const blunderChance = minute >= 80 ? 0.03 : 0.02;
-    const miracle = Math.random() < miracleChance;
-    const blunder = Math.random() < blunderChance;
-
-    if (blunder) {
-        finalSave *= 0.4;
-    }
-
-    if (miracle) {
-        finalSave = Math.max(0.1, finalSave);
-        // Ensure a big boost against the save
-        if (finalShoot <= finalSave) {
-            finalShoot = finalSave * 1.6 + 0.01;
-        }
-    }
-
-    if (finalShoot > finalSave) {
-        // GOAL
-        matchState.events.push({
-            minute,
-            type: 'GOAL',
-            text: miracle ? `MIRACLE GOAL! ${attacker.name} scores against the odds!` : `GOAL! ${attacker.name} scores with a clinical finish!`,
-            teamId: attackerTeam.id,
-            playerId: attacker.id
-        });
-
-        matchState.playerStats[attacker.id].shotsOnTarget++;
-        matchState.playerStats[attacker.id].goals++;
-        attStats.shotsOnTarget++;
-
-        // Assist
-        if (Math.random() > 0.3) {
-            const assistPlayer = getRandomPlayer(attackerTeam, ['MC', 'MR', 'ML', 'AMC', 'AMR', 'AML', 'FWC']);
-            if (assistPlayer && assistPlayer.id !== attacker.id) {
-                matchState.playerStats[assistPlayer.id].assists++;
-            }
-        }
-
-        if (isHomeAttacking) {
-            matchState.homeScore++;
-        } else {
-            matchState.awayScore++;
-        }
+function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking: boolean): PlayerState {
+    // Calculate which zone the ball is in relative to attacking direction
+    const effectivePosition = isAttacking ? ballPosition : (100 - ballPosition);
+    
+    let positionWeights: { positions: string[], weight: number }[] = [];
+    
+    if (effectivePosition < 35) {
+        // Defensive third - defenders dominate
+        positionWeights = [
+            { positions: ['DC', 'DR', 'DL', 'DMC'], weight: 60 },
+            { positions: ['MC', 'MR', 'ML'], weight: 30 },
+            { positions: ['AMC', 'AMR', 'AML'], weight: 8 },
+            { positions: ['FWC', 'FWR', 'FWL'], weight: 2 }
+        ];
+    } else if (effectivePosition < 70) {
+        // Middle third - midfielders dominate
+        positionWeights = [
+            { positions: ['MC', 'MR', 'ML', 'DMC', 'AMC'], weight: 65 },
+            { positions: ['AMR', 'AML'], weight: 20 },
+            { positions: ['DC', 'DR', 'DL'], weight: 10 },
+            { positions: ['FWC', 'FWR', 'FWL'], weight: 5 }
+        ];
     } else {
-        // MISS/SAVE
-        const isOnTarget = Math.random() > 0.5;
-
-        if (isOnTarget) {
-            matchState.playerStats[gk.id].saves++;
-            matchState.playerStats[attacker.id].shotsOnTarget++;
-            attStats.shotsOnTarget++;
-            matchState.events.push({
-                minute,
-                type: 'MISS',
-                text: `${attacker.name} shoots... but ${gk.name} makes the save!`,
-                teamId: attackerTeam.id,
-                playerId: attacker.id
-            });
-        } else {
-            matchState.events.push({
-                minute,
-                type: 'MISS',
-                text: `${attacker.name} shoots wide!`,
-                teamId: attackerTeam.id,
-                playerId: attacker.id
-            });
+        // Attacking third - forwards dominate but defenders can join attack
+        positionWeights = [
+            { positions: ['FWC', 'FWR', 'FWL', 'AMC', 'AMR', 'AML'], weight: 70 },
+            { positions: ['MC', 'MR', 'ML'], weight: 20 },
+            { positions: ['DMC'], weight: 7 },
+            { positions: ['DC', 'DR', 'DL'], weight: 3 }
+        ];
+    }
+    
+    // Build weighted candidate list
+    const weightedCandidates: { player: PlayerState, weight: number }[] = [];
+    
+    for (const group of positionWeights) {
+        const candidates = team.players.filter(p => 
+            group.positions.includes(p.position) && 
+            p.tacticalPosition !== null &&
+            p.position !== 'GK'
+        );
+        
+        for (const player of candidates) {
+            weightedCandidates.push({ player, weight: group.weight });
         }
     }
-}
-
-function resolveSetPiece(minute: number, attackerTeam: TeamState, defenderTeam: TeamState, matchState: MatchState, isHomeAttacking: boolean, attStats: TeamMatchStats, defStats: TeamMatchStats, type: 'CORNER' | 'FREE_KICK') {
-    if (type === 'CORNER') attStats.corners++;
-
-    // Find top 3 set piece takers in the playing 11
-    const takers = attackerTeam.players
-        .filter(p => p.tacticalPosition !== null)
-        .sort((a, b) => b.attributes.setPieces - a.attributes.setPieces)
-        .slice(0, 3);
-
-    if (takers.length === 0) return;
-    const taker = takers[Math.floor(Math.random() * takers.length)];
-
-    const gk = defenderTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK') || defenderTeam.players[0];
-
-    // Determine Action: Shooting vs Passing (Short) vs Crossing (Long/Box)
-    const shootingProb = taker.attributes.setPieces + taker.attributes.shooting;
-    const passingProb = taker.attributes.setPieces + taker.attributes.passing;
-    const crossingProb = taker.attributes.setPieces + taker.attributes.crossing;
-
-    const total = shootingProb + passingProb + crossingProb;
-    const roll = Math.random() * total;
-
-    if (roll < shootingProb && type === 'FREE_KICK') {
-        // Direct Shot
-        matchState.playerStats[taker.id].shots++;
-        attStats.shots++;
-
-        applyActionDrain(taker, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-
-        const score = calculateActionScore('shoot', taker.attributes, 'attacker', taker.condition) * getMentalityBuff(attackerTeam.tactics.mentality).shooting;
-        const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) * getMentalityBuff(defenderTeam.tactics.mentality).save;
-
-        if (score > saveScore) {
-            matchState.events.push({ minute, type: 'GOAL', text: `STUNNING! ${taker.name} scores directly from the free kick!`, teamId: attackerTeam.id, playerId: taker.id });
-            matchState.playerStats[taker.id].goals++;
-            matchState.playerStats[taker.id].shotsOnTarget++;
-            attStats.shotsOnTarget++;
-            if (isHomeAttacking) matchState.homeScore++; else matchState.awayScore++;
-        } else {
-            matchState.playerStats[gk.id].saves++;
-            matchState.events.push({ minute, type: 'MISS', text: `${taker.name}'s set piece is saved by ${gk.name}!`, teamId: attackerTeam.id, playerId: taker.id });
-        }
-    } else if (roll < shootingProb + passingProb) {
-        // Short Pass
-        matchState.playerStats[taker.id].passesAttempted++;
-        attStats.passesAttempted++;
-        const receiver = getRandomPlayer(attackerTeam, ['MC', 'AMC', 'FWC', 'DC']);
-        const passScore = calculateActionScore('short_pass', taker.attributes, 'attacker', taker.condition);
-        if (receiver && passScore > Math.random() * 20) {
-            matchState.playerStats[taker.id].passesCompleted++;
-            attStats.passesCompleted++;
-            matchState.events.push({ minute, type: 'PASS', text: `${taker.name} plays a short ${type === 'CORNER' ? 'corner' : 'free kick'} to ${receiver.name}.`, teamId: attackerTeam.id, playerId: taker.id });
-        }
-        applyActionDrain(taker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-    } else {
-        // Cross / Long Ball into Box
-        matchState.playerStats[taker.id].crossesAttempted++;
-        attStats.crossesAttempted++;
-        const target = getRandomPlayer(attackerTeam, ['FWC', 'DC', 'AMC']);
-        if (target) {
-            const crossScore = calculateActionScore('crossing', taker.attributes, 'attacker', taker.condition);
-            if (crossScore > Math.random() * 20) {
-                matchState.playerStats[taker.id].crossesCompleted++;
-                attStats.crossesCompleted++;
-
-                // Header/Shot attempt from the cross
-                const headingScore = target.attributes.heading + (target.attributes.strength / 2);
-                const defScore = Math.random() * 30; // Random defender interference
-
-                if (headingScore > defScore) {
-                    matchState.playerStats[target.id].shots++;
-                    matchState.playerStats[target.id].shotsOnTarget++;
-                    attStats.shots++;
-                    attStats.shotsOnTarget++;
-                    matchState.playerStats[target.id].goals++;
-                    matchState.playerStats[taker.id].assists++; // Assist from set piece
-                    matchState.events.push({ minute, type: 'GOAL', text: `GOAL! ${target.name} heads home from ${taker.name}'s ${type.toLowerCase()}!`, teamId: attackerTeam.id, playerId: target.id });
-                    if (isHomeAttacking) matchState.homeScore++; else matchState.awayScore++;
-                } else {
-                    matchState.events.push({ minute, type: 'MISS', text: `${taker.name} crosses into the box, but the defense clears it.`, teamId: attackerTeam.id, playerId: taker.id });
-                }
-                applyActionDrain(target, 'HIGH', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
-            } else {
-                matchState.events.push({ minute, type: 'MISS', text: `${taker.name}'s ${type.toLowerCase()} into the box is too long.`, teamId: attackerTeam.id, playerId: taker.id });
-            }
-        }
-        applyActionDrain(taker, 'LOW', getMentalityBuff(attackerTeam.tactics.mentality).fatigue);
+    
+    if (weightedCandidates.length === 0) {
+        // Fallback to any non-GK player
+        return team.players.find(p => p.position !== 'GK') || team.players[1];
     }
+    
+    // Weighted random selection
+    const totalWeight = weightedCandidates.reduce((sum, c) => sum + c.weight, 0);
+    const roll = Math.random() * totalWeight;
+    
+    let cumulative = 0;
+    for (const candidate of weightedCandidates) {
+        cumulative += candidate.weight;
+        if (roll <= cumulative) {
+            return candidate.player;
+        }
+    }
+    
+    return weightedCandidates[0].player;
 }
 
 function getRandomPlayer(team: TeamState, positions: string[]): PlayerState | undefined {
@@ -524,10 +613,10 @@ function calculateRatings(matchState: MatchState) {
     Object.values(matchState.playerStats).forEach(stat => {
         let rating = 6.0;
 
-        rating += (stat.goals * 1.2);      // Increased from 1.0
-        rating += (stat.assists * 0.7);    // Increased from 0.5
-        rating += (stat.saves * 0.3);      // Decreased from 0.5 (Re-balanced)
-        rating += (stat.tacklesWon * 0.3);  // Increased from 0.2
+        rating += (stat.goals * 1.2);
+        rating += (stat.assists * 0.7);
+        rating += (stat.saves * 0.3);
+        rating += (stat.tacklesWon * 0.3);
         rating += (stat.passesCompleted * 0.05);
         rating += (stat.dribblesWon * 0.2);
 

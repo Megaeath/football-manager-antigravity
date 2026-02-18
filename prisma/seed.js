@@ -156,7 +156,7 @@ async function main() {
     await prisma.globalGameSettings.create({
         data: {
             id: 1,
-            currentDate: new Date('2026-08-01'),
+            currentDate: new Date('2026-01-01'),
             currentSeason: 1,
             isConfigured: true,
             userTeamId: userTeam?.id
@@ -167,7 +167,7 @@ async function main() {
     const allTeams = await prisma.team.findMany({ select: { id: true } })
     let teamIds = allTeams.map(t => t.id)
     const fixtures = []
-    const seasonStart = new Date(Date.UTC(2026, 7, 8)) // 8 สิงหาคม 2026
+    const seasonStart = new Date(Date.UTC(2026, 1, 1)) 
 
     // Round Robin Algorithm
     for (let r = 0; r < 19; r++) {
