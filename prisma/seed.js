@@ -138,6 +138,7 @@ async function main() {
                 name: randomName(),
                 age,
                 naturalPosition: p.nat,
+                retirementAge: randomInt(30, 40),
                 tacticalPosition: tacPos,
                 morale: 100,
                 condition: 100,

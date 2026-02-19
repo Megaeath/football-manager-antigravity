@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updateTacticalPosition, updateTeamTactics } from '../actions';
 import { calculateSuitability } from '../../lib/engine/suitability';
 import Link from 'next/link';
@@ -14,6 +15,7 @@ type PlayerProps = {
     morale: number;
     tacticalPosition: string | null;
     suitability: number;
+    fitnessSuitability: number;
     rawAttributes: any;
     goals: number;
     assists: number;
@@ -93,6 +95,32 @@ export default function SquadClient({ teamId, players, currentTactics }: {
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string }
 }) {
     const [loading, setLoading] = useState(false);
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const fromMatch = searchParams.get('from') === 'match';
+    const matchId = searchParams.get('matchId');
+
+    const handleStartMatch = async () => {
+        if (!matchId) return;
+        setLoading(true);
+        try {
+            const res = await fetch('/api/game/process', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'simulate_match', matchId })
+            });
+            const data = await res.json();
+            if (data?.error) {
+                alert('Simulation failed: ' + data.error);
+                return;
+            }
+            router.push(`/match?matchId=${matchId}`);
+        } catch (error) {
+            console.error('Failed to start match', error);
+            alert('Simulation failed');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleAssign = async (posId: string, playerId: string) => {
         setLoading(true);
@@ -144,7 +172,7 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                     .map(p => ({
                         playerId: p.id,
                         position: slot.id,
-                        suitability: calculateSuitability(p.rawAttributes, slotBase)
+                        suitability: Math.round(calculateSuitability(p.rawAttributes, slotBase) * Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2))
                     }))
                     .sort((a, b) => b.suitability - a.suitability)[0];
 
@@ -176,6 +204,18 @@ export default function SquadClient({ teamId, players, currentTactics }: {
 
     return (
         <div>
+            {fromMatch && matchId && (
+                <div className="card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                        <h3 style={{ margin: 0 }}>พร้อมเริ่มแข่งแล้วใช่ไหม?</h3>
+                        <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>จัดทีมเสร็จแล้วกดเริ่มเกมได้เลย</p>
+                    </div>
+                    <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary">
+                        {loading ? 'กำลังเริ่มเกม...' : 'เริ่มแข่ง'}
+                    </button>
+                </div>
+            )}
+
             {/* TACTICAL SETTINGS */}
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', padding: '1rem', background: '#f5f5f5', borderRadius: '8px' }}>
                 <div>
@@ -275,9 +315,9 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                                     <div style={{ width: '40px', textAlign: 'right', fontSize: '0.8rem' }}>
                                         {currentPlayer ? (
                                             <span style={{
-                                                color: calculateSuitability(currentPlayer.rawAttributes, slot.id.split('_')[0]) > 70 ? '#2e7d32' : '#c62828', fontWeight: 'bold'
+                                                color: (currentPlayer.fitnessSuitability ?? 0) > 70 ? '#2e7d32' : '#c62828', fontWeight: 'bold'
                                             }}>
-                                                {calculateSuitability(currentPlayer.rawAttributes, slot.id.split('_')[0])}%
+                                                {currentPlayer.fitnessSuitability ?? 0}%
                                             </span>
                                         ) : '-'}
                                     </div>

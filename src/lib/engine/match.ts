@@ -201,7 +201,7 @@ function executeDribble(
         ball.carrier = defender;
     }
 
-    applyActionDrain(player, 'MEDIUM', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
+    applyActionDrain(player, 'HIGH', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
     applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
 }
 
@@ -327,7 +327,7 @@ function executeShoot(
     }
 
     applyActionDrain(player, 'HIGH', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
-    applyActionDrain(gk, 'MEDIUM', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
+    applyActionDrain(gk, 'LOW', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
 }
 
 function checkDefensiveInterruption(
@@ -378,6 +378,7 @@ function initializePlayerStats(team: TeamState): Record<string, EnginePlayerMatc
             tacklesWon: 0,
             dribblesAttempted: 0,
             dribblesWon: 0,
+            fitnessEnd: 100,
             fouls: 0,
             yellowCards: 0,
             redCards: 0,
@@ -434,6 +435,10 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
         carrier: null
     };
 
+    let homeSubsUsed = 0;
+    let awaySubsUsed = 0;
+    const maxSubs = 5;
+
     // BALL PROGRESSION SYSTEM: 90 minutes, 3 ticks per minute = 270 game ticks
     for (let minute = 1; minute <= 90; minute++) {
         matchState.minute = minute;
@@ -489,7 +494,17 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
 
         updateFitness(homeTeam);
         updateFitness(awayTeam);
+
+        homeSubsUsed = attemptSubstitutions(homeTeam, matchState, minute, ball, homeSubsUsed, maxSubs);
+        awaySubsUsed = attemptSubstitutions(awayTeam, matchState, minute, ball, awaySubsUsed, maxSubs);
     }
+
+    // Capture end-of-match fitness for all players
+    [...homeTeam.players, ...awayTeam.players].forEach(p => {
+        if (matchState.playerStats[p.id]) {
+            matchState.playerStats[p.id].fitnessEnd = Math.round(p.condition);
+        }
+    });
 
     // Recalculate score from player goals to avoid mismatches
     const goalTotals = Object.values(matchState.playerStats).reduce(
@@ -607,6 +622,95 @@ function updateFitness(team: TeamState) {
             p.condition = Math.max(0, p.condition - drain);
         }
     });
+}
+
+function performSubstitution(
+    team: TeamState,
+    matchState: MatchState,
+    minute: number,
+    ball: BallState,
+    outPlayer: PlayerState,
+    inPlayer: PlayerState
+) {
+    const outSlot = outPlayer.tacticalPosition;
+    outPlayer.tacticalPosition = null;
+    inPlayer.tacticalPosition = outSlot;
+
+    if (matchState.playerStats[outPlayer.id]) {
+        matchState.playerStats[outPlayer.id].minutes = Math.min(matchState.playerStats[outPlayer.id].minutes, minute);
+    }
+    if (matchState.playerStats[inPlayer.id]) {
+        matchState.playerStats[inPlayer.id].minutes = Math.max(matchState.playerStats[inPlayer.id].minutes, 90 - minute);
+    }
+
+    if (ball.carrier?.id === outPlayer.id) {
+        ball.carrier = inPlayer;
+    }
+
+    matchState.events.push({
+        minute,
+        type: 'SUB',
+        text: `Substitution: ${outPlayer.name} off, ${inPlayer.name} on.`,
+        teamId: team.id,
+        playerId: inPlayer.id
+    });
+}
+
+function attemptSubstitutions(
+    team: TeamState,
+    matchState: MatchState,
+    minute: number,
+    ball: BallState,
+    subsUsed: number,
+    maxSubs: number
+): number {
+    if (subsUsed >= maxSubs) return subsUsed;
+    if (minute < 55) return subsUsed;
+
+    const starters = team.players.filter(p => p.tacticalPosition !== null && p.position !== 'GK');
+    const availableBench = team.players.filter(p => p.tacticalPosition === null && p.position !== 'GK');
+    if (availableBench.length === 0) return subsUsed;
+
+    const tiredStarters = starters
+        .filter(p => p.condition < 70)
+        .sort((a, b) => a.condition - b.condition);
+
+    const getPositionGroup = (pos: string) => {
+        if (pos === 'GK') return 'GK';
+        if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 'DEF';
+        if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 'MID';
+        if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 'FWD';
+        return 'MID';
+    };
+
+    for (const outPlayer of tiredStarters) {
+        if (subsUsed >= maxSubs) break;
+        const slotBase = outPlayer.tacticalPosition ? outPlayer.tacticalPosition.split('_')[0] : outPlayer.position;
+        const outGroup = getPositionGroup(slotBase);
+
+        const samePosition = availableBench.filter(p => p.position === slotBase);
+        const sameGroup = availableBench.filter(p => getPositionGroup(p.position) === outGroup);
+        const midGroup = availableBench.filter(p => getPositionGroup(p.position) === 'MID');
+
+        const pickBest = (list: PlayerState[]) => list.sort((a, b) => b.condition - a.condition)[0];
+
+        let bestBench = pickBest(samePosition);
+        if (!bestBench) bestBench = pickBest(sameGroup);
+        if (!bestBench && (outGroup === 'DEF' || outGroup === 'FWD')) bestBench = pickBest(midGroup);
+        if (!bestBench) bestBench = pickBest(availableBench);
+
+        if (!bestBench) continue;
+
+        performSubstitution(team, matchState, minute, ball, outPlayer, bestBench);
+        subsUsed += 1;
+
+        const removeIdx = availableBench.findIndex(p => p.id === bestBench.id);
+        if (removeIdx >= 0) {
+            availableBench.splice(removeIdx, 1);
+        }
+    }
+
+    return subsUsed;
 }
 
 function calculateRatings(matchState: MatchState) {

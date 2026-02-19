@@ -1,6 +1,119 @@
 import prisma from '@/lib/prisma';
 import { simulateMatch } from '../engine/match';
-import { TeamState, PlayerState, Position, EnginePlayerMatchStats } from '../engine/types';
+import { calculateSuitability } from '../engine/suitability';
+import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes } from '../engine/types';
+
+const FORMATIONS: Record<string, { id: string }[]> = {
+    '4-4-2': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MR' },
+        { id: 'MC_R' },
+        { id: 'MC_L' },
+        { id: 'ML' },
+        { id: 'FW_R' },
+        { id: 'FW_L' }
+    ],
+    '4-3-3': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MC_R' },
+        { id: 'MC' },
+        { id: 'MC_L' },
+        { id: 'FW_R' },
+        { id: 'FW' },
+        { id: 'FW_L' }
+    ],
+    '5-3-2': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MC_R' },
+        { id: 'MC' },
+        { id: 'MC_L' },
+        { id: 'FW_R' },
+        { id: 'FW_L' }
+    ],
+    '4-5-1': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MR' },
+        { id: 'MC_R' },
+        { id: 'MC' },
+        { id: 'MC_L' },
+        { id: 'ML' },
+        { id: 'FW' }
+    ]
+};
+
+function mapAttributes(p: any): PlayerAttributes {
+    return {
+        handling: p.handling,
+        tackling: p.tackling,
+        passing: p.passing,
+        shooting: p.shooting,
+        heading: p.heading,
+        dribbling: p.dribbling,
+        crossing: p.crossing,
+        setPieces: p.setPieces,
+        aggression: p.aggression,
+        positioning: p.positioning,
+        vision: p.vision,
+        bravery: p.bravery,
+        leadership: p.leadership,
+        teamwork: p.teamwork,
+        composure: p.composure,
+        pace: p.pace,
+        acceleration: p.acceleration,
+        stamina: p.stamina,
+        strength: p.strength,
+        agility: p.agility,
+        balance: p.balance
+    };
+}
+
+function getFitnessSuitability(attributes: PlayerAttributes, targetPosition: string, condition: number): number {
+    const base = calculateSuitability(attributes, targetPosition);
+    const factor = Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
+    return Math.round(base * factor);
+}
+
+function autoSelectLineup(team: any) {
+    const slots = FORMATIONS[team.formation] || FORMATIONS['4-4-2'];
+    const usedPlayers = new Set<string>();
+    const assignments: { playerId: string; position: string }[] = [];
+
+    for (const slot of slots) {
+        const slotBase = slot.id.split('_')[0];
+        const bestPlayer = team.players
+            .filter((p: any) => !usedPlayers.has(p.id))
+            .map((p: any) => ({
+                playerId: p.id,
+                position: slot.id,
+                suitability: getFitnessSuitability(mapAttributes(p), slotBase, p.condition)
+            }))
+            .sort((a: any, b: any) => b.suitability - a.suitability)[0];
+
+        if (bestPlayer) {
+            assignments.push({ playerId: bestPlayer.playerId, position: bestPlayer.position });
+            usedPlayers.add(bestPlayer.playerId);
+        }
+    }
+
+    return assignments;
+}
 
 function mapPlayer(p: any): PlayerState {
     return {
@@ -33,6 +146,62 @@ export async function processMatch(matchId: string) {
     }) as any;
 
     if (!matchDB || matchDB.isPlayed) return null;
+
+    const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
+    const userTeamId = settings?.userTeamId ?? null;
+
+    const homeHasManual = matchDB.homeTeam.id === userTeamId
+        && matchDB.homeTeam.players.some((p: any) => p.tacticalPosition);
+    const awayHasManual = matchDB.awayTeam.id === userTeamId
+        && matchDB.awayTeam.players.some((p: any) => p.tacticalPosition);
+
+    const homeAssignments = homeHasManual ? [] : autoSelectLineup(matchDB.homeTeam);
+    const awayAssignments = awayHasManual ? [] : autoSelectLineup(matchDB.awayTeam);
+
+    await prisma.$transaction(async (tx) => {
+        if (!homeHasManual) {
+            await tx.player.updateMany({
+                where: { teamId: matchDB.homeTeam.id },
+                data: { tacticalPosition: null }
+            });
+
+            for (const assignment of homeAssignments) {
+                await tx.player.update({
+                    where: { id: assignment.playerId },
+                    data: { tacticalPosition: assignment.position }
+                });
+            }
+        }
+
+        if (!awayHasManual) {
+            await tx.player.updateMany({
+                where: { teamId: matchDB.awayTeam.id },
+                data: { tacticalPosition: null }
+            });
+
+            for (const assignment of awayAssignments) {
+                await tx.player.update({
+                    where: { id: assignment.playerId },
+                    data: { tacticalPosition: assignment.position }
+                });
+            }
+        }
+    });
+
+    // Update in-memory players for simulation
+    if (!homeHasManual) {
+        matchDB.homeTeam.players.forEach((p: any) => {
+            const found = homeAssignments.find(a => a.playerId === p.id);
+            p.tacticalPosition = found ? found.position : null;
+        });
+    }
+
+    if (!awayHasManual) {
+        matchDB.awayTeam.players.forEach((p: any) => {
+            const found = awayAssignments.find(a => a.playerId === p.id);
+            p.tacticalPosition = found ? found.position : null;
+        });
+    }
 
     const homeTeam: TeamState = {
         id: matchDB.homeTeam.id,
@@ -155,6 +324,7 @@ export async function processMatch(matchId: string) {
             dribblesAttempted: stat.dribblesAttempted,
             dribblesWon: stat.dribblesWon,
             saves: stat.saves,
+            fitnessEnd: stat.fitnessEnd,
             yellowCards: stat.yellowCards,
             redCards: stat.redCards
         }));
@@ -172,6 +342,7 @@ export async function processMatch(matchId: string) {
                     apps: { increment: stat.minutes > 0 ? 1 : 0 },
                     yellowCards: { increment: stat.yellowCards },
                     redCards: { increment: stat.redCards },
+                    condition: stat.fitnessEnd,
                     passesAttempted: { increment: stat.passesAttempted },
                     passesCompleted: { increment: stat.passesCompleted },
                     crossesAttempted: { increment: stat.crossesAttempted },

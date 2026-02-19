@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // Types
 type TeamMatchStats = {
@@ -48,6 +48,7 @@ export default function MatchPage() {
 function MatchContent() {
     const searchParams = useSearchParams();
     const queryMatchId = searchParams.get('matchId');
+    const router = useRouter();
 
     const [gameInfo, setGameInfo] = useState<any>(null);
     const [todaysMatches, setTodaysMatches] = useState<MatchData[]>([]);
@@ -114,9 +115,10 @@ function MatchContent() {
             const data = await res.json();
 
             if (data.success) {
+                setMatchData(null);
+                router.replace('/match');
                 if (data.autoAdvanced) {
                     // All matches were simulated and day was advanced
-                    setMatchData(null);
                     fetchData();
                     window.dispatchEvent(new Event('game-date-updated'));
                 } else if (data.requiresUserAction) {
@@ -167,6 +169,19 @@ function MatchContent() {
     // 3. OR User has played their match already
     const showNextProcess = unplayedMatches.length === 0 || !isUserPlayingToday || userMatchPlayed;
 
+    const getSubstitutionInfo = (teamId: string) => {
+        const subs = (matchData?.events || []).filter((e: any) => e.type === 'SUB' && e.teamId === teamId);
+        const subInIds = new Set(subs.map((e: any) => e.playerId).filter(Boolean));
+        const subOutNames = new Set(
+            subs.map((e: any) => {
+                const match = typeof e.text === 'string' ? e.text.match(/Substitution:\s*(.+)\s*off,\s*(.+)\s*on\.?/i) : null;
+                return match ? match[1].trim() : null;
+            }).filter(Boolean)
+        );
+
+        return { subInIds, subOutNames };
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -213,7 +228,14 @@ function MatchContent() {
                                 <div style={{ margin: '0 2rem', background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.1rem' }}>VS</div>
                                 <div style={{ flex: 1, textAlign: 'left', fontWeight: 'bold', fontSize: '1.4rem' }}>{userMatch?.awayTeam.name}</div>
                                 <div style={{ marginLeft: '2rem' }}>
-                                    <button onClick={() => runSimulation(userMatch!.id)} disabled={loading} className="btn btn-primary" style={{ padding: '10px 24px' }}>เข้าสู่สนาม</button>
+                                    <button
+                                        onClick={() => router.push(`/squad?from=match&matchId=${userMatch!.id}`)}
+                                        disabled={loading}
+                                        className="btn btn-primary"
+                                        style={{ padding: '10px 24px' }}
+                                    >
+                                        จัดทีมก่อนเริ่มแข่ง
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -326,6 +348,7 @@ function MatchContent() {
                                             case 'OFFSIDE': return '🚩';
                                             case 'CORNER': return '📐';
                                             case 'FOUL': return '🔔';
+                                            case 'SUB': return '🔁';
                                             default: return '●';
                                         }
                                     };
@@ -357,6 +380,7 @@ function MatchContent() {
                                         <th style={{ padding: '12px' }}>NAME</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>MIN</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>RAT</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }}>FIT</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>SHOTS</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>PASSES</th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>CROSS</th>
@@ -366,20 +390,51 @@ function MatchContent() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {Object.values(matchData.playerStats)
+                                    {(() => {
+                                        const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
+                                        const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
+                                        const subInOrder = new Map<string, number>();
+                                        (matchData?.events || [])
+                                            .filter((e: any) => e.type === 'SUB' && e.teamId === teamId && e.playerId)
+                                            .forEach((e: any, idx: number) => subInOrder.set(e.playerId, idx));
+
+                                        return Object.values(matchData.playerStats)
                                         .filter((p: any) => p.teamId === (activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId))
                                         .sort((a: any, b: any) => {
-                                            const aStarted = a.minutes > 0;
-                                            const bStarted = b.minutes > 0;
-                                            if (aStarted !== bStarted) return aStarted ? -1 : 1;
-                                            return (a.positionOrder || 99) - (b.positionOrder || 99);
+                                            const aIsSubIn = subInIds.has(a.playerId);
+                                            const bIsSubIn = subInIds.has(b.playerId);
+                                            const aGroup = a.minutes === 0 ? 2 : (aIsSubIn ? 1 : 0);
+                                            const bGroup = b.minutes === 0 ? 2 : (bIsSubIn ? 1 : 0);
+                                            if (aGroup !== bGroup) return aGroup - bGroup;
+
+                                            const getPosOrder = (pos: string) => {
+                                                if (pos === 'GK') return 0;
+                                                if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 1;
+                                                if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 2;
+                                                if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 3;
+                                                return 9;
+                                            };
+
+                                            if (aGroup === 1 && bGroup === 1) {
+                                                const aSubOrder = subInOrder.get(a.playerId) ?? 99;
+                                                const bSubOrder = subInOrder.get(b.playerId) ?? 99;
+                                                if (aSubOrder !== bSubOrder) return aSubOrder - bSubOrder;
+                                                return a.name.localeCompare(b.name);
+                                            }
+
+                                            const aOrder = getPosOrder(a.position);
+                                            const bOrder = getPosOrder(b.position);
+                                            if (aOrder !== bOrder) return aOrder - bOrder;
+                                            return a.name.localeCompare(b.name);
                                         })
                                         .map((p: any) => {
+                                            const isSubIn = subInIds.has(p.playerId);
+                                            const isSubOut = subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             return (
                                                 <tr key={p.playerId} style={{
                                                     borderBottom: '1px solid var(--border)',
-                                                    opacity: p.minutes === 0 ? 0.5 : 1,
+                                                    opacity: (p.minutes === 0 || isSubOut) ? 0.5 : 1,
                                                     background: isMotM ? 'rgba(var(--primary-rgb), 0.05)' : 'transparent'
                                                 }}>
                                                     <td style={{ padding: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>{p.position}</td>
@@ -388,6 +443,8 @@ function MatchContent() {
                                                             <Link href={`/player/${p.playerId}`} style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none' }}>
                                                                 {p.name}
                                                             </Link>
+                                                            {isSubIn && <span title="Subbed On">🔼</span>}
+                                                            {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
                                                             {p.goals > 0 && <span title="Goals">{'⚽'.repeat(p.goals)}</span>}
                                                             {p.assists > 0 && <span title="Assists">{'🅰️'.repeat(p.assists)}</span>}
@@ -398,6 +455,9 @@ function MatchContent() {
                                                     <td style={{ padding: '12px', textAlign: 'center' }}>{p.minutes}'</td>
                                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: isMotM ? 'var(--accent)' : (p.minutes > 0 ? 'var(--primary)' : 'var(--muted)') }}>
                                                         {p.rating.toFixed(1)}
+                                                    </td>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? `${p.fitnessEnd ?? 0}` : '-'}
                                                     </td>
                                                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
                                                         {p.minutes > 0 ? `${p.shotsOnTarget}/${p.shots}` : '-'}
@@ -424,7 +484,8 @@ function MatchContent() {
                                                     </td>
                                                 </tr>
                                             );
-                                        })}
+                                        });
+                                    })()}
                                 </tbody>
                             </table>
                         )}

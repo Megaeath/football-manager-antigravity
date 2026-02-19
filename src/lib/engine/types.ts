@@ -81,6 +81,7 @@ export interface EnginePlayerMatchStats {
     tacklesWon: number;
     dribblesAttempted: number;
     dribblesWon: number;
+    fitnessEnd: number; // 0-100 end-of-match fitness
     fouls: number;
     yellowCards: number;
     redCards: number;

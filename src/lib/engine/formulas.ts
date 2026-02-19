@@ -17,7 +17,7 @@ export function calculateActionScore(
     const config = calculations.actions[action];
     if (!config) return 0;
 
-    let formula = role === 'attacker' ? config.attacker_formula : config.defender_formula;
+    const formula = role === 'attacker' ? config.attacker_formula : config.defender_formula;
     const bonuses = role === 'attacker' ? config.attacker_bonus : config.defender_bonus;
 
     // 1. Evaluate Formula
@@ -58,7 +58,10 @@ export function calculateActionScore(
     });
 
     // 3. Apply Condition Impact (0-100)
-    score = score * (condition / 100);
+    // Use a steeper curve so low fitness hurts success more
+    const normalized = Math.max(0, Math.min(1, condition / 100));
+    const conditionFactor = Math.pow(normalized, 1.8);
+    score = score * conditionFactor;
 
     return score;
 }

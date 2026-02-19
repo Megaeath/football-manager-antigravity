@@ -177,6 +177,7 @@ model PlayerMatchStats {
   saves             Int @default(0) // GK
   yellowCards       Int @default(0)
   redCards          Int @default(0)
+  fitnessEnd        Int @default(100) // End-of-match fitness (0-100)
   
   match     Match    @relation(fields: [matchId], references: [id])
   player    Player   @relation(fields: [playerId], references: [id])

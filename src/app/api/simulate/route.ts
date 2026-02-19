@@ -134,7 +134,8 @@ export async function GET() {
                 tacklesWon: stat.tacklesWon,
                 dribblesAttempted: stat.dribblesAttempted,
                 dribblesWon: stat.dribblesWon,
-                saves: stat.saves
+                saves: stat.saves,
+                fitnessEnd: stat.fitnessEnd
             }));
 
             if (statsToCreate.length > 0) {
@@ -152,7 +153,8 @@ export async function GET() {
                         assists: { increment: stat.assists },
                         apps: { increment: stat.minutes > 0 ? 1 : 0 },
                         yellowCards: { increment: stat.yellowCards },
-                        redCards: { increment: stat.redCards }
+                        redCards: { increment: stat.redCards },
+                        condition: stat.fitnessEnd
                     }
                 });
             }

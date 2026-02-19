@@ -45,6 +45,9 @@ export default async function SquadPage() {
         };
 
         const currentPosId = p.tacticalPosition ? p.tacticalPosition.split('_')[0] : null;
+        const baseSuitability = currentPosId ? calculateSuitability(attrs, currentPosId) : 0;
+        const fitnessFactor = Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2);
+        const fitnessSuitability = Math.round(baseSuitability * fitnessFactor);
 
         return {
             id: p.id,
@@ -54,7 +57,8 @@ export default async function SquadPage() {
             condition: p.condition,
             morale: p.morale,
             tacticalPosition: p.tacticalPosition,
-            suitability: currentPosId ? calculateSuitability(attrs, currentPosId) : 0,
+            suitability: baseSuitability,
+            fitnessSuitability,
             rawAttributes: attrs,
             goals: p.goals,
             assists: p.assists,

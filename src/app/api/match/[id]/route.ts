@@ -50,6 +50,7 @@ export async function GET(
                 tacklesWon: ps.tacklesWon,
                 yellowCards: ps.yellowCards,
                 redCards: ps.redCards,
+                fitnessEnd: ps.fitnessEnd,
                 dribblesAttempted: ps.dribblesAttempted,
                 dribblesWon: ps.dribblesWon
             };
