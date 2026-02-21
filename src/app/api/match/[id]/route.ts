@@ -89,9 +89,18 @@ export async function GET(
             bucket.redCards += ps.redCards || 0;
         });
 
+        // Calculate possession based on passes completed
+        const homePassesCompleted = derivedTeamStats.home.passesCompleted;
+        const awayPassesCompleted = derivedTeamStats.away.passesCompleted;
+        const totalPasses = homePassesCompleted + awayPassesCompleted;
+        let homePossession = 50;
+        if (totalPasses > 0) {
+            homePossession = Math.round((homePassesCompleted / totalPasses) * 100);
+        }
+
         const mergedTeamStats = {
-            home: { ...defaultTeamStats, ...(baseTeamStats?.home ?? {}), ...derivedTeamStats.home },
-            away: { ...defaultTeamStats, ...(baseTeamStats?.away ?? {}), ...derivedTeamStats.away }
+            home: { ...defaultTeamStats, ...(baseTeamStats?.home ?? {}), ...derivedTeamStats.home, possession: homePossession },
+            away: { ...defaultTeamStats, ...(baseTeamStats?.away ?? {}), ...derivedTeamStats.away, possession: 100 - homePossession }
         };
 
         const result = {

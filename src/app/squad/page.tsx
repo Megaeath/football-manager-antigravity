@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { calculateSuitability } from '../../lib/engine/suitability';
 import { PlayerAttributes } from '../../lib/engine/types';
 import SquadClient from './SquadClient';
+import { Suspense } from 'react';
 
 async function getUserTeam() {
     const settings = await prisma.globalGameSettings.findUnique({
@@ -41,7 +42,7 @@ export default async function SquadPage() {
             aggression: p.aggression, positioning: p.positioning, vision: p.vision,
             bravery: p.bravery, leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
             pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
-            agility: p.agility, balance: p.balance
+            agility: p.agility, balance: p.balance, crossing: p.crossing
         };
 
         const currentPosId = p.tacticalPosition ? p.tacticalPosition.split('_')[0] : null;
@@ -63,7 +64,9 @@ export default async function SquadPage() {
             goals: p.goals,
             assists: p.assists,
             apps: p.apps,
-            avgRating: p.avgRating
+            avgRating: p.avgRating,
+            birthDate: p.birthDate,
+            retirementAge: p.retirementAge
         };
     });
 
@@ -86,7 +89,9 @@ export default async function SquadPage() {
                 </p>
             </div>
 
-            <SquadClient teamId={team.id} players={playerswithSuitability} currentTactics={currentTactics} />
+            <Suspense fallback={<div>Loading squad...</div>}>
+                <SquadClient teamId={team.id} players={playerswithSuitability} currentTactics={currentTactics} />
+            </Suspense>
         </div>
     );
 }

@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updateTacticalPosition, updateTeamTactics } from '../actions';
 import { calculateSuitability } from '../../lib/engine/suitability';
-import Link from 'next/link';
+import type { PlayerAttributes } from '../../lib/engine/types';
+import PlayerModal from '@/components/PlayerModal';
 
 type PlayerProps = {
     id: string;
@@ -16,7 +17,7 @@ type PlayerProps = {
     tacticalPosition: string | null;
     suitability: number;
     fitnessSuitability: number;
-    rawAttributes: any;
+    rawAttributes: PlayerAttributes;
     goals: number;
     assists: number;
     apps: number;
@@ -95,6 +96,8 @@ export default function SquadClient({ teamId, players, currentTactics }: {
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string }
 }) {
     const [loading, setLoading] = useState(false);
+    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
     const router = useRouter();
     const searchParams = useSearchParams();
     const fromMatch = searchParams.get('from') === 'match';
@@ -122,11 +125,13 @@ export default function SquadClient({ teamId, players, currentTactics }: {
         }
     };
 
-    const handleAssign = async (posId: string, playerId: string) => {
+    const handleAssign = async (playerId: string, posId: string, currentPosId?: string | null) => {
         setLoading(true);
         try {
-            if (!playerId) {
-                await clearTacticalPosition(teamId, posId);
+            if (!posId) {
+                if (currentPosId) {
+                    await clearTacticalPosition(teamId, currentPosId);
+                }
                 return;
             }
             await updateTacticalPosition(playerId, teamId, posId);
@@ -201,6 +206,53 @@ export default function SquadClient({ teamId, players, currentTactics }: {
     });
 
     const slots = FORMATIONS[currentTactics.formation] || FORMATIONS['4-4-2'];
+
+    const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
+    const getFitnessFactor = (condition: number) => Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
+    const toHundred = (values: number[]) => {
+        if (!values.length) return 0;
+        const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+        return Math.round((avg / 20) * 100);
+    };
+    const getPower = (p: PlayerProps) => {
+        const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
+        const suitability = calculateSuitability(p.rawAttributes, targetPos);
+        return Math.round(suitability * getFitnessFactor(p.condition));
+    };
+
+    const getBasePower = (p: PlayerProps) => {
+        const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
+        const suitability = calculateSuitability(p.rawAttributes, targetPos);
+        return Math.round(suitability);
+    };
+
+    const posGroupOrder: Record<string, number> = {
+        GK: 0,
+        DF: 1,
+        MF: 2,
+        FW: 3
+    };
+    const getGroup = (pos?: string | null) => {
+        const p = pos || '';
+        if (p.startsWith('GK')) return 'GK';
+        if (p.startsWith('D')) return 'DF';
+        if (p.startsWith('M') || p.startsWith('A')) return 'MF';
+        return 'FW';
+    };
+
+    const handleSort = (key: typeof sortKey) => {
+        if (key === 'pos') {
+            setSortKey('pos');
+            setSortDir('asc');
+            return;
+        }
+        if (sortKey === key) {
+            setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortKey(key);
+            setSortDir('desc');
+        }
+    };
 
     return (
         <div>
@@ -280,73 +332,139 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem' }}>
-
-                {/* TACTICS BOARD */}
-                <div style={{ background: '#e8f5e9', padding: '2rem', borderRadius: '8px', border: '2px solid #4caf50' }}>
-                    <h3 style={{ textAlign: 'center', marginBottom: '1.5rem', marginTop: 0 }}>Starting XI</h3>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {slots.map(slot => {
-                            const currentPlayer = getPlayerInPos(slot.id);
-
-                            return (
-                                <div key={slot.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ddd' }}>
-                                    <div style={{ fontWeight: 'bold', width: '60px', color: '#333', fontSize: '0.9rem' }}>{slot.label}</div>
-                                    <div style={{ flex: 1, margin: '0 1rem' }}>
-                                        <select
-                                            style={{ width: '100%', padding: '4px', border: '1px solid #ccc' }}
-                                            value={currentPlayer ? currentPlayer.id : ''}
-                                            onChange={(e) => handleAssign(slot.id, e.target.value)}
-                                            disabled={loading}
-                                        >
-                                            <option value="">-- Select Player --</option>
-                                            {sortedPlayers.map(p => (
-                                                <option
-                                                    key={p.id}
-                                                    value={p.id}
-                                                    style={{ background: p.tacticalPosition ? '#e8f5e9' : '#fff' }}
-                                                >
-                                                    {p.tacticalPosition ? '✓ ' : ''}{p.name} ({p.naturalPosition}) {p.tacticalPosition && p.tacticalPosition !== slot.id ? `[${p.tacticalPosition}]` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div style={{ width: '40px', textAlign: 'right', fontSize: '0.8rem' }}>
-                                        {currentPlayer ? (
-                                            <span style={{
-                                                color: (currentPlayer.fitnessSuitability ?? 0) > 70 ? '#2e7d32' : '#c62828', fontWeight: 'bold'
-                                            }}>
-                                                {currentPlayer.fitnessSuitability ?? 0}%
-                                            </span>
-                                        ) : '-'}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* SQUAD LIST */}
-                <div>
-                    <h3 style={{ marginTop: 0 }}>Squad List</h3>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                        <thead>
-                            <tr style={{ textAlign: 'left', borderBottom: '2px solid #333' }}>
-                                <th style={{ padding: '6px' }}>Name</th>
-                                <th style={{ padding: '6px' }}>Pos</th>
-                                <th style={{ padding: '6px', textAlign: 'center' }}>App</th>
-                                <th style={{ padding: '6px', textAlign: 'center' }}>G</th>
-                                <th style={{ padding: '6px', textAlign: 'center' }}>A</th>
-                                <th style={{ padding: '6px', textAlign: 'center' }}>Rtg</th>
-                                <th style={{ padding: '6px' }}>Fit</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sortedPlayers.map(p => (
+            <div>
+                <h3 style={{ marginTop: 0 }}>Squad List</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                    <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '2px solid #333' }}>
+                            <th style={{ padding: '6px' }}>Select</th>
+                            <th style={{ padding: '6px' }}>
+                                <button onClick={() => handleSort('name')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Name</button>
+                            </th>
+                            <th style={{ padding: '6px' }}>
+                                <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Pos</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>App</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('goals')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>G</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('assists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>A</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('rating')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Rtg</button>
+                            </th>
+                            <th style={{ padding: '6px' }}>
+                                <button onClick={() => handleSort('fit')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fit</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('physical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Physical</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('technical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Technical</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('tactical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Tactical</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('mental')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Mental</button>
+                            </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sortedPlayers
+                            .map(p => {
+                            const physical = toHundred([
+                                p.rawAttributes.pace,
+                                p.rawAttributes.acceleration,
+                                p.rawAttributes.stamina,
+                                p.rawAttributes.strength,
+                                p.rawAttributes.agility,
+                                p.rawAttributes.balance
+                            ]);
+                            const technical = toHundred([
+                                p.rawAttributes.handling,
+                                p.rawAttributes.tackling,
+                                p.rawAttributes.passing,
+                                p.rawAttributes.shooting,
+                                p.rawAttributes.heading,
+                                p.rawAttributes.dribbling,
+                                p.rawAttributes.crossing,
+                                p.rawAttributes.setPieces
+                            ]);
+                            const tactical = toHundred([
+                                p.rawAttributes.aggression,
+                                p.rawAttributes.positioning,
+                                p.rawAttributes.vision,
+                                p.rawAttributes.bravery,
+                                p.rawAttributes.leadership
+                            ]);
+                            const mental = toHundred([
+                                p.rawAttributes.teamwork,
+                                p.rawAttributes.composure
+                            ]);
+                            const power = getPower(p);
+                            const basePower = getBasePower(p);
+                            return { p, physical, technical, tactical, mental, power, basePower };
+                        })
+                        .sort((a, b) => {
+                            if (sortKey === 'pos') {
+                                const posA = getGroup(a.p.tacticalPosition || a.p.naturalPosition);
+                                const posB = getGroup(b.p.tacticalPosition || b.p.naturalPosition);
+                                if (posA !== posB) return posGroupOrder[posA] - posGroupOrder[posB];
+                                return (a.p.tacticalPosition || a.p.naturalPosition).localeCompare(b.p.tacticalPosition || b.p.naturalPosition);
+                            }
+                            const dir = sortDir === 'asc' ? 1 : -1;
+                            const num = (val: number) => val || 0;
+                            switch (sortKey) {
+                                case 'apps': return dir * (num(a.p.apps) - num(b.p.apps));
+                                case 'goals': return dir * (num(a.p.goals) - num(b.p.goals));
+                                case 'assists': return dir * (num(a.p.assists) - num(b.p.assists));
+                                case 'rating': return dir * ((a.p.avgRating || 0) - (b.p.avgRating || 0));
+                                case 'fit': return dir * (num(a.p.condition) - num(b.p.condition));
+                                case 'physical': return dir * (a.physical - b.physical);
+                                case 'technical': return dir * (a.technical - b.technical);
+                                case 'tactical': return dir * (a.tactical - b.tactical);
+                                case 'mental': return dir * (a.mental - b.mental);
+                                case 'power': return dir * (a.power - b.power);
+                                case 'name':
+                                default:
+                                    return dir * a.p.name.localeCompare(b.p.name);
+                            }
+                        })
+                        .map(({ p, physical, technical, tactical, mental, power, basePower }) => (
                                 <tr key={p.id} style={{ borderBottom: '1px solid #eee', background: p.tacticalPosition ? '#f0f4c3' : 'transparent' }}>
                                     <td style={{ padding: '6px' }}>
-                                        <Link href={`/player/${p.id}`} style={{ color: '#1565c0', textDecoration: 'none' }}>{p.name}</Link>
+                                        <select
+                                            value={p.tacticalPosition || ''}
+                                            onChange={(e) => handleAssign(p.id, e.target.value, p.tacticalPosition)}
+                                            disabled={loading}
+                                            style={{ padding: '4px', border: '1px solid #ccc', width: '110px' }}
+                                        >
+                                            <option value="">-</option>
+                                            {slots.map(slot => {
+                                                const assigned = getPlayerInPos(slot.id);
+                                                const suffix = assigned && assigned.id !== p.id ? ` (${assigned.name})` : '';
+                                                return (
+                                                    <option key={slot.id} value={slot.id}>
+                                                        {slot.label}{suffix}
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                    </td>
+                                    <td style={{ padding: '6px' }}>
+                                        <button
+                                            onClick={() => router.push(`/squad?playerId=${p.id}`)}
+                                            style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                        >
+                                            {p.name}
+                                        </button>
                                         {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
                                     </td>
                                     <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
@@ -357,12 +475,20 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                                         {p.avgRating > 0 ? p.avgRating.toFixed(2) : '-'}
                                     </td>
                                     <td style={{ padding: '6px', color: p.condition < 80 ? '#c62828' : '#2e7d32' }}>{Math.round(p.condition)}%</td>
+                                    <td style={{ padding: '6px', textAlign: 'center' }}>{physical}</td>
+                                    <td style={{ padding: '6px', textAlign: 'center' }}>{technical}</td>
+                                    <td style={{ padding: '6px', textAlign: 'center' }}>{tactical}</td>
+                                    <td style={{ padding: '6px', textAlign: 'center' }}>{mental}</td>
+                                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                        {power}
+                                        {power < basePower && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
+                                    </td>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                        ))}
+                    </tbody>
+                </table>
             </div>
+            <PlayerModal />
         </div>
     );
 }

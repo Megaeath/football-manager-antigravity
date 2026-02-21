@@ -27,9 +27,11 @@ function calculateActionWeights(
 
     // Increase shooting weight when close to goal
     if (distanceToGoal <= 30) {
-        weights.SHOOT = player.attributes.shooting * 1.5;
+        weights.SHOOT = player.attributes.shooting * 1.0;
+        console.log('Shooting weight increased');
     } else if (distanceToGoal <= 40) {
         weights.SHOOT = player.attributes.shooting * 0.5;
+        console.log('Shooting weight moderate');
     }
 
     // Apply condition multiplier to all weights
@@ -179,9 +181,9 @@ function executeDribble(
     stats.dribblesAttempted++;
     matchState.playerStats[defender.id].tacklesAttempted++;
 
-    const dribbleScore = calculateActionScore('dribble', player.attributes, 'attacker', player.condition) 
+    const dribbleScore = calculateActionScore('dribble', player.attributes, 'attacker', player.condition)
         * getMentalityBuff(attackingTeam.tactics.mentality).dribble;
-    const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition) 
+    const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition)
         * getMentalityBuff(defendingTeam.tactics.mentality).tackling;
 
     const skillBonus = player.attributes.dribbling > 15 ? 1.15 : 1.0;
@@ -223,8 +225,8 @@ function executeShoot(
     teamStats.shots++;
 
     // Find goalkeeper
-    const gk = defendingTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK') 
-        || defendingTeam.players.find(p => p.position === 'GK') 
+    const gk = defendingTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK')
+        || defendingTeam.players.find(p => p.position === 'GK')
         || defendingTeam.players[0];
 
     // Calculate distance to goal
@@ -232,14 +234,14 @@ function executeShoot(
     const positionFactor = Math.max(0.3, (100 - distanceToGoal) / 100);
 
     // Shooting effectiveness decreases with distance
-    const shootScore = calculateActionScore('shoot', player.attributes, 'attacker', player.condition) 
-        * getMentalityBuff(attackingTeam.tactics.mentality).shooting 
+    const shootScore = calculateActionScore('shoot', player.attributes, 'attacker', player.condition)
+        * getMentalityBuff(attackingTeam.tactics.mentality).shooting
         * positionFactor;
 
     // GK save effectiveness increases with distance (easier saves from far)
-    const saveEffectiveness = distanceToGoal < 20 ? 0.7 : (distanceToGoal < 10 ? 0.5 : 1.0);
-    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition) 
-        * getMentalityBuff(defendingTeam.tactics.mentality).save 
+    const saveEffectiveness = distanceToGoal < 20 ? 1.0 : (distanceToGoal < 10 ? 0.9 : 1.1);
+    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition)
+        * getMentalityBuff(defendingTeam.tactics.mentality).save
         * saveEffectiveness;
 
     // Apply variance
@@ -273,7 +275,7 @@ function executeShoot(
         matchState.events.push({
             minute,
             type: 'GOAL',
-            text: miracle 
+            text: miracle
                 ? `MIRACLE GOAL! ${player.name} scores from ${distanceToGoal.toFixed(0)}m out!`
                 : `GOAL! ${player.name} scores with a clinical finish from ${distanceToGoal.toFixed(0)}m!`,
             teamId: attackingTeam.id,
@@ -518,9 +520,18 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
     matchState.homeScore = goalTotals.home;
     matchState.awayScore = goalTotals.away;
 
-    // Calculate final possession % estimate based on successful passes
-    matchState.teamStats.home.possession = 50 + Math.floor(Math.random() * 10 - 5);
-    matchState.teamStats.away.possession = 100 - matchState.teamStats.home.possession;
+    // Calculate final possession % based on successful passes completed
+    const homePassesCompleted = matchState.teamStats.home.passesCompleted;
+    const awayPassesCompleted = matchState.teamStats.away.passesCompleted;
+    const totalPasses = homePassesCompleted + awayPassesCompleted;
+
+    if (totalPasses > 0) {
+        matchState.teamStats.home.possession = Math.round((homePassesCompleted / totalPasses) * 100);
+        matchState.teamStats.away.possession = 100 - matchState.teamStats.home.possession;
+    } else {
+        matchState.teamStats.home.possession = 50;
+        matchState.teamStats.away.possession = 50;
+    }
 
     // Finalize Ratings
     calculateRatings(matchState);
@@ -532,9 +543,9 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
 function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking: boolean): PlayerState {
     // Calculate which zone the ball is in relative to attacking direction
     const effectivePosition = isAttacking ? ballPosition : (100 - ballPosition);
-    
+
     let positionWeights: { positions: string[], weight: number }[] = [];
-    
+
     if (effectivePosition < 35) {
         // Defensive third - defenders dominate
         positionWeights = [
@@ -560,31 +571,31 @@ function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking
             { positions: ['DC', 'DR', 'DL'], weight: 3 }
         ];
     }
-    
+
     // Build weighted candidate list
     const weightedCandidates: { player: PlayerState, weight: number }[] = [];
-    
+
     for (const group of positionWeights) {
-        const candidates = team.players.filter(p => 
-            group.positions.includes(p.position) && 
+        const candidates = team.players.filter(p =>
+            group.positions.includes(p.position) &&
             p.tacticalPosition !== null &&
             p.position !== 'GK'
         );
-        
+
         for (const player of candidates) {
             weightedCandidates.push({ player, weight: group.weight });
         }
     }
-    
+
     if (weightedCandidates.length === 0) {
         // Fallback to any non-GK player
         return team.players.find(p => p.position !== 'GK') || team.players[1];
     }
-    
+
     // Weighted random selection
     const totalWeight = weightedCandidates.reduce((sum, c) => sum + c.weight, 0);
     const roll = Math.random() * totalWeight;
-    
+
     let cumulative = 0;
     for (const candidate of weightedCandidates) {
         cumulative += candidate.weight;
@@ -592,7 +603,7 @@ function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking
             return candidate.player;
         }
     }
-    
+
     return weightedCandidates[0].player;
 }
 

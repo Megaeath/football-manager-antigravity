@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
+import PlayerModal from '@/components/PlayerModal';
 
 // Types
 type TeamMatchStats = {
@@ -440,9 +440,12 @@ function MatchContent() {
                                                     <td style={{ padding: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>{p.position}</td>
                                                     <td style={{ padding: '12px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            <Link href={`/player/${p.playerId}`} style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none' }}>
+                                                            <button 
+                                                                onClick={() => router.push(`/match?matchId=${queryMatchId}&playerId=${p.playerId}`)}
+                                                                style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                                            >
                                                                 {p.name}
-                                                            </Link>
+                                                            </button>
                                                             {isSubIn && <span title="Subbed On">🔼</span>}
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
@@ -496,6 +499,7 @@ function MatchContent() {
                     </div>
                 </div>
             )}
+            <PlayerModal />
         </div>
     );
 }

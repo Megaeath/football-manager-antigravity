@@ -31,6 +31,7 @@ function mapPlayer(p: any): PlayerState {
             strength: p.strength,
             agility: p.agility,
             balance: p.balance,
+            crossing: p.crossing,
         },
         condition: p.condition,
         morale: p.morale,
