@@ -104,12 +104,19 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1 }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch }: {
     teamId: string,
     players: PlayerProps[],
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
     matches?: MatchType[],
-    currentSeason?: number
+    currentSeason?: number,
+    upcomingMatch?: {
+        id: string;
+        homeTeamId: string;
+        awayTeamId: string;
+        homeTeam: { id: string; name: string };
+        awayTeam: { id: string; name: string };
+    }
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
@@ -290,15 +297,31 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
     return (
         <div>
-            {fromMatch && matchId && (
-                <div className="card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div>
-                        <h3 style={{ margin: 0 }}>พร้อมเริ่มแข่งแล้วใช่ไหม?</h3>
-                        <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>จัดทีมเสร็จแล้วกดเริ่มเกมได้เลย</p>
+            {fromMatch && matchId && upcomingMatch && (
+                <div className="card" style={{ marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div>
+                            <h3 style={{ margin: 0 }}>พร้อมเริ่มแข่งแล้วใช่ไหม?</h3>
+                            <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
+                                คู่แข่ง: <strong>{upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeam.name : upcomingMatch.homeTeam.name}</strong>
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button 
+                                onClick={() => {
+                                    const opponentId = upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeamId : upcomingMatch.homeTeamId;
+                                    router.push(`/team/${opponentId}?tab=tactics`);
+                                }}
+                                className="btn btn-secondary"
+                                disabled={loading}
+                            >
+                                🔍 ดูคู่แข่ง
+                            </button>
+                            <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary">
+                                {loading ? 'กำลังเริ่มเกม...' : 'เริ่มแข่ง'}
+                            </button>
+                        </div>
                     </div>
-                    <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary">
-                        {loading ? 'กำลังเริ่มเกม...' : 'เริ่มแข่ง'}
-                    </button>
                 </div>
             )}
 

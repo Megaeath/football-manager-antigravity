@@ -130,6 +130,21 @@ model Match {
   awayScore   Int?
   isPlayed    Boolean  @default(false)
   
+  // Match-Specific Tactics (override team default tactics)
+  homeTactics_formation String?
+  homeTactics_mentality String?
+  homeTactics_passing String?
+  homeTactics_tackling String?
+  homeTactics_attacking_focus String?
+  homeTactics_creative_freedom String?
+  
+  awayTactics_formation String?
+  awayTactics_mentality String?
+  awayTactics_passing String?
+  awayTactics_tackling String?
+  awayTactics_attacking_focus String?
+  awayTactics_creative_freedom String?
+  
   // Awards
   motmPlayerId String?
   motmPlayer   Player? @relation("MatchMotM", fields: [motmPlayerId], references: [id])

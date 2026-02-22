@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
@@ -17,6 +17,8 @@ interface Player {
     assists: number;
     avgRating: number;
     condition: number;
+    age: number;
+    isRetired: boolean;
     handling: number;
     tackling: number;
     passing: number;
@@ -61,14 +63,50 @@ interface Team {
     founded: number;
     country: string;
     players: Player[];
+    formation: string;
+    mentality: string;
+    passing: string;
+    tackling: string;
+    attacking_focus: string;
+    creative_freedom: string;
 }
 
-export default function TeamClient({ team, matches, currentSeason = 1 }: { team: Team; matches: Match[]; currentSeason?: number }) {
+interface NextMatch {
+    id: string;
+    date: string;
+    homeTeamId: string;
+    awayTeamId: string;
+    homeTeam?: { name: string };
+    awayTeam?: { name: string };
+    homeTactics_formation?: string;
+    homeTactics_mentality?: string;
+    homeTactics_passing?: string;
+    homeTactics_tackling?: string;
+    homeTactics_attacking_focus?: string;
+    homeTactics_creative_freedom?: string;
+    awayTactics_formation?: string;
+    awayTactics_mentality?: string;
+    awayTactics_passing?: string;
+    awayTactics_tackling?: string;
+    awayTactics_attacking_focus?: string;
+    awayTactics_creative_freedom?: string;
+}
+
+export default function TeamClient({ team, matches, currentSeason = 1, nextMatch, userTeamId = '' }: { team: Team; matches: Match[]; currentSeason?: number; nextMatch?: NextMatch; userTeamId?: string }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
+
+    // Check for tab query parameter
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab === 'tactics' || tab === 'matches' || tab === 'squad') {
+            setActiveTab(tab);
+        }
+    }, [searchParams]);
 
     const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
     const getFitnessFactor = (condition: number) => Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
@@ -212,6 +250,21 @@ export default function TeamClient({ team, matches, currentSeason = 1 }: { team:
                     }}
                 >
                     Match History ({seasonMatches.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('tactics')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'tactics' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'tactics' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'tactics' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    Team Tactics
                 </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
@@ -419,6 +472,154 @@ export default function TeamClient({ team, matches, currentSeason = 1 }: { team:
                         })}
                     </div>
                 )}
+            </div>
+            )}
+
+            {activeTab === 'tactics' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                {/* Team Tactics & Next Match Tactics */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                    {/* Base Team Tactics */}
+                    <div className="card">
+                        <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                            Base Team Tactics
+                        </h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Formation</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.formation}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Mentality</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.mentality}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Passing Style</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.passing}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tackling Intensity</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.tackling}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Attacking Focus</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.attacking_focus}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Creative Freedom</label>
+                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
+                                    {team.creative_freedom}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Match-Specific Tactics (if available) */}
+                    {nextMatch && team.id !== userTeamId && (nextMatch.homeTeamId === team.id || nextMatch.awayTeamId === team.id) && (
+                        <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+                            <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', color: 'var(--accent)' }}>
+                                ⚙️ Auto-Selected for Next Match
+                            </h3>
+                            <div style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                vs {nextMatch.homeTeamId === team.id ? nextMatch.awayTeam?.name : nextMatch.homeTeam?.name} on {new Date(nextMatch.date).toLocaleDateString('th-TH')}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Formation</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_formation || team.formation : nextMatch.awayTactics_formation || team.formation}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Mentality</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_mentality || team.mentality : nextMatch.awayTactics_mentality || team.mentality}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Passing Style</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_passing || team.passing : nextMatch.awayTactics_passing || team.passing}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tackling Intensity</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_tackling || team.tackling : nextMatch.awayTactics_tackling || team.tackling}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Attacking Focus</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_attacking_focus || team.attacking_focus : nextMatch.awayTactics_attacking_focus || team.attacking_focus}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Creative Freedom</label>
+                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_creative_freedom || team.creative_freedom : nextMatch.awayTactics_creative_freedom || team.creative_freedom}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Top 5 Performers */}
+                <div className="card">
+                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                        Top 5 Performers
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {team.players
+                            .filter((p: any) => !p.isRetired)
+                            .sort((a: any, b: any) => {
+                                const scoreA = a.goals * 3 + a.assists * 2 + (a.avgRating || 0);
+                                const scoreB = b.goals * 3 + b.assists * 2 + (b.avgRating || 0);
+                                return scoreB - scoreA;
+                            })
+                            .slice(0, 5)
+                            .map((p: any, idx: number) => (
+                                <div key={p.id} style={{
+                                    padding: '12px',
+                                    background: 'var(--hover-bg)',
+                                    borderRadius: '6px',
+                                    borderLeft: '4px solid var(--primary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                                #{idx + 1} {p.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                                {p.naturalPosition} • Age {p.age}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--success)' }}>
+                                                ⚽ {p.goals} 🎯 {p.assists}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                                                Rating: {p.avgRating?.toFixed(1) || 'N/A'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                </div>
             </div>
             )}
 

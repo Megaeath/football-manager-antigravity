@@ -4,6 +4,8 @@ import { getGameTime } from '@/lib/services/gameTime';
 
 const prisma = new PrismaClient();
 
+export const revalidate = 0; // Disable caching for this page
+
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const settings = await getGameTime();
@@ -21,6 +23,23 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
     });
 
     if (!team) return <div className="card">ไม่พบข้อมูลทีม</div>;
+
+    // Get next upcoming match to show auto-selected tactics
+    const nextMatch = await prisma.match.findFirst({
+        where: {
+            OR: [
+                { homeTeamId: id },
+                { awayTeamId: id }
+            ],
+            date: { gte: new Date(settings.currentDate) },
+            isPlayed: false
+        },
+        include: {
+            homeTeam: { select: { name: true } },
+            awayTeam: { select: { name: true } }
+        },
+        orderBy: { date: 'asc' }
+    });
 
     // Sort players by position: GK -> DF -> MF -> FW
     const positionOrder: Record<string, number> = {
@@ -65,5 +84,11 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
     // Sort by date
     matches.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    return <TeamClient team={{ ...team, players: playersWithRating } as any} matches={matches as any} currentSeason={settings.currentSeason} />;
+    return <TeamClient 
+        team={{ ...team, players: playersWithRating } as any} 
+        matches={matches as any} 
+        currentSeason={settings.currentSeason}
+        nextMatch={nextMatch as any}
+        userTeamId={settings.userTeamId || ''}
+    />;
 }

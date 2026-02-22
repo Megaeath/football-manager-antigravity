@@ -207,12 +207,12 @@ export async function processMatch(matchId: string) {
         id: matchDB.homeTeam.id,
         name: matchDB.homeTeam.name,
         tactics: {
-            formation: matchDB.homeTeam.formation,
-            mentality: matchDB.homeTeam.mentality,
-            passing: matchDB.homeTeam.passing,
-            tackling: matchDB.homeTeam.tackling,
-            attacking_focus: matchDB.homeTeam.attacking_focus,
-            creative_freedom: matchDB.homeTeam.creative_freedom
+            formation: matchDB.homeTactics_formation || matchDB.homeTeam.formation,
+            mentality: matchDB.homeTactics_mentality || matchDB.homeTeam.mentality,
+            passing: matchDB.homeTactics_passing || matchDB.homeTeam.passing,
+            tackling: matchDB.homeTactics_tackling || matchDB.homeTeam.tackling,
+            attacking_focus: matchDB.homeTactics_attacking_focus || matchDB.homeTeam.attacking_focus,
+            creative_freedom: matchDB.homeTactics_creative_freedom || matchDB.homeTeam.creative_freedom
         },
         players: matchDB.homeTeam.players.map(mapPlayer)
     };
@@ -221,12 +221,12 @@ export async function processMatch(matchId: string) {
         id: matchDB.awayTeam.id,
         name: matchDB.awayTeam.name,
         tactics: {
-            formation: matchDB.awayTeam.formation,
-            mentality: matchDB.awayTeam.mentality,
-            passing: matchDB.awayTeam.passing,
-            tackling: matchDB.awayTeam.tackling,
-            attacking_focus: matchDB.awayTeam.attacking_focus,
-            creative_freedom: matchDB.awayTeam.creative_freedom
+            formation: matchDB.awayTactics_formation || matchDB.awayTeam.formation,
+            mentality: matchDB.awayTactics_mentality || matchDB.awayTeam.mentality,
+            passing: matchDB.awayTactics_passing || matchDB.awayTeam.passing,
+            tackling: matchDB.awayTactics_tackling || matchDB.awayTeam.tackling,
+            attacking_focus: matchDB.awayTactics_attacking_focus || matchDB.awayTeam.attacking_focus,
+            creative_freedom: matchDB.awayTactics_creative_freedom || matchDB.awayTeam.creative_freedom
         },
         players: matchDB.awayTeam.players.map(mapPlayer)
     };

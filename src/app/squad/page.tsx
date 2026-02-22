@@ -95,6 +95,23 @@ export default async function SquadPage() {
     ];
     matches.sort((a, b) => b.date.getTime() - a.date.getTime());
 
+    // Get next upcoming match (unplayed match)
+    const upcomingMatch = await prisma.match.findFirst({
+        where: {
+            OR: [
+                { homeTeamId: team.id },
+                { awayTeamId: team.id }
+            ],
+            isPlayed: false,
+            date: { gte: new Date(settings.currentDate) }
+        },
+        include: {
+            homeTeam: true,
+            awayTeam: true
+        },
+        orderBy: { date: 'asc' }
+    });
+
     return (
         <div>
             <div style={{ marginBottom: '2rem' }}>
@@ -105,7 +122,14 @@ export default async function SquadPage() {
             </div>
 
             <Suspense fallback={<div>Loading squad...</div>}>
-                <SquadClient teamId={team.id} players={playerswithSuitability} currentTactics={currentTactics} matches={matches as any} currentSeason={settings.currentSeason} />
+                <SquadClient 
+                    teamId={team.id} 
+                    players={playerswithSuitability} 
+                    currentTactics={currentTactics} 
+                    matches={matches as any} 
+                    currentSeason={settings.currentSeason}
+                    upcomingMatch={upcomingMatch as any}
+                />
             </Suspense>
         </div>
     );
