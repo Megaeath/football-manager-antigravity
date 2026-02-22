@@ -3,6 +3,7 @@ import { calculateSuitability } from '../../lib/engine/suitability';
 import { PlayerAttributes } from '../../lib/engine/types';
 import SquadClient from './SquadClient';
 import { Suspense } from 'react';
+import { getGameTime } from '@/lib/services/gameTime';
 
 async function getUserTeam() {
     const settings = await prisma.globalGameSettings.findUnique({
@@ -15,7 +16,9 @@ async function getUserTeam() {
             include: {
                 players: {
                     where: { isRetired: false }
-                }
+                },
+                homeMatches: { include: { awayTeam: true, homeTeam: true } },
+                awayMatches: { include: { homeTeam: true, awayTeam: true } }
             }
         });
     }
@@ -24,13 +27,16 @@ async function getUserTeam() {
         include: {
             players: {
                 where: { isRetired: false }
-            }
+            },
+            homeMatches: { include: { awayTeam: true, homeTeam: true } },
+            awayMatches: { include: { homeTeam: true, awayTeam: true } }
         }
     });
 }
 
 export default async function SquadPage() {
     const team = await getUserTeam();
+    const settings = await getGameTime();
 
     if (!team) return <div>Team not found. Please seed the database.</div>;
 
@@ -77,8 +83,17 @@ export default async function SquadPage() {
         formation: team.formation,
         mentality: team.mentality,
         passing: team.passing,
-        tackling: team.tackling
+        tackling: team.tackling,
+        attacking_focus: team.attacking_focus,
+        creative_freedom: team.creative_freedom
     };
+
+    // Combine and sort matches
+    const matches = [
+        ...team.homeMatches.map(m => ({ ...m, role: 'home' as const, opponent: m.awayTeam })),
+        ...team.awayMatches.map(m => ({ ...m, role: 'away' as const, opponent: m.homeTeam }))
+    ];
+    matches.sort((a, b) => b.date.getTime() - a.date.getTime());
 
     return (
         <div>
@@ -90,7 +105,7 @@ export default async function SquadPage() {
             </div>
 
             <Suspense fallback={<div>Loading squad...</div>}>
-                <SquadClient teamId={team.id} players={playerswithSuitability} currentTactics={currentTactics} />
+                <SquadClient teamId={team.id} players={playerswithSuitability} currentTactics={currentTactics} matches={matches as any} currentSeason={settings.currentSeason} />
             </Suspense>
         </div>
     );

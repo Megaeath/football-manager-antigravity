@@ -13,24 +13,29 @@ interface BallState {
 function calculateActionWeights(
     player: PlayerState,
     ballPosition: number,
-    isAttacking: boolean
+    isAttacking: boolean,
+    teamTactics?: any
 ): Record<ActionType, number> {
     const distance = isAttacking ? 100 - ballPosition : ballPosition;
     const distanceToGoal = distance;
 
+    // Get passing style buff
+    const passingBuff = teamTactics ? getPassingStyleBuff(teamTactics.passing) : { shortPass: 1.0, longPass: 1.0 };
+    const creativeBuff = teamTactics ? getCreativeFreedomBuff(teamTactics.creative_freedom) : { shooting: 1.0, dribble: 1.0, riskTaking: 1.0 };
+
     const weights = {
-        PASS_SHORT: player.attributes.passing * 0.5,
-        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3,
-        DRIBBLE: player.attributes.dribbling * 0.4,
+        PASS_SHORT: player.attributes.passing * 0.5 * passingBuff.shortPass,
+        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3 * passingBuff.longPass,
+        DRIBBLE: player.attributes.dribbling * 0.4 * creativeBuff.dribble,
         SHOOT: 0
     };
 
     // Increase shooting weight when close to goal
     if (distanceToGoal <= 30) {
-        weights.SHOOT = player.attributes.shooting * 1.0;
+        weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting;
         console.log('Shooting weight increased');
     } else if (distanceToGoal <= 40) {
-        weights.SHOOT = player.attributes.shooting * 0.5;
+        weights.SHOOT = player.attributes.shooting * 0.5 * creativeBuff.shooting;
         console.log('Shooting weight moderate');
     }
 
@@ -61,15 +66,70 @@ function chooseAction(weights: Record<ActionType, number>): ActionType {
 function getMentalityBuff(mentality: string) {
     switch (mentality) {
         case 'ALL_OUT_ATTACK':
-            return { shooting: 1.1, dribble: 1.4, tackling: 0.8, save: 0.8, attackChance: 1.1, fatigue: 1.3 };
+            return { shooting: 1.0, dribble: 1.5, tackling: 0.7, save: 1.0, attackChance: 1.5, fatigue: 1.3 };
         case 'ATTACKING':
-            return { shooting: 1.05, dribble: 1.2, tackling: 0.9, save: 0.9, attackChance: 1.05, fatigue: 1.2 };
+            return { shooting: 1.0, dribble: 1.3, tackling: 0.8, save: 1., attackChance: 1.25, fatigue: 1.2 };
         case 'ULTRA_DEFENSIVE':
-            return { shooting: 1.2, dribble: 0.6, tackling: 1.4, save: 1.4, attackChance: 0.8, fatigue: 1.0 };
+            return { shooting: 1.0, dribble: 0.7, tackling: 1.4, save: 1.3, attackChance: 0.8, fatigue: 1.3 };
         case 'DEFENSIVE':
-            return { shooting: 1.1, dribble: 0.8, tackling: 1.2, save: 1.2, attackChance: 0.9, fatigue: 1.0 };
+            return { shooting: 1.0, dribble: 0.8, tackling: 1.2, save: 1.2, attackChance: 0.9, fatigue: 1.2 };
         default:
             return { shooting: 1.0, dribble: 1.0, tackling: 1.0, save: 1.0, attackChance: 1.0, fatigue: 1.0 };
+    }
+}
+
+function getPassingStyleBuff(passing: string) {
+    // Affects pass weight distribution and success rates
+    switch (passing) {
+        case 'SHORT':
+            return { shortPass: 1.3, longPass: 0.7 };
+        case 'LONG':
+            return { shortPass: 0.7, longPass: 1.3 };
+        default: // MIXED
+            return { shortPass: 1.0, longPass: 1.0 };
+    }
+}
+
+function getTacklingBuff(tackling: string) {
+    // Affects tackle success rate and foul probability
+    switch (tackling) {
+        case 'SOFT':
+            return { tackle: 0.85, foul: 0.7 };
+        case 'HARD':
+            return { tackle: 1.15, foul: 1.3 };
+        default: // NORMAL
+            return { tackle: 1.0, foul: 1.0 };
+    }
+}
+
+function getAttackingFocusBuff(attackingFocus: string, playerPosition: string) {
+    // Returns weight modifier for position selection in attack
+    // Positions: GK, DR, DC, DL, DMR, DMC, DML, MR, MC, ML, AMR, AMC, AML, FWR, FWC, FWL
+    const isCenter = playerPosition === 'MC' || playerPosition === 'AMC' || playerPosition === 'FWC' || playerPosition === 'DMC';
+    const isWing = playerPosition === 'MR' || playerPosition === 'ML' || playerPosition === 'AMR' || playerPosition === 'AML' || playerPosition === 'FWR' || playerPosition === 'FWL' || playerPosition === 'DR' || playerPosition === 'DL' || playerPosition === 'DMR' || playerPosition === 'DML';
+
+    switch (attackingFocus) {
+        case 'CENTER':
+            return isCenter ? 1.4 : (isWing ? 0.7 : 1.0);
+        case 'WINGS':
+            return isWing ? 1.4 : (isCenter ? 0.7 : 1.0);
+        default: // MIXED
+            return 1.0;
+    }
+}
+
+function getCreativeFreedomBuff(creativeFreeze: string) {
+    // Affects how much player deviates from team tactical instructions
+    // STRICT: Follows team plan closely, less individual action
+    // NORMAL: Balanced between team plan and individual decision
+    // FREEDOM: Prioritizes individual skill and decision-making
+    switch (creativeFreeze) {
+        case 'STRICT':
+            return { shooting: 0.85, dribble: 0.8, riskTaking: 0.7 };
+        case 'FREEDOM':
+            return { shooting: 1.2, dribble: 1.2, riskTaking: 1.3 };
+        default: // NORMAL
+            return { shooting: 1.0, dribble: 1.0, riskTaking: 1.0 };
     }
 }
 
@@ -120,7 +180,7 @@ function executePassShort(
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
     }
-
+    console.log(`Short pass executed. Success: ${success}, New Position: ${ball.position.toFixed(1)}`);
     applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
 }
 
@@ -135,8 +195,8 @@ function executePassLong(
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
 
-    stats.passesAttempted++;
-    teamStats.passesAttempted++;
+    stats.crossesAttempted++;
+    teamStats.crossesAttempted++;
 
     const passScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
     const defenseScore = Math.random() * 15;
@@ -150,8 +210,8 @@ function executePassLong(
         : Math.max(0, ball.position - movement);
 
     if (success) {
-        stats.passesCompleted++;
-        teamStats.passesCompleted++;
+        stats.crossesCompleted++;
+        teamStats.crossesCompleted++;
         ball.position = targetPosition;
         // Reassign carrier based on new position
         ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
@@ -161,7 +221,7 @@ function executePassLong(
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'FWC']) || null;
     }
-
+    console.log(`Long pass executed. Success: ${success}, Target Position: ${targetPosition.toFixed(1)}`);
     applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
 }
 
@@ -183,8 +243,10 @@ function executeDribble(
 
     const dribbleScore = calculateActionScore('dribble', player.attributes, 'attacker', player.condition)
         * getMentalityBuff(attackingTeam.tactics.mentality).dribble;
+    const tacklingBuff = getTacklingBuff(defendingTeam.tactics.tackling);
     const tackleScore = calculateActionScore('dribble', defender.attributes, 'defender', defender.condition)
-        * getMentalityBuff(defendingTeam.tactics.mentality).tackling;
+        * getMentalityBuff(defendingTeam.tactics.mentality).tackling
+        * tacklingBuff.tackle;
 
     const skillBonus = player.attributes.dribbling > 15 ? 1.15 : 1.0;
     const success = (dribbleScore * skillBonus * (0.8 + Math.random() * 0.4)) > (tackleScore * (0.8 + Math.random() * 0.4));
@@ -467,7 +529,7 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
             }
 
             // AI chooses action based on player attributes and ball position
-            const weights = calculateActionWeights(ball.carrier, ball.position, isHomeAttacking);
+            const weights = calculateActionWeights(ball.carrier, ball.position, isHomeAttacking, attackingTeam.tactics);
             const action = chooseAction(weights);
 
             // Execute the chosen action
@@ -730,7 +792,7 @@ function calculateRatings(matchState: MatchState) {
 
         rating += (stat.goals * 1.2);
         rating += (stat.assists * 0.7);
-        rating += (stat.saves * 0.3);
+        rating += (stat.saves * 0.2);
         rating += (stat.tacklesWon * 0.3);
         rating += (stat.passesCompleted * 0.05);
         rating += (stat.dribblesWon * 0.2);

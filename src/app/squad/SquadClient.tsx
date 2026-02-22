@@ -26,6 +26,20 @@ type PlayerProps = {
     retirementAge: number;
 };
 
+type MatchType = {
+    id: string;
+    date: Date;
+    homeTeamId: string;
+    awayTeamId: string;
+    homeScore: number;
+    awayScore: number;
+    homeTeam: { name: string };
+    awayTeam: { name: string };
+    role: 'home' | 'away';
+    opponent: { name: string };
+    season: number;
+};
+
 const FORMATIONS: Record<string, { id: string, label: string }[]> = {
     '4-4-2': [
         { id: 'GK', label: 'GK' },
@@ -90,14 +104,18 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1 }: {
     teamId: string,
     players: PlayerProps[],
-    currentTactics: { formation: string, mentality: string, passing: string, tackling: string }
+    currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
+    matches?: MatchType[],
+    currentSeason?: number
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches'>('squad');
+    const [selectedSeason, setSelectedSeason] = useState(currentSeason);
     const router = useRouter();
     const searchParams = useSearchParams();
     const fromMatch = searchParams.get('from') === 'match';
@@ -240,6 +258,22 @@ export default function SquadClient({ teamId, players, currentTactics }: {
         return 'FW';
     };
 
+    // Calculate team power from 11 best players
+    const getTeamPower = () => {
+        const playerPowers = players.map(p => {
+            const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
+            const suitability = calculateSuitability(p.rawAttributes, targetPos);
+            return Math.round(suitability * getFitnessFactor(p.condition));
+        });
+        
+        const bestPlayers = playerPowers.sort((a: number, b: number) => b - a).slice(0, 11);
+        if (bestPlayers.length === 0) return 0;
+        return Math.round(bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length);
+    };
+
+    // Filter matches by season
+    const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     const handleSort = (key: typeof sortKey) => {
         if (key === 'pos') {
             setSortKey('pos');
@@ -322,6 +356,32 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                         <option value="HARD">Hard</option>
                     </select>
                 </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold' }}>Attacking Focus</label>
+                    <select
+                        value={currentTactics.attacking_focus}
+                        onChange={(e) => handleUpdateTactics('attacking_focus', e.target.value)}
+                        style={{ padding: '4px' }}
+                        disabled={loading}
+                    >
+                        <option value="CENTER">Center</option>
+                        <option value="MIXED">Mixed</option>
+                        <option value="WINGS">Wings</option>
+                    </select>
+                </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold' }}>Creative Freedom</label>
+                    <select
+                        value={currentTactics.creative_freedom}
+                        onChange={(e) => handleUpdateTactics('creative_freedom', e.target.value)}
+                        style={{ padding: '4px' }}
+                        disabled={loading}
+                    >
+                        <option value="STRICT">Strict</option>
+                        <option value="NORMAL">Normal</option>
+                        <option value="FREEDOM">Freedom</option>
+                    </select>
+                </div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
                     <button onClick={handleAutoSelect} disabled={loading} className="btn btn-sm" style={{ height: '32px' }}>
                         Auto Select
@@ -332,8 +392,62 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                 </div>
             </div>
 
+            {/* TAB NAVIGATION */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid var(--border)' }}>
+                <button
+                    onClick={() => setActiveTab('squad')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'squad' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'squad' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'squad' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    Squad ({players.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('matches')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'matches' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'matches' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'matches' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    Match History ({seasonMatches.length})
+                </button>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    {activeTab === 'matches' && (
+                        <>
+                            <label>Season:</label>
+                            <select
+                                value={selectedSeason}
+                                onChange={(e) => setSelectedSeason(Number(e.target.value))}
+                                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            >
+                                {[...new Set(matches.map(m => m.season))].sort((a, b) => b - a).map(season => (
+                                    <option key={season} value={season}>Season {season}</option>
+                                ))}
+                            </select>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {activeTab === 'squad' && (
             <div>
-                <h3 style={{ marginTop: 0 }}>Squad List</h3>
+                <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Squad List</span>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
+                </h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                     <thead>
                         <tr style={{ textAlign: 'left', borderBottom: '2px solid #333' }}>
@@ -488,6 +602,60 @@ export default function SquadClient({ teamId, players, currentTactics }: {
                     </tbody>
                 </table>
             </div>
+            )}
+
+            {activeTab === 'matches' && (
+            <div className="card">
+                <h3 style={{ marginTop: 0 }}>Match History - Season {selectedSeason}</h3>
+                {seasonMatches.length === 0 ? (
+                    <p style={{ color: 'var(--muted)' }}>No matches played this season</p>
+                ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>Date</th>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>Opponent</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>Result</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>Score</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {seasonMatches.map((match) => {
+                                const isHome = match.role === 'home';
+                                const yourScore = isHome ? match.homeScore : match.awayScore;
+                                const oppScore = isHome ? match.awayScore : match.homeScore;
+                                const result = yourScore > oppScore ? 'W' : yourScore < oppScore ? 'L' : 'D';
+                                const resultColor = result === 'W' ? '#16a34a' : result === 'L' ? '#dc2626' : '#f59e0b';
+                                return (
+                                    <tr key={match.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <td style={{ padding: '12px' }}>{new Date(match.date).toLocaleDateString('th-TH')}</td>
+                                        <td style={{ padding: '12px' }}>
+                                            {isHome ? '🏠' : '✈️'} {match.opponent.name}
+                                        </td>
+                                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: resultColor, fontSize: '1.1rem' }}>
+                                            {result}
+                                        </td>
+                                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
+                                            {yourScore} - {oppScore}
+                                        </td>
+                                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                                            <button 
+                                                onClick={() => window.location.href = `/match?matchId=${match.id}`}
+                                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer', fontSize: '0.85rem' }}
+                                            >
+                                                View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+            )}
+
             <PlayerModal />
         </div>
     );

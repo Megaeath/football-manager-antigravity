@@ -210,7 +210,9 @@ export async function processMatch(matchId: string) {
             formation: matchDB.homeTeam.formation,
             mentality: matchDB.homeTeam.mentality,
             passing: matchDB.homeTeam.passing,
-            tackling: matchDB.homeTeam.tackling
+            tackling: matchDB.homeTeam.tackling,
+            attacking_focus: matchDB.homeTeam.attacking_focus,
+            creative_freedom: matchDB.homeTeam.creative_freedom
         },
         players: matchDB.homeTeam.players.map(mapPlayer)
     };
@@ -222,7 +224,9 @@ export async function processMatch(matchId: string) {
             formation: matchDB.awayTeam.formation,
             mentality: matchDB.awayTeam.mentality,
             passing: matchDB.awayTeam.passing,
-            tackling: matchDB.awayTeam.tackling
+            tackling: matchDB.awayTeam.tackling,
+            attacking_focus: matchDB.awayTeam.attacking_focus,
+            creative_freedom: matchDB.awayTeam.creative_freedom
         },
         players: matchDB.awayTeam.players.map(mapPlayer)
     };

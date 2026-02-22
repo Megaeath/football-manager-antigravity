@@ -101,7 +101,9 @@ async function main() {
                 formation: "4-4-2",
                 mentality: "NORMAL",
                 passing: "MIXED",
-                tackling: "NORMAL"
+                tackling: "NORMAL",
+                attacking_focus: "MIXED",
+                creative_freedom: "NORMAL"
             }
         })
 

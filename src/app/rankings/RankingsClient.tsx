@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import SeasonSelector from '@/components/SeasonSelector';
 import PlayerModal from '@/components/PlayerModal';
 
@@ -21,6 +21,7 @@ interface Stat {
     tacklesWon: number;
     motmCount: number;
     avgRating: number;
+    power: number;
 }
 
 interface Tab {
@@ -98,12 +99,14 @@ export default function RankingsClient({
                                         onClick={() => router.push(`/rankings?season=${selectedSeason}&tab=${activeTab}&playerId=${p.playerId}`)}
                                         style={{ color: 'var(--primary)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                     >
-                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{p.playerName}</div>
+                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
+                                            {p.playerName} <span style={{ color: 'var(--success)', fontWeight: 'bold', marginLeft: '8px' }}>⚡{p.power}</span>
+                                        </div>
                                     </button>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{p.teamName} | {p.position}</div>
                                 </td>
                                 <td style={{ padding: '16px', textAlign: 'center' }}>
-                                    {Math.round(p.minutes)}'
+                                    {Math.round(p.minutes)}&apos;
                                 </td>
                                 <td style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
                                     {activeTab === 'goals' ? p.goals :

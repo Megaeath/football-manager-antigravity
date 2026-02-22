@@ -56,6 +56,8 @@ export interface TeamState {
         mentality: string;
         passing: string;
         tackling: string;
+        attacking_focus: string;
+        creative_freedom: string;
     };
 }
 

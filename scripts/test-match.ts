@@ -58,14 +58,28 @@ async function runTest() {
     const homeState: TeamState = {
         id: home.id,
         name: home.name,
-        tactics: { formation: home.formation, mentality: home.mentality, passing: home.passing, tackling: home.tackling },
+        tactics: { 
+            formation: home.formation, 
+            mentality: home.mentality, 
+            passing: home.passing, 
+            tackling: home.tackling,
+            attacking_focus: home.attacking_focus,
+            creative_freedom: home.creative_freedom
+        },
         players: home.players.map(mapPlayer)
     };
 
     const awayState: TeamState = {
         id: away.id,
         name: away.name,
-        tactics: { formation: away.formation, mentality: away.mentality, passing: away.passing, tackling: away.tackling },
+        tactics: { 
+            formation: away.formation, 
+            mentality: away.mentality, 
+            passing: away.passing, 
+            tackling: away.tackling,
+            attacking_focus: away.attacking_focus,
+            creative_freedom: away.creative_freedom
+        },
         players: away.players.map(mapPlayer)
     };
 

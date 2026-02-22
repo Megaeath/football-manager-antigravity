@@ -44,6 +44,8 @@ model Team {
   mentality String   @default("NORMAL")
   passing   String   @default("MIXED")
   tackling  String   @default("NORMAL")
+  attacking_focus String @default("MIXED")
+  creative_freedom String @default("NORMAL")
 
   // Relations
   players   Player[]

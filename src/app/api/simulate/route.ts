@@ -68,7 +68,9 @@ export async function GET() {
                 formation: homeTeamDB.formation,
                 mentality: homeTeamDB.mentality,
                 passing: homeTeamDB.passing,
-                tackling: homeTeamDB.tackling
+                tackling: homeTeamDB.tackling,
+                attacking_focus: homeTeamDB.attacking_focus,
+                creative_freedom: homeTeamDB.creative_freedom
             },
             players: homeTeamDB.players.map(mapPlayer)
         };
@@ -80,7 +82,9 @@ export async function GET() {
                 formation: awayTeamDB.formation,
                 mentality: awayTeamDB.mentality,
                 passing: awayTeamDB.passing,
-                tackling: awayTeamDB.tackling
+                tackling: awayTeamDB.tackling,
+                attacking_focus: awayTeamDB.attacking_focus,
+                creative_freedom: awayTeamDB.creative_freedom
             },
             players: awayTeamDB.players.map(mapPlayer)
         };

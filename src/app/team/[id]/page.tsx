@@ -1,10 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import TeamClient from './TeamClient';
+import { getGameTime } from '@/lib/services/gameTime';
 
 const prisma = new PrismaClient();
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
+    const settings = await getGameTime();
+    
     const team = await prisma.team.findUnique({
         where: { id: id },
         include: {
@@ -12,8 +15,8 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                 where: { isRetired: false },
                 orderBy: { tacticalPosition: 'desc' }
             },
-            homeMatches: { include: { awayTeam: true, homeTeam: true } },
-            awayMatches: { include: { homeTeam: true, awayTeam: true } }
+            homeMatches: { include: { awayTeam: true, homeTeam: true, playerStats: true } },
+            awayMatches: { include: { homeTeam: true, awayTeam: true, playerStats: true } }
         }
     });
 
@@ -62,5 +65,5 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
     // Sort by date
     matches.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    return <TeamClient team={{ ...team, players: playersWithRating } as any} matches={matches as any} />;
+    return <TeamClient team={{ ...team, players: playersWithRating } as any} matches={matches as any} currentSeason={settings.currentSeason} />;
 }

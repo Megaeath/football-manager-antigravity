@@ -1,6 +1,8 @@
 import prisma from '@/lib/prisma';
 import Link from 'next/link';
 import SeasonSelector from '@/components/SeasonSelector';
+import { calculateSuitability } from '@/lib/engine/suitability';
+import type { PlayerAttributes } from '@/lib/engine/types';
 
 export default async function LeaguePage({ searchParams }: { searchParams: Promise<{ season?: string }> }) {
     const params = await searchParams;
@@ -26,6 +28,9 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
         // Calculate live standings
         const teams = await prisma.team.findMany({
             include: {
+                players: {
+                    where: { isRetired: false }
+                },
                 homeMatches: {
                     where: { season: selectedSeason, isPlayed: true }
                 },
@@ -70,7 +75,45 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                 name: team.name,
                 played, won, drawn, lost, gf, ga,
                 gd: gf - ga,
-                points
+                points,
+                power: (() => {
+                    // Calculate power for each player and sort to get best 11
+                    const playerPowers = team.players.map((p: any) => {
+                        const attrs: PlayerAttributes = {
+                            handling: p.handling,
+                            tackling: p.tackling,
+                            passing: p.passing,
+                            shooting: p.shooting,
+                            heading: p.heading,
+                            dribbling: p.dribbling,
+                            crossing: p.crossing,
+                            setPieces: p.setPieces,
+                            aggression: p.aggression,
+                            positioning: p.positioning,
+                            vision: p.vision,
+                            bravery: p.bravery,
+                            leadership: p.leadership,
+                            teamwork: p.teamwork,
+                            composure: p.composure,
+                            pace: p.pace,
+                            acceleration: p.acceleration,
+                            stamina: p.stamina,
+                            strength: p.strength,
+                            agility: p.agility,
+                            balance: p.balance
+                        };
+                        
+                        const basePos = (p.naturalPosition || 'GK').split('_')[0];
+                        const suitability = calculateSuitability(attrs, basePos);
+                        const fitnessFactor = Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2);
+                        const power = Math.round(suitability * fitnessFactor);
+                        return power;
+                    });
+                    
+                    const bestPlayers = playerPowers.sort((a: number, b: number) => b - a).slice(0, 11);
+                    if (bestPlayers.length === 0) return 0;
+                    return Math.round(bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length);
+                })()
             };
         });
 
@@ -114,7 +157,10 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                                     {index + 1}
                                 </td>
                                 <td style={{ padding: '15px' }}>
-                                    <div style={{ fontWeight: '600' }}>{team.name}</div>
+                                    <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        {team.name}
+                                        <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>⚡{team.power}</span>
+                                    </div>
                                 </td>
                                 <td style={{ padding: '15px', textAlign: 'center' }}>{team.played}</td>
                                 <td style={{ padding: '15px', textAlign: 'center' }}>{team.won}</td>

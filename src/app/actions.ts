@@ -65,7 +65,7 @@ export async function bulkAssignTacticalPositions(
     revalidatePath('/squad');
 }
 
-export async function updateTeamTactics(teamId: string, tactics: { formation?: string, mentality?: string, passing?: string, tackling?: string }) {
+export async function updateTeamTactics(teamId: string, tactics: { formation?: string, mentality?: string, passing?: string, tackling?: string, attacking_focus?: string, creative_freedom?: string }) {
     await prisma.team.update({
         where: { id: teamId },
         data: tactics

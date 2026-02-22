@@ -51,6 +51,7 @@ interface Match {
     awayTeam: { name: string };
     role: 'home' | 'away';
     opponent: { name: string };
+    season: number;
 }
 
 interface Team {
@@ -62,10 +63,12 @@ interface Team {
     players: Player[];
 }
 
-export default function TeamClient({ team, matches }: { team: Team; matches: Match[] }) {
+export default function TeamClient({ team, matches, currentSeason = 1 }: { team: Team; matches: Match[]; currentSeason?: number }) {
     const router = useRouter();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches'>('squad');
+    const [selectedSeason, setSelectedSeason] = useState(currentSeason);
 
     const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
     const getFitnessFactor = (condition: number) => Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
@@ -124,6 +127,24 @@ export default function TeamClient({ team, matches }: { team: Team; matches: Mat
         if (p.startsWith('M') || p.startsWith('A')) return 'MF';
         return 'FW';
     };
+
+    // Calculate team power from 11 best players
+    const getTeamPower = () => {
+        const playerPowers = team.players.map(p => {
+            const attrs = buildAttributes(p);
+            const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
+            const suitability = calculateSuitability(attrs, targetPos);
+            return Math.round(suitability * getFitnessFactor(p.condition));
+        });
+        
+        const bestPlayers = playerPowers.sort((a: number, b: number) => b - a).slice(0, 11);
+        if (bestPlayers.length === 0) return 0;
+        return Math.round(bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length);
+    };
+
+    // Filter matches by season
+    const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     const handleSort = (key: typeof sortKey) => {
         if (key === 'pos') {
             setSortKey('pos');
@@ -160,11 +181,63 @@ export default function TeamClient({ team, matches }: { team: Team; matches: Mat
                 </div>
             </div>
 
+            {/* TAB NAVIGATION */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid var(--border)' }}>
+                <button
+                    onClick={() => setActiveTab('squad')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'squad' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'squad' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'squad' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    Squad ({team.players.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('matches')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'matches' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'matches' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'matches' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    Match History ({seasonMatches.length})
+                </button>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    {activeTab === 'matches' && (
+                        <>
+                            <label>Season:</label>
+                            <select
+                                value={selectedSeason}
+                                onChange={(e) => setSelectedSeason(Number(e.target.value))}
+                                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            >
+                                {[...new Set(matches.map(m => m.season))].sort((a, b) => b - a).map(season => (
+                                    <option key={season} value={season}>Season {season}</option>
+                                ))}
+                            </select>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {activeTab === 'squad' && (
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
                 {/* Squad */}
                 <div className="card">
-                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                        ทีมเตะ ({team.players.length} คน)
+                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>ทีมเตะ ({team.players.length} คน)</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
                     </h3>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
@@ -306,13 +379,17 @@ export default function TeamClient({ team, matches }: { team: Team; matches: Mat
                         </tbody>
                     </table>
                 </div>
+            </div>
+            )}
 
-                {/* Match History */}
-                <div className="card">
-                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>ประวัติการแข่ง</h3>
+            {activeTab === 'matches' && (
+            <div className="card">
+                <h3 style={{ marginTop: 0 }}>Match History - Season {selectedSeason}</h3>
+                {seasonMatches.length === 0 ? (
+                    <p style={{ color: 'var(--muted)' }}>No matches played this season</p>
+                ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {matches.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>ยังไม่มีข้อมูลการแข่ง</p>}
-                        {matches.map(m => {
+                        {seasonMatches.map((m) => {
                             const outcome = m.role === 'home'
                                 ? (m.homeScore > m.awayScore ? 'W' : m.homeScore < m.awayScore ? 'L' : 'D')
                                 : (m.awayScore > m.homeScore ? 'W' : m.awayScore < m.homeScore ? 'L' : 'D');
@@ -321,14 +398,14 @@ export default function TeamClient({ team, matches }: { team: Team; matches: Mat
 
                             return (
                                 <div key={m.id} style={{
-                                    padding: '16px', border: '1px solid var(--border)', borderRadius: '12px', position: 'relative', overflow: 'hidden'
-                                }}>
+                                    padding: '16px', border: '1px solid var(--border)', borderRadius: '12px', position: 'relative', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.2s'
+                                }} onClick={() => window.location.href = `/match?matchId=${m.id}`}>
                                     <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: color }}></div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
                                             {m.role === 'home' ? '🏠 Home' : '✈️ Away'}
                                         </div>
-                                        <div style={{ fontWeight: 'bold', color: color }}>{outcome}</div>
+                                        <div style={{ fontWeight: 'bold', color: color, fontSize: '1.1rem' }}>{outcome}</div>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ fontWeight: '600' }}>vs {m.opponent.name}</div>
@@ -341,8 +418,9 @@ export default function TeamClient({ team, matches }: { team: Team; matches: Mat
                             );
                         })}
                     </div>
-                </div>
+                )}
             </div>
+            )}
 
             <PlayerModal />
         </div>
