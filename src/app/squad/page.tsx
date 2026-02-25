@@ -44,7 +44,7 @@ export default async function SquadPage() {
         // Map DB attributes to Engine attributes
         const attrs: PlayerAttributes = {
             handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
-            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces,
+            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, throw: p.throw,
             aggression: p.aggression, positioning: p.positioning, vision: p.vision,
             bravery: p.bravery, leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
             pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,

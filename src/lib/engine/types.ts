@@ -16,6 +16,7 @@ export interface PlayerAttributes {
     dribbling: number;
     crossing: number;
     setPieces: number;
+    throw: number;
 
     // Mental
     aggression: number;
@@ -87,7 +88,11 @@ export interface EnginePlayerMatchStats {
     fouls: number;
     yellowCards: number;
     redCards: number;
+    freeKicks: number;
+    corners: number;
+    throws: number;
     offsides: number;
+
 }
 
 export interface TeamMatchStats {
@@ -103,7 +108,10 @@ export interface TeamMatchStats {
     passesCompleted: number;
     crossesAttempted: number;
     crossesCompleted: number;
+    freeKicks: number;
+    throws: number;
 }
+
 
 export interface MatchState {
     minute: number;

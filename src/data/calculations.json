@@ -100,6 +100,30 @@
                     "bonus": 1
                 }
             ]
+        },
+        "free_kick_short": {
+            "attacker_formula": "(setPieces * 0.6) + (shooting * 0.4)",
+            "defender_formula": "(handling * 0.7) + (agility * 0.3)",
+            "attacker_bonus": [],
+            "defender_bonus": []
+        },
+        "free_kick_long": {
+            "attacker_formula": "(setPieces * 0.4) + (passing * 0.3) + (crossing * 0.3)",
+            "defender_formula": "(positioning * 0.5) + (heading * 0.5)",
+            "attacker_bonus": [],
+            "defender_bonus": []
+        },
+        "corner": {
+            "attacker_formula": "(setPieces * 0.6) + (crossing * 0.4)",
+            "defender_formula": "(positioning * 0.4) + (heading * 0.6)",
+            "attacker_bonus": [],
+            "defender_bonus": []
+        },
+        "throw_in": {
+            "attacker_formula": "(passing * 0.8) + (teamwork * 0.2)",
+            "defender_formula": "(positioning * 0.7) + (tackling * 0.3)",
+            "attacker_bonus": [],
+            "defender_bonus": []
         }
     }
 }

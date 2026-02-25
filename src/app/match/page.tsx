@@ -333,6 +333,8 @@ function MatchContent() {
                                 <StatRow label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
                                 <StatRow label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
                                 <StatRow label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
+                                <StatRow label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
+                                <StatRow label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
                             </div>
                         )}
 
@@ -376,17 +378,19 @@ function MatchContent() {
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                                        <th style={{ padding: '12px' }}>POS</th>
-                                        <th style={{ padding: '12px' }}>NAME</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>MIN</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>RAT</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>FIT</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>SHOTS</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>PASSES</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>CROSS</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>DRIBBLE</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>TACKLE</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>EVENTS</th>
+                                        <th style={{ padding: '12px' }} title="Position">POS</th>
+                                        <th style={{ padding: '12px' }} title="Player Name">NAME</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Minutes Played">MIN</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Match Rating">RAT</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Fitness Level">FIT</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Shots On Target/Total">SHO</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Passes Completed/Attempted">PAS</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Crosses Completed/Attempted">CRS</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Dribbles Won/Attempted">DRB</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Tackles Won/Attempted">TCK</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Free Kicks">FK</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Corners">C</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Throw-Ins">T</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -477,13 +481,14 @@ function MatchContent() {
                                                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
                                                         {p.minutes > 0 ? `${p.tacklesWon}/${p.tacklesAttempted}` : '-'}
                                                     </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                                            {Array(p.goals).fill(0).map((_, i) => <span key={`g-${i}`}>⚽</span>)}
-                                                            {Array(p.assists).fill(0).map((_, i) => <span key={`a-${i}`}>🅰️</span>)}
-                                                            {Array(p.yellowCards).fill(0).map((_, i) => <span key={`y-${i}`}>🟨</span>)}
-                                                            {Array(p.redCards).fill(0).map((_, i) => <span key={`r-${i}`}>🟥</span>)}
-                                                        </div>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? p.freeKicks || 0 : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? p.corners || 0 : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
+                                                        {p.minutes > 0 ? p.throws || 0 : '-'}
                                                     </td>
                                                 </tr>
                                             );

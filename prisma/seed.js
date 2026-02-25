@@ -21,7 +21,7 @@ const randomName = () => `${FIRST_NAMES[randomInt(0, FIRST_NAMES.length - 1)]} $
 function generateAttributes(position) {
     const base = {}
     const atts = [
-        'tackling', 'passing', 'shooting', 'heading', 'dribbling', 'setPieces',
+        'tackling', 'passing', 'shooting', 'heading', 'dribbling', 'setPieces', 'throw',
         'aggression', 'positioning', 'vision', 'bravery', 'leadership',
         'teamwork', 'composure', 'pace', 'acceleration', 'strength', 'agility', 'balance'
     ]
@@ -67,6 +67,7 @@ function generateAttributes(position) {
         base.tackling = randomInt(13, 18)  // เกมรับยังดี
         base.pace = randomInt(14, 19)      // ต้องวิ่งทันปีก
         base.stamina = randomInt(15, 20)   // ความอึดสูง
+        base.throw = randomInt(15, 20)     // ทุ่มบอลเก่ง
     }
 
     return base

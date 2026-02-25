@@ -12,22 +12,28 @@ A deep, tactical, and high-performance **Football Manager Engine** built for tho
 ## 🚀 Key Features
 
 ### 🧠 Advanced Match Engine
+
 Our custom-built simulation engine goes beyond just scores. Every minute of the game is simulated with:
+
 - **Realistic Statistical Volume**: Professional-level totals of 300-600 passes per team.
 - **Background Actions**: Thousands of micro-interactions (passes, tackles, dribbles) that contribute to player ratings and seasonal aggregates.
 - **Position-Based Logic**: Midfielders dictate the tempo, while wingers focus on high-impact transitions.
 
 ### ⚖️ Re-balanced Performance Rating
+
 A sophisticated player rating system (1.0 - 10.0) that accurately reflects on-field impact:
+
 - **Smart GK Logic**: Goalkeepers only receive credit for genuine on-target saves.
 - **Impact Weighting**: Goals, assists, and defensive interceptions are weighted to ensure fair competition across all positions.
 
 ### 📅 Dynamic Season & Career System
+
 - **Long-term Management**: Full league fixtures generation across multiple seasons.
 - **Player Lifecycle**: Aging, performance degradation, and retirement systems.
 - **UTC Standardization**: Robust time-management system ensuring consistent game-day transitions across all timezones.
 
 ### 📋 Deep Tactics & Squad Management
+
 - **Tactical Mentality**: Adjust from Ultra-Defensive to All-Out Attack.
 - **Passing Styles**: Choose between Short, Mixed, or Direct/Long passing games.
 - **Player Profiles**: Detailed deep-dive metrics for every athlete, including passing accuracy and Man of the Match history.
@@ -47,29 +53,34 @@ A sophisticated player rating system (1.0 - 10.0) that accurately reflects on-fi
 ## 🏁 Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
+
+- Node.js 18+
 - npm / yarn / pnpm
 
 ### Installation
 
 1. **Clone the repo**
+
    ```bash
    git clone https://github.com/Megaeath/football-manager-antigravity.git
    cd football-manager-antigravity
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Initialize the Database**
+
    ```bash
    npx prisma db push
    npx prisma db seed
    ```
 
 4. **Start the Engine**
+
    ```bash
    npm run dev
    ```
@@ -89,10 +100,12 @@ Contributions are what make the open-source community such an amazing place to l
 ---
 
 ## 📄 License
+
 Distributed under the MIT License. See `LICENSE` for more information.
 
-
 ## kill port
+
 npx kill-port 3000
 ---
+
 *Developed with ❤️ for the Football Management community.*

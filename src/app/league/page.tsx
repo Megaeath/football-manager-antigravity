@@ -88,6 +88,7 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                             dribbling: p.dribbling,
                             crossing: p.crossing,
                             setPieces: p.setPieces,
+                            throw: p.throw,
                             aggression: p.aggression,
                             positioning: p.positioning,
                             vision: p.vision,

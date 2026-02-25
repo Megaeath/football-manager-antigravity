@@ -27,6 +27,7 @@ interface Player {
     dribbling: number;
     crossing: number;
     setPieces: number;
+    throw: number;
     aggression: number;
     positioning: number;
     vision: number;
@@ -124,6 +125,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
         dribbling: p.dribbling,
         crossing: p.crossing,
         setPieces: p.setPieces,
+        throw: p.throw,
         aggression: p.aggression,
         positioning: p.positioning,
         vision: p.vision,

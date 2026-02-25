@@ -30,14 +30,15 @@ function calculateActionWeights(
         SHOOT: 0
     };
 
-    // Increase shooting weight when close to goal
-    if (distanceToGoal <= 30) {
+    // Shooting zones: 0-10 = penalty area (tightened), 10-25 = long shots (reduced), >25 = no shooting
+    if (distanceToGoal <= 10) {
+        // Penalty area only - full shooting weight
         weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting;
-        console.log('Shooting weight increased');
-    } else if (distanceToGoal <= 40) {
-        weights.SHOOT = player.attributes.shooting * 0.5 * creativeBuff.shooting;
-        console.log('Shooting weight moderate');
+    } else if (distanceToGoal <= 25) {
+        // Long shot zone - much reduced weight
+        weights.SHOOT = player.attributes.shooting * 0.2 * creativeBuff.shooting;
     }
+    // Beyond 25 yards: SHOOT weight stays at 0 (no shooting)
 
     // Apply condition multiplier to all weights
     const conditionFactor = player.condition / 100;
@@ -161,7 +162,7 @@ function executePassShort(
     teamStats.passesAttempted++;
 
     const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
-    const defenseScore = Math.random() * 10;
+    const defenseScore = Math.random() * 10; // Increased from 8 for more interceptions
 
     const skillBonus = player.attributes.passing > 15 ? 1.15 : 1.0;
     const success = (passScore * skillBonus) > defenseScore;
@@ -169,10 +170,16 @@ function executePassShort(
     if (success) {
         stats.passesCompleted++;
         teamStats.passesCompleted++;
-        const movement = 2 + Math.random() * 3; // +2 to +5
+        
+        // 30% chance of backward/sideways pass when under pressure (realistic play)
+        const isBackwardPass = Math.random() < 0.3;
+        const movement = isBackwardPass 
+            ? -(0.5 + Math.random() * 1.5) // -0.5 to -2 (backward)
+            : (0.5 + Math.random() * 1.5); // +0.5 to +2 (forward)
+        
         ball.position = isHomeAttacking
-            ? Math.min(100, ball.position + movement)
-            : Math.max(0, ball.position - movement);
+            ? Math.max(0, Math.min(100, ball.position + movement))
+            : Math.max(0, Math.min(100, ball.position - movement));
         // Reassign carrier based on new position
         ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
     } else {
@@ -181,6 +188,16 @@ function executePassShort(
         ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
     }
     console.log(`Short pass executed. Success: ${success}, New Position: ${ball.position.toFixed(1)}`);
+
+    // Potentially trigger throw-in on failure (simplified out of bounds)
+    if (!success && Math.random() < 0.2) {
+        ball.position = isHomeAttacking
+            ? Math.min(100, ball.position + 2)
+            : Math.max(0, ball.position - 2);
+        executeThrowIn(ball, matchState, isHomeAttacking ? defendingTeam : attackingTeam, isHomeAttacking ? attackingTeam : defendingTeam, !isHomeAttacking);
+        return;
+    }
+
     applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
 }
 
@@ -199,12 +216,12 @@ function executePassLong(
     teamStats.crossesAttempted++;
 
     const passScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
-    const defenseScore = Math.random() * 15;
+    const defenseScore = Math.random() * 14; // Increased from 12 for more interceptions
 
     const skillBonus = (player.attributes.passing > 15 && player.attributes.vision > 15) ? 1.2 : 1.0;
     const success = (passScore * skillBonus) > defenseScore;
 
-    const movement = 10 + Math.random() * 10; // +10 to +20
+    const movement = 2 + Math.random() * 3; // +2 to +5 (further reduced to slow progression)
     const targetPosition = isHomeAttacking
         ? Math.min(100, ball.position + movement)
         : Math.max(0, ball.position - movement);
@@ -229,6 +246,8 @@ function executeDribble(
     ball: BallState,
     player: PlayerState,
     matchState: MatchState,
+    homeTeam: TeamState,
+    awayTeam: TeamState,
     attackingTeam: TeamState,
     defendingTeam: TeamState,
     isHomeAttacking: boolean
@@ -253,7 +272,7 @@ function executeDribble(
 
     if (success) {
         stats.dribblesWon++;
-        const movement = 3 + Math.random() * 5; // +3 to +8
+        const movement = 1 + Math.random() * 2; // +1 to +3 (further reduced for realism)
         ball.position = isHomeAttacking
             ? Math.min(100, ball.position + movement)
             : Math.max(0, ball.position - movement);
@@ -263,10 +282,32 @@ function executeDribble(
         matchState.playerStats[defender.id].tacklesWon++;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = defender;
+        
+        // Push ball backward on interception (realistic defensive action)
+        const pushBack = 2 + Math.random() * 3; // -2 to -5 yards
+        ball.position = isHomeAttacking
+            ? Math.max(0, ball.position - pushBack)
+            : Math.min(100, ball.position + pushBack);
     }
 
     applyActionDrain(player, 'HIGH', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
     applyActionDrain(defender, 'MEDIUM', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
+
+    // Potentially trigger foul/free kick
+    if (!success && Math.random() < 0.15) {
+        const foulChance = getTacklingBuff(defendingTeam.tactics.tackling).foul;
+        if (Math.random() < 0.3 * foulChance) {
+            matchState.playerStats[defender.id].fouls++;
+            const isHomeFouled = !isHomeAttacking;
+            const distanceToGoal = isHomeAttacking ? 100 - ball.position : ball.position;
+
+            if (distanceToGoal < 25) {
+                executeFreeKickShort(ball, matchState, homeTeam, awayTeam, isHomeAttacking);
+            } else {
+                executeFreeKickLong(ball, matchState, homeTeam, awayTeam, isHomeAttacking);
+            }
+        }
+    }
 }
 
 function executeShoot(
@@ -274,11 +315,11 @@ function executeShoot(
     player: PlayerState,
     minute: number,
     matchState: MatchState,
+    homeTeam: TeamState,
+    awayTeam: TeamState,
     attackingTeam: TeamState,
     defendingTeam: TeamState,
-    isHomeAttacking: boolean,
-    homeTeam: TeamState,
-    awayTeam: TeamState
+    isHomeAttacking: boolean
 ): void {
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
@@ -355,8 +396,8 @@ function executeShoot(
         // Reset ball to center, kick-off from non-GK
         ball.position = 50;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
-        const kickoffTeam = ball.possession === 'home' ? homeTeam : awayTeam;
         const kickoffIsHomeAttacking = ball.possession === 'home';
+        const kickoffTeam = kickoffIsHomeAttacking ? attackingTeam : defendingTeam;
         ball.carrier = getCarrierByPosition(kickoffTeam, 50, kickoffIsHomeAttacking);
     } else {
         // Save or miss
@@ -385,6 +426,13 @@ function executeShoot(
 
         // GK distributes to defender immediately (goal kick / distribution)
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
+
+        // Corner kick chance on save (reduced from 30% to 15% for realism)
+        if (isOnTarget && Math.random() < 0.15) {
+            executeCornerKick(ball, matchState, homeTeam, awayTeam, isHomeAttacking);
+            return;
+        }
+
         const defender = getRandomPlayer(defendingTeam, ['DC', 'DR', 'DL', 'DMC']) || defendingTeam.players[1]; // Avoid GK at index 0
         ball.carrier = defender;
         ball.position = isHomeAttacking ? 10 : 90; // Slightly further up field
@@ -392,6 +440,170 @@ function executeShoot(
 
     applyActionDrain(player, 'HIGH', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
     applyActionDrain(gk, 'LOW', getMentalityBuff(defendingTeam.tactics.mentality).fatigue);
+}
+
+function getSetPieceTaker(team: TeamState, type: 'SHORT_FK' | 'LONG_FK' | 'CORNER' | 'THROW'): PlayerState {
+    const starters = team.players.filter(p => p.tacticalPosition !== null);
+
+    if (type === 'THROW') {
+        // Pick top 3 by throw attribute
+        const takers = starters
+            .map(p => ({ player: p, score: p.attributes.throw || 0 }))
+            .sort((a, b) => b.score - a.score);
+        const topCandidates = takers.slice(0, 3);
+        return topCandidates[Math.floor(Math.random() * topCandidates.length)].player;
+    }
+
+    const takers = starters.map(p => {
+        let score = 0;
+        if (type === 'SHORT_FK') score = p.attributes.setPieces + p.attributes.shooting;
+        else if (type === 'LONG_FK') score = p.attributes.setPieces + p.attributes.passing + p.attributes.crossing;
+        else if (type === 'CORNER') score = p.attributes.setPieces + p.attributes.crossing;
+        return { player: p, score };
+    }).sort((a, b) => b.score - a.score);
+
+    // Pick from top 3
+    const topCandidates = takers.slice(0, 3);
+    return topCandidates[Math.floor(Math.random() * topCandidates.length)].player;
+}
+
+function executeFreeKickShort(ball: BallState, matchState: MatchState, homeTeam: TeamState, awayTeam: TeamState, isHomeAttacking: boolean) {
+    const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
+    const defendingTeam = isHomeAttacking ? awayTeam : homeTeam;
+    const taker = getSetPieceTaker(attackingTeam, 'SHORT_FK');
+    const stats = matchState.playerStats[taker.id];
+
+    stats.freeKicks++;
+    isHomeAttacking ? matchState.teamStats.home.freeKicks++ : matchState.teamStats.away.freeKicks++;
+
+    matchState.events.push({
+        minute: matchState.minute,
+        type: 'FREE_KICK',
+        text: `Free kick in a dangerous position! ${taker.name} steps up...`,
+        teamId: attackingTeam.id,
+        playerId: taker.id
+    });
+
+    const gk = defendingTeam.players.find(p => p.position === 'GK') || defendingTeam.players[0];
+    const shootScore = calculateActionScore('free_kick_short', taker.attributes, 'attacker', taker.condition);
+    const saveScore = calculateActionScore('save', gk.attributes, 'defender', gk.condition);
+
+    if (shootScore > saveScore * 1.1) {
+        stats.goals++;
+        stats.shots++;
+        stats.shotsOnTarget++;
+        isHomeAttacking ? matchState.homeScore++ : matchState.awayScore++;
+        matchState.events.push({
+            minute: matchState.minute,
+            type: 'GOAL',
+            text: `GOAL! ${taker.name} curls a magnificent free kick into the top corner!`,
+            teamId: attackingTeam.id,
+            playerId: taker.id
+        });
+        ball.position = 50;
+        ball.possession = isHomeAttacking ? 'away' : 'home';
+        ball.carrier = getCarrierByPosition(isHomeAttacking ? awayTeam : homeTeam, 50, !isHomeAttacking);
+    } else {
+        matchState.events.push({
+            minute: matchState.minute,
+            type: 'MISS',
+            text: `${taker.name}'s free kick is saved by ${gk.name}!`,
+            teamId: attackingTeam.id,
+            playerId: taker.id
+        });
+        ball.possession = isHomeAttacking ? 'away' : 'home';
+        ball.carrier = gk;
+        ball.position = isHomeAttacking ? 5 : 95;
+    }
+}
+
+function executeFreeKickLong(ball: BallState, matchState: MatchState, homeTeam: TeamState, awayTeam: TeamState, isHomeAttacking: boolean) {
+    const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
+    const defendingTeam = isHomeAttacking ? awayTeam : homeTeam;
+    const taker = getSetPieceTaker(attackingTeam, 'LONG_FK');
+    const stats = matchState.playerStats[taker.id];
+
+    stats.freeKicks++;
+    isHomeAttacking ? matchState.teamStats.home.freeKicks++ : matchState.teamStats.away.freeKicks++;
+
+    const passScore = calculateActionScore('free_kick_long', taker.attributes, 'attacker', taker.condition);
+    const success = passScore > Math.random() * 15;
+
+    if (success) {
+        ball.position = isHomeAttacking ? Math.min(95, ball.position + 20) : Math.max(5, ball.position - 20);
+        ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking) as PlayerState;
+    } else {
+        ball.possession = isHomeAttacking ? 'away' : 'home';
+        ball.carrier = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC']) || null;
+    }
+}
+
+function executeCornerKick(ball: BallState, matchState: MatchState, homeTeam: TeamState, awayTeam: TeamState, isHomeAttacking: boolean) {
+    const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
+    const defendingTeam = isHomeAttacking ? awayTeam : homeTeam;
+    const taker = getSetPieceTaker(attackingTeam, 'CORNER');
+    const stats = matchState.playerStats[taker.id];
+
+    stats.corners++;
+    isHomeAttacking ? matchState.teamStats.home.corners++ : matchState.teamStats.away.corners++;
+
+    matchState.events.push({
+        minute: matchState.minute,
+        type: 'CORNER',
+        text: `Corner kick for ${attackingTeam.name}. ${taker.name} to take it...`,
+        teamId: attackingTeam.id,
+        playerId: taker.id
+    });
+
+    const cornerScore = calculateActionScore('corner', taker.attributes, 'attacker', taker.condition);
+    const success = cornerScore > Math.random() * 18;
+
+    if (success) {
+        ball.position = isHomeAttacking ? 92 : 8;
+        const target = getRandomPlayer(attackingTeam, ['FWC', 'DC', 'MC']);
+        if (target && Math.random() < 0.3) {
+            // Header attempt
+            const headerScore = (target.attributes.heading + target.attributes.strength) * 0.5;
+            if (headerScore > Math.random() * 20) {
+                matchState.playerStats[target.id].goals++;
+                matchState.playerStats[taker.id].assists++;
+                isHomeAttacking ? matchState.homeScore++ : matchState.awayScore++;
+                matchState.events.push({
+                    minute: matchState.minute,
+                    type: 'GOAL',
+                    text: `GOAL! ${target.name} heads home from the corner!`,
+                    teamId: attackingTeam.id,
+                    playerId: target.id
+                });
+                ball.position = 50;
+                ball.possession = isHomeAttacking ? 'away' : 'home';
+            }
+        }
+    }
+
+    if (ball.position !== 50) {
+        ball.possession = isHomeAttacking ? 'away' : 'home';
+        ball.carrier = defendingTeam.players.find(p => p.position === 'GK') || defendingTeam.players[0];
+    }
+}
+
+function executeThrowIn(ball: BallState, matchState: MatchState, homeTeam: TeamState, awayTeam: TeamState, isHomeAttacking: boolean) {
+    const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
+    const taker = getSetPieceTaker(attackingTeam, 'THROW');
+    const stats = matchState.playerStats[taker.id];
+
+    stats.throws++;
+    isHomeAttacking ? matchState.teamStats.home.throws++ : matchState.teamStats.away.throws++;
+
+    const throwScore = calculateActionScore('throw_in', taker.attributes, 'attacker', taker.condition);
+    const success = throwScore > Math.random() * 10;
+
+    if (success) {
+        ball.carrier = getRandomPlayer(attackingTeam, ['MC', 'MR', 'ML', 'FWC']) || null;
+    } else {
+        ball.possession = isHomeAttacking ? 'away' : 'home';
+        ball.carrier = getRandomPlayer(isHomeAttacking ? awayTeam : homeTeam, ['MC', 'DC', 'DR', 'DL']) || null;
+    }
 }
 
 function checkDefensiveInterruption(
@@ -446,6 +658,9 @@ function initializePlayerStats(team: TeamState): Record<string, EnginePlayerMatc
             fouls: 0,
             yellowCards: 0,
             redCards: 0,
+            freeKicks: 0,
+            corners: 0,
+            throws: 0,
             offsides: 0
         };
     });
@@ -465,7 +680,9 @@ function initTeamStats(): TeamMatchStats {
         passesAttempted: 0,
         passesCompleted: 0,
         crossesAttempted: 0,
-        crossesCompleted: 0
+        crossesCompleted: 0,
+        freeKicks: 0,
+        throws: 0
     };
 }
 
@@ -503,11 +720,12 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
     let awaySubsUsed = 0;
     const maxSubs = 5;
 
-    // BALL PROGRESSION SYSTEM: 90 minutes, 3 ticks per minute = 270 game ticks
+    // BALL PROGRESSION SYSTEM: 90 minutes, 12 ticks per minute (every 5 seconds) = 1080 game ticks
+    // This provides more realistic pass volume (600+ passes per match)
     for (let minute = 1; minute <= 90; minute++) {
         matchState.minute = minute;
 
-        const ticksPerMinute = 3;
+        const ticksPerMinute = 12; // 1 tick = 5 seconds (60s / 12 = 5s)
         for (let tick = 0; tick < ticksPerMinute; tick++) {
             const isHomeAttacking = ball.possession === 'home';
             const attackingTeam = isHomeAttacking ? homeTeam : awayTeam;
@@ -520,7 +738,7 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
 
             // Skip if carrier is somehow still GK (safety check)
             if (ball.carrier && ball.carrier.position === 'GK') {
-                ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
+                ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking) as PlayerState;
             }
 
             // Check for defensive interruption (interception)
@@ -541,10 +759,10 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
                     executePassLong(ball, ball.carrier, matchState, attackingTeam, defendingTeam, isHomeAttacking);
                     break;
                 case 'DRIBBLE':
-                    executeDribble(ball, ball.carrier, matchState, attackingTeam, defendingTeam, isHomeAttacking);
+                    executeDribble(ball, ball.carrier, matchState, homeTeam, awayTeam, attackingTeam, defendingTeam, isHomeAttacking);
                     break;
                 case 'SHOOT':
-                    executeShoot(ball, ball.carrier, minute, matchState, attackingTeam, defendingTeam, isHomeAttacking, homeTeam, awayTeam);
+                    executeShoot(ball, ball.carrier, minute, matchState, homeTeam, awayTeam, attackingTeam, defendingTeam, isHomeAttacking);
                     break;
             }
 
@@ -794,7 +1012,7 @@ function calculateRatings(matchState: MatchState) {
         rating += (stat.assists * 0.7);
         rating += (stat.saves * 0.2);
         rating += (stat.tacklesWon * 0.3);
-        rating += (stat.passesCompleted * 0.05);
+        rating += (stat.passesCompleted * 0.01); // Reduced from 0.05 due to 4x more passes from 12 ticks/min
         rating += (stat.dribblesWon * 0.2);
 
         rating -= ((stat.shots - stat.shotsOnTarget) * 0.1);

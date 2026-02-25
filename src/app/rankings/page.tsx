@@ -78,6 +78,7 @@ export default async function RankingsPage({
             dribbling: Number(s.dribbling || 0),
             crossing: Number(s.crossing || 0),
             setPieces: Number(s.setPieces || 0),
+            throw: Number(s.throw || 0),
             aggression: Number(s.aggression || 0),
             positioning: Number(s.positioning || 0),
             vision: Number(s.vision || 0),

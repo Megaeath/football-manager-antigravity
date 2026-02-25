@@ -52,7 +52,10 @@ export async function GET(
                 redCards: ps.redCards,
                 fitnessEnd: ps.fitnessEnd,
                 dribblesAttempted: ps.dribblesAttempted,
-                dribblesWon: ps.dribblesWon
+                dribblesWon: ps.dribblesWon,
+                freeKicks: ps.freeKicks || 0,
+                corners: ps.corners || 0,
+                throws: ps.throws || 0
             };
         });
 
@@ -68,7 +71,9 @@ export async function GET(
             passesAttempted: 0,
             passesCompleted: 0,
             crossesAttempted: 0,
-            crossesCompleted: 0
+            crossesCompleted: 0,
+            freeKicks: 0,
+            throws: 0
         };
 
         const baseTeamStats = match.stats ? JSON.parse(match.stats) : null;
@@ -87,6 +92,9 @@ export async function GET(
             bucket.crossesCompleted += ps.crossesCompleted || 0;
             bucket.yellowCards += ps.yellowCards || 0;
             bucket.redCards += ps.redCards || 0;
+            bucket.freeKicks += ps.freeKicks || 0;
+            bucket.corners += ps.corners || 0;
+            bucket.throws += ps.throws || 0;
         });
 
         // Calculate possession based on passes completed

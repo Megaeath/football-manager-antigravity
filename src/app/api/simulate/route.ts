@@ -20,6 +20,7 @@ function mapPlayer(p: any): PlayerState {
             dribbling: p.dribbling,
             crossing: p.crossing || 10,
             setPieces: p.setPieces,
+            throw: p.throw || 10,
             aggression: p.aggression,
             positioning: p.positioning,
             vision: p.vision,

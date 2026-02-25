@@ -19,6 +19,7 @@ interface PlayerData {
     heading: number;
     dribbling: number;
     setPieces: number;
+    throw: number;
     aggression: number;
     positioning: number;
     vision: number;
@@ -207,6 +208,7 @@ export default function PlayerModal() {
                                                         dribbling: player.dribbling,
                                                         crossing: player.crossing,
                                                         setPieces: player.setPieces,
+                                                        throw: player.throw,
                                                         aggression: player.aggression,
                                                         positioning: player.positioning,
                                                         vision: player.vision,

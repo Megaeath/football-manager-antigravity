@@ -68,6 +68,7 @@ function mapAttributes(p: any): PlayerAttributes {
         dribbling: p.dribbling,
         crossing: p.crossing,
         setPieces: p.setPieces,
+        throw: p.throw || 10,
         aggression: p.aggression,
         positioning: p.positioning,
         vision: p.vision,
@@ -123,6 +124,7 @@ function mapPlayer(p: any): PlayerState {
         attributes: {
             handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
             heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, crossing: p.crossing,
+            throw: p.throw || 10,
             aggression: p.aggression, positioning: p.positioning, vision: p.vision, bravery: p.bravery,
             leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
             pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
@@ -245,7 +247,9 @@ export async function processMatch(matchId: string) {
         passesAttempted: 0,
         passesCompleted: 0,
         crossesAttempted: 0,
-        crossesCompleted: 0
+        crossesCompleted: 0,
+        freeKicks: 0,
+        throws: 0
     };
 
     const derivedTeamStats = {
@@ -263,6 +267,9 @@ export async function processMatch(matchId: string) {
         bucket.crossesCompleted += stat.crossesCompleted || 0;
         bucket.yellowCards += stat.yellowCards || 0;
         bucket.redCards += stat.redCards || 0;
+        bucket.freeKicks += stat.freeKicks || 0;
+        bucket.corners += stat.corners || 0;
+        bucket.throws += stat.throws || 0;
     });
 
     const mergedTeamStats = {
@@ -330,7 +337,10 @@ export async function processMatch(matchId: string) {
             saves: stat.saves,
             fitnessEnd: stat.fitnessEnd,
             yellowCards: stat.yellowCards,
-            redCards: stat.redCards
+            redCards: stat.redCards,
+            freeKicks: stat.freeKicks || 0,
+            corners: stat.corners || 0,
+            throws: stat.throws || 0
         }));
 
         if (statsToCreate.length > 0) {
@@ -350,7 +360,10 @@ export async function processMatch(matchId: string) {
                     passesAttempted: { increment: stat.passesAttempted },
                     passesCompleted: { increment: stat.passesCompleted },
                     crossesAttempted: { increment: stat.crossesAttempted },
-                    crossesCompleted: { increment: stat.crossesCompleted }
+                    crossesCompleted: { increment: stat.crossesCompleted },
+                    freeKicks: { increment: stat.freeKicks || 0 },
+                    corners: { increment: stat.corners || 0 },
+                    throws: { increment: stat.throws || 0 }
                 }
             });
         }
