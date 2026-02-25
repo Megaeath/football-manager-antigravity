@@ -84,6 +84,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                             <AttributeItem label="Dribbling" value={player.dribbling} />
                             <AttributeItem label="Crossing" value={player.crossing} />
                             <AttributeItem label="Set Pieces" value={player.setPieces} />
+                            <AttributeItem label="Throw In" value={player.throw} />
                         </div>
                         <div>
                             <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Mental</h4>

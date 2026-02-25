@@ -532,7 +532,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 p.rawAttributes.heading,
                                 p.rawAttributes.dribbling,
                                 p.rawAttributes.crossing,
-                                p.rawAttributes.setPieces
+                                p.rawAttributes.setPieces,
+                                p.rawAttributes.throw
                             ]);
                             const tactical = toHundred([
                                 p.rawAttributes.aggression,

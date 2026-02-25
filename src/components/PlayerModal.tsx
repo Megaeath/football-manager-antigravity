@@ -277,7 +277,8 @@ export default function PlayerModal() {
                                             { label: 'Heading', value: player.heading },
                                             { label: 'Passing', value: player.passing },
                                             { label: 'Shooting', value: player.shooting },
-                                            { label: 'Tackling', value: player.tackling }
+                                            { label: 'Tackling', value: player.tackling },
+                                            { label: 'Throw In', value: player.throw }
                                         ]} />
 
                                         <AttributeSection label="Tactical" items={[
