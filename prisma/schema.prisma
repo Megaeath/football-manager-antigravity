@@ -47,10 +47,18 @@ model Team {
   attacking_focus String @default("MIXED")
   creative_freedom String @default("NORMAL")
 
+  // Financial & Reputation
+  balance           Int      @default(5000000)  // Current cash balance
+  reputation        Int      @default(50)       // 0-100
+  stadiumCapacity   Int      @default(50000)    // Stadium seats
+  
   // Relations
-  players   Player[]
-  homeMatches Match[] @relation("HomeTeam")
-  awayMatches Match[] @relation("AwayTeam")
+  players           Player[]
+  homeMatches       Match[] @relation("HomeTeam")
+  awayMatches       Match[] @relation("AwayTeam")
+  ClubFinance       ClubFinance[]
+  TeamReputation    TeamReputation[]
+  FinancialEvent    FinancialEvent[]
 }
 
 model Player {
@@ -118,11 +126,18 @@ model Player {
   retirementAge Int      @default(38)
   isRetired     Boolean  @default(false)
   motmCount     Int      @default(0)
+
+  // Financial & Reputation
+  popularity    Int      @default(50)  // 0-100
+  contractStartWeek Int  @default(0)   // Week when contract started (for tracking duration)
+  contractEndWeek Int    @default(52)  // Weeks until contract expires
+  weeklyWage    Int      @default(10000) // Currency units per week
   
   // Relations
-  matchStats PlayerMatchStats[]
-  team       Team?              @relation(fields: [teamId], references: [id])
-  motmMatches Match[]           @relation("MatchMotM")
+  matchStats    PlayerMatchStats[]
+  team          Team?              @relation(fields: [teamId], references: [id])
+  motmMatches   Match[]            @relation("MatchMotM")
+  PlayerReputation PlayerReputation[]
 }
 
 model Match {
@@ -207,4 +222,57 @@ model PlayerMatchStats {
   
   match     Match    @relation(fields: [matchId], references: [id])
   player    Player   @relation(fields: [playerId], references: [id])
+}
+
+// ========== FINANCIAL SYSTEM MODELS ==========
+
+model PlayerReputation {
+  id        String   @id @default(cuid())
+  playerId  String
+  week      Int
+  popularity Int     @default(50)  // 0-100
+  trendChange Int    @default(0)   // Change from previous week
+  createdAt DateTime @default(now())
+
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, week])
+}
+
+model TeamReputation {
+  id        String   @id @default(cuid())
+  teamId    String
+  week      Int
+  reputation Int     @default(50)  // 0-100
+  trendChange Int    @default(0)   // Change from previous week
+  createdAt DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, week])
+}
+
+model ClubFinance {
+  id            String   @id @default(cuid())
+  teamId        String
+  week          Int
+  balance       Int      // Current cash balance after this week
+  weeklyIncome  Int      // Income for this week
+  weeklyExpenses Int     // Expenses for this week
+  createdAt     DateTime @default(now())
+
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, week])
+}
+
+model FinancialEvent {
+  id          String   @id @default(cuid())
+  teamId      String
+  date        DateTime @default(now())
+  type        String   // 'WAGE', 'SPONSORSHIP', 'TICKET', 'JERSEY', 'MAINTENANCE', 'OTHER'
+  amount      Int      // Positive = income, Negative = expense
+  description String
+
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }

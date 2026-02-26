@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { simulateMatch } from '../engine/match';
 import { calculateSuitability } from '../engine/suitability';
 import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes } from '../engine/types';
+import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
 
 const FORMATIONS: Record<string, { id: string }[]> = {
     '4-4-2': [
@@ -375,5 +376,46 @@ export async function processMatch(matchId: string) {
         homeTeamName: (matchDB as any).homeTeam.name,
         awayTeamName: (matchDB as any).awayTeam.name,
         motmPlayerId: (motm as any)?.playerId || null
+    };
+}
+
+/**
+ * Update player reputation and team reputation after match
+ */
+export async function processMatchFinancials(matchId: string) {
+    const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: {
+            playerStats: true,
+            homeTeam: true,
+            awayTeam: true
+        }
+    });
+
+    if (!match || match.homeScore === null || match.awayScore === null) return null;
+
+    // Determine match result
+    const homeResult = match.homeScore > match.awayScore ? 'win' : match.homeScore === match.awayScore ? 'draw' : 'loss';
+    const awayResult = match.awayScore > match.homeScore ? 'win' : match.homeScore === match.awayScore ? 'draw' : 'loss';
+
+    // Update player popularity for all players in the match
+    for (const stat of match.playerStats) {
+        await updatePlayerPopularity(stat.playerId, {
+            goals: stat.goals,
+            isMotm: stat.id === match.motmPlayerId,
+            played: stat.minutes > 0,
+            rating: stat.rating,
+            redCards: stat.redCards,
+            isImportantMatch: false // Can be enhanced to detect derby matches, cup finals, etc.
+        });
+    }
+
+    // Update team reputation
+    await updateTeamReputation(match.homeTeamId, homeResult);
+    await updateTeamReputation(match.awayTeamId, awayResult);
+
+    return {
+        homeResult,
+        awayResult
     };
 }

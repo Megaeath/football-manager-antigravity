@@ -1008,9 +1008,20 @@ function calculateRatings(matchState: MatchState) {
     Object.values(matchState.playerStats).forEach(stat => {
         let rating = 6.0;
 
+        // Check if player is goalkeeper by position
+        const isGoalkeeper = stat.position === 'GK';
+
         rating += (stat.goals * 1.2);
         rating += (stat.assists * 0.7);
-        rating += (stat.saves * 0.2);
+        
+        // Reduce goalkeeper save rating bonus from 0.2 to 0.15 to balance saves
+        // Goalkeepers should get credit for good saves but not dominate MOM every match
+        if (isGoalkeeper) {
+            rating += (stat.saves * 0.15);
+        } else {
+            rating += (stat.saves * 0.2); // Non-GK rarely get saves, keep original
+        }
+        
         rating += (stat.tacklesWon * 0.3);
         rating += (stat.passesCompleted * 0.01); // Reduced from 0.05 due to 4x more passes from 12 ticks/min
         rating += (stat.dribblesWon * 0.2);

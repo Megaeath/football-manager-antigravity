@@ -245,6 +245,33 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         return Math.round(suitability * getFitnessFactor(p.condition));
     };
 
+    const calculatePlayerOverall = (rawAttrs: PlayerAttributes) => {
+        const technicalAvg = (
+            (rawAttrs.passing || 10) + (rawAttrs.dribbling || 10) + (rawAttrs.shooting || 10) +
+            (rawAttrs.crossing || 10) + (rawAttrs.heading || 10) + (rawAttrs.tackling || 10) +
+            (rawAttrs.vision || 10)
+        ) / 7;
+        const mentalAvg = (
+            (rawAttrs.bravery || 10) + (rawAttrs.leadership || 10) + (rawAttrs.positioning || 10) +
+            (rawAttrs.composure || 10) + (rawAttrs.aggression || 10) + (rawAttrs.teamwork || 10)
+        ) / 6;
+        const physicalAvg = (
+            (rawAttrs.acceleration || 10) + (rawAttrs.pace || 10) + (rawAttrs.strength || 10) +
+            (rawAttrs.stamina || 10) + (rawAttrs.agility || 10) + (rawAttrs.balance || 10)
+        ) / 6;
+        return (technicalAvg + mentalAvg + physicalAvg) / 3;
+    };
+
+    const getMarketValue = (p: PlayerProps) => {
+        const overall = calculatePlayerOverall(p.rawAttributes);
+        const popularity = 50; // Default popularity
+        let ageMultiplier = 1;
+        if (p.age >= 32) {
+            ageMultiplier = Math.pow(0.9, p.age - 32);
+        }
+        return Math.round((Math.pow(overall, 2) * popularity) / 1000 * ageMultiplier * 50000);
+    };
+
     const getBasePower = (p: PlayerProps) => {
         const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
         const suitability = calculateSuitability(p.rawAttributes, targetPos);
@@ -511,6 +538,9 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                             <th style={{ padding: '6px', textAlign: 'center' }}>
                                 <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
                             </th>
+                            <th style={{ padding: '6px', textAlign: 'center' }}>
+                                <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>💎 Market Value</button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -620,6 +650,11 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                     <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                                         {power}
                                         {power < basePower && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
+                                    </td>
+                                    <td style={{ padding: '6px', textAlign: 'center' }}>
+                                        <span style={{ background: '#fbbf24', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                            ${(getMarketValue(p) / 1000000).toFixed(1)}M
+                                        </span>
                                     </td>
                                 </tr>
                         ))}

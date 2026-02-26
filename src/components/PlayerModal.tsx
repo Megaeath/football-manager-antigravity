@@ -1,17 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
+import { getPlayerReputation } from '@/lib/reputation';
+import { ContractTab } from '@/components/ContractTab';
 
 interface PlayerData {
     id: string;
     name: string;
+    teamId: string;
     naturalPosition: string;
     age: number;
     team: { name: string };
+    power: number;
+    marketValue?: number;
     avgRating: number;
+    popularity?: number;
+    contractStartWeek?: number;
+    contractEndWeek?: number;
+    weeklyWage?: number;
     handling: number;
     tackling: number;
     passing: number;
@@ -89,28 +98,45 @@ export default function PlayerModal() {
     
     const [player, setPlayer] = useState<PlayerData | null>(null);
     const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState<'attributes' | 'season' | 'matches'>('attributes');
+    const [activeTab, setActiveTab] = useState<'attributes' | 'season' | 'matches' | 'contract'>('attributes');
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+    const [userTeamId, setUserTeamId] = useState<string>('');
+    const [loadingTeam, setLoadingTeam] = useState(true);
+
+    const fetchPlayer = useCallback(async () => {
+        if (!playerId) return;
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/player/${playerId}`);
+            const data = await res.json();
+            setPlayer(data);
+            setSelectedSeason(data.currentSeason);
+        } catch (e) {
+            console.error('Failed to fetch player:', e);
+        } finally {
+            setLoading(false);
+        }
+    }, [playerId]);
 
     useEffect(() => {
         if (!playerId) return;
+        fetchPlayer();
+    }, [playerId, fetchPlayer]);
 
-        const fetchPlayer = async () => {
-            setLoading(true);
+    useEffect(() => {
+        const fetchUserTeam = async () => {
             try {
-                const res = await fetch(`/api/player/${playerId}`);
+                const res = await fetch('/api/game/info');
                 const data = await res.json();
-                setPlayer(data);
-                setSelectedSeason(data.currentSeason);
+                setUserTeamId(data.userTeamId || '');
             } catch (e) {
-                console.error('Failed to fetch player:', e);
+                console.error('Failed to fetch user team:', e);
             } finally {
-                setLoading(false);
+                setLoadingTeam(false);
             }
         };
-
-        fetchPlayer();
-    }, [playerId]);
+        fetchUserTeam();
+    }, []);
 
     const closeModal = () => {
         router.back();
@@ -194,43 +220,38 @@ export default function PlayerModal() {
                                     </div>
                                 </div>
                                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end' }}>
+                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                                         <div>
                                             <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Power</div>
                                             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--success)' }}>
-                                                {(() => {
-                                                    const attrs: PlayerAttributes = {
-                                                        handling: player.handling,
-                                                        tackling: player.tackling,
-                                                        passing: player.passing,
-                                                        shooting: player.shooting,
-                                                        heading: player.heading,
-                                                        dribbling: player.dribbling,
-                                                        crossing: player.crossing,
-                                                        setPieces: player.setPieces,
-                                                        throw: player.throw,
-                                                        aggression: player.aggression,
-                                                        positioning: player.positioning,
-                                                        vision: player.vision,
-                                                        bravery: player.bravery,
-                                                        leadership: player.leadership,
-                                                        teamwork: player.teamwork,
-                                                        composure: player.composure,
-                                                        pace: player.pace,
-                                                        acceleration: player.acceleration,
-                                                        stamina: player.stamina,
-                                                        strength: player.strength,
-                                                        agility: player.agility,
-                                                        balance: player.balance
-                                                    };
-                                                    const natPos = player.naturalPosition.split('_')[0];
-                                                    return Math.round(calculateSuitability(attrs, natPos));
-                                                })()}
+                                                {player.power || 0}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Market Value</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fbbf24' }}>
+                                                ${player.marketValue ? player.marketValue.toLocaleString() : '0'}
                                             </div>
                                         </div>
                                         <div>
                                             <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Career Rating</div>
                                             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--accent)' }}>{(player.avgRating || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Reputation</div>
+                                            {(() => {
+                                                const rep = getPlayerReputation(player.popularity || 0);
+                                                return (
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#93c5fd' }}>
+                                                            {rep.label} ({rep.score})
+                                                        </div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', maxWidth: '220px' }}>
+                                                            {rep.definition}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 </div>
@@ -238,10 +259,10 @@ export default function PlayerModal() {
 
                             {/* Tabs */}
                             <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)', padding: '0', margin: 0 }}>
-                                {['attributes', 'season', 'matches'].map((tab: string) => (
+                                {['attributes', 'season', 'matches', 'contract'].map((tab: string) => (
                                     <button
                                         key={tab}
-                                        onClick={() => setActiveTab(tab as 'attributes' | 'season' | 'matches')}
+                                        onClick={() => setActiveTab(tab as 'attributes' | 'season' | 'matches' | 'contract')}
                                         style={{
                                             flex: 1, padding: '16px', border: 'none',
                                             background: activeTab === tab ? '#fff' : 'transparent',
@@ -251,7 +272,13 @@ export default function PlayerModal() {
                                             fontSize: '0.95rem', textTransform: 'uppercase'
                                         }}
                                     >
-                                        {tab === 'attributes' ? '💪 ทักษะ' : tab === 'season' ? '📊 ฤดูกาล' : '📅 ประวัติ'}
+                                        {tab === 'attributes'
+                                            ? '💪 ทักษะ'
+                                            : tab === 'season'
+                                            ? '📊 ฤดูกาล'
+                                            : tab === 'matches'
+                                            ? '📅 ประวัติ'
+                                            : '📄 สัญญา'}
                                     </button>
                                 ))}
                             </div>
@@ -453,6 +480,18 @@ export default function PlayerModal() {
                                             </div>
                                         )}
                                     </div>
+                                )}
+
+                                {activeTab === 'contract' && (
+                                    <ContractTab
+                                        playerId={player.id}
+                                        playerName={player.name}
+                                        contractStartWeek={player.contractStartWeek || 0}
+                                        contractEndWeek={player.contractEndWeek || 52}
+                                        weeklyWage={player.weeklyWage || 0}
+                                        isUserTeam={!loadingTeam && player.teamId === userTeamId}
+                                        onRenew={fetchPlayer}
+                                    />
                                 )}
                             </div>
                         </div>

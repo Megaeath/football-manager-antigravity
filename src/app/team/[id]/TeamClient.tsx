@@ -6,6 +6,7 @@ import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
 import PlayerModal from '@/components/PlayerModal';
+import { getClubReputation } from '@/lib/reputation';
 
 interface Player {
     id: string;
@@ -63,6 +64,7 @@ interface Team {
     location: string;
     founded: number;
     country: string;
+    reputation: number;
     players: Player[];
     formation: string;
     mentality: string;
@@ -217,6 +219,16 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                         <div style={{ marginTop: '8px', color: 'rgba(255,255,255,0.7)' }}>
                             {team.location} • ก่อตั้ง {team.founded}
                         </div>
+                        {(() => {
+                            const rep = getClubReputation(team.reputation || 0);
+                            return (
+                                <div style={{ marginTop: '10px', color: 'rgba(255,255,255,0.85)' }}>
+                                    <span style={{ fontWeight: '600' }}>Reputation:</span>{' '}
+                                    <span style={{ color: '#93c5fd', fontWeight: '700' }}>{rep.label} ({rep.score})</span>
+                                    <span style={{ marginLeft: '10px', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>{rep.definition}</span>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>

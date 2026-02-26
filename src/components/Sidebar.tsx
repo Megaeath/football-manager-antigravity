@@ -12,6 +12,9 @@ export default function Sidebar() {
         { name: 'ตารางการแข่งขัน', href: '/fixtures', icon: '📅' },
         { name: 'ระบบลีก', href: '/league', icon: '🏆' },
         { name: 'อันดับนักเตะ', href: '/rankings', icon: '📊' },
+        { name: 'ค้นหานักเตะ', href: '/players', icon: '🔍' },
+        { name: 'การเงิน', href: '/finances', icon: '💰' },
+        { name: 'สัญญา', href: '/contracts', icon: '📄' },
         { name: 'จำลองการแข่ง', href: '/match', icon: '⚽' },
     ];
 

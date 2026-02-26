@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { advanceDay, getGameTime } from '@/lib/services/gameTime';
-import { processMatch } from '@/lib/services/matchSimulator';
+import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
 import prisma from '@/lib/prisma';
 
@@ -91,6 +91,14 @@ export async function POST(req: Request) {
             }
 
             const result = await processMatch(matchId);
+            
+            // Process financial updates after match
+            try {
+                await processMatchFinancials(matchId);
+            } catch (error) {
+                console.error('Failed to process match financials:', error);
+            }
+            
             return NextResponse.json(result);
         }
 
@@ -102,6 +110,14 @@ export async function POST(req: Request) {
             }
 
             const result = await processMatch(matchId);
+            
+            // Process financial updates after match
+            try {
+                await processMatchFinancials(matchId);
+            } catch (error) {
+                console.error('Failed to process match financials:', error);
+            }
+            
             return NextResponse.json(result);
         }
 
@@ -137,6 +153,13 @@ export async function POST(req: Request) {
                     // Auto-select tactics for AI teams
                     await autoSelectTacticsForAITeams(match, userTeamId);
                     await processMatch(match.id);
+                    
+                    // Process financial updates after match
+                    try {
+                        await processMatchFinancials(match.id);
+                    } catch (error) {
+                        console.error('Failed to process match financials:', error);
+                    }
                 }
                 const updatedSettings = await advanceDay();
                 return NextResponse.json({
@@ -154,6 +177,13 @@ export async function POST(req: Request) {
                 // Auto-select tactics for AI teams
                 await autoSelectTacticsForAITeams(match, userTeamId);
                 await processMatch(match.id);
+                
+                // Process financial updates after match
+                try {
+                    await processMatchFinancials(match.id);
+                } catch (error) {
+                    console.error('Failed to process match financials:', error);
+                }
             }
 
             return NextResponse.json({

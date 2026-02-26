@@ -1,0 +1,419 @@
+import { PrismaClient, Player, Team } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+/**
+ * Calculate overall player rating (1-20) from attributes
+ */
+export function calculatePlayerOverall(player: Player): number {
+    const technical = (player.handling + player.tackling + player.passing + player.shooting + 
+                       player.heading + player.dribbling + player.crossing + player.setPieces) / 8;
+    const mental = (player.aggression + player.positioning + player.vision + player.bravery + 
+                    player.leadership + player.teamwork + player.composure) / 7;
+    const physical = (player.pace + player.acceleration + player.stamina + player.strength + 
+                      player.agility + player.balance) / 6;
+    
+    return (technical + mental + physical) / 3;
+}
+
+/**
+ * Update player popularity after match
+ * Add: Goal (+1), MOTM (+2), Appearance (+0.5), Win important match (+2)
+ * Subtract: Long injury (-1/week), Bad form (-1.5), Red card (-3)
+ */
+export async function updatePlayerPopularity(
+    playerId: string,
+    matchStats: {
+        goals: number;
+        isMotm: boolean;
+        played: boolean;
+        rating: number;
+        redCards: number;
+        isImportantMatch?: boolean;
+    }
+): Promise<number> {
+    const player = await prisma.player.findUnique({ where: { id: playerId } });
+    if (!player) return 0;
+
+    let popularityChange = 0;
+
+    // Positive changes
+    if (matchStats.goals > 0) popularityChange += matchStats.goals * 1;
+    if (matchStats.isMotm) popularityChange += 2;
+    if (matchStats.played) popularityChange += 0.5;
+    if (matchStats.isImportantMatch) popularityChange += 2;
+
+    // Negative changes
+    if (matchStats.rating < 4) popularityChange -= 1.5; // Bad form
+    if (matchStats.redCards > 0) popularityChange -= 3;
+
+    // Update player popularity (clamp 0-100)
+    const newPopularity = Math.max(0, Math.min(100, player.popularity + popularityChange));
+    
+    await prisma.player.update({
+        where: { id: playerId },
+        data: { popularity: newPopularity }
+    });
+
+    return newPopularity;
+}
+
+/**
+ * Update team reputation based on recent performance
+ */
+export async function updateTeamReputation(
+    teamId: string,
+    matchResult: 'win' | 'draw' | 'loss'
+): Promise<number> {
+    const team = await prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) return 0;
+
+    let reputationChange = 0;
+
+    // Match result impact
+    if (matchResult === 'win') reputationChange += 1;
+    else if (matchResult === 'draw') reputationChange += 0;
+    else reputationChange -= 1.5; // Loss hurts more
+
+    // Check for superstar players (popularity > 80)
+    const superstars = await prisma.player.count({
+        where: { teamId, popularity: { gte: 80 } }
+    });
+    if (superstars > 2) reputationChange += 1; // Boost for having superstars
+
+    // Update team reputation (clamp 0-100)
+    const newReputation = Math.max(0, Math.min(100, team.reputation + reputationChange));
+    
+    await prisma.team.update({
+        where: { id: teamId },
+        data: { reputation: newReputation }
+    });
+
+    return newReputation;
+}
+
+/**
+ * Calculate weekly accounting: revenue and expenses
+ */
+export async function calculateWeeklyAccounting(teamId: string): Promise<{
+    income: number;
+    expenses: number;
+    netBalance: number;
+    breakdown: {
+        sponsorship: number;
+        ticketSales: number;
+        jerseySales: number;
+        wages: number;
+        maintenance: number;
+    };
+}> {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { players: true }
+    });
+
+    if (!team) {
+        throw new Error(`Team ${teamId} not found`);
+    }
+
+    // ===== INCOME =====
+
+    // Sponsorship: Base + reputation bonus
+    const sponsorshipBase = 20000;
+    const sponsorship = sponsorshipBase * (1 + team.reputation / 100);
+
+    // Ticket sales: capacity × attendance% × ticket price × reputation modifier
+    // Attendance = 60% base + reputation can boost to 95%
+    const baseAttendance = 0.6;
+    const reputationAttendanceBoost = (team.reputation / 100) * 0.35; // Up to +35%
+    const attendance = baseAttendance + reputationAttendanceBoost;
+    const ticketsPerSeat = 10; // Currency per ticket
+    const ticketSales = team.stadiumCapacity * attendance * ticketsPerSeat;
+
+    // Jersey sales: Based on player popularity
+    const totalPopularity = team.players.reduce((sum, p) => sum + p.popularity, 0);
+    const avgPopularity = team.players.length > 0 ? totalPopularity / team.players.length : 0;
+    const jerseySalesPerPlayer = 500; // Base jersey revenue
+    const jerseySales = jerseySalesPerPlayer * (avgPopularity / 100) * team.players.length;
+
+    const totalIncome = sponsorship + ticketSales + jerseySales;
+
+    // ===== EXPENSES =====
+
+    // Wages: Sum of all player weekly wages
+    const wages = team.players.reduce((sum, p) => sum + p.weeklyWage, 0);
+
+    // Maintenance: stadium size × maintenance cost per seat
+    const maintenancePerSeat = 0.5;
+    const maintenance = team.stadiumCapacity * maintenancePerSeat;
+
+    const totalExpenses = wages + maintenance;
+
+    // ===== NET =====
+    const netBalance = totalIncome - totalExpenses;
+
+    return {
+        income: Math.round(totalIncome),
+        expenses: Math.round(totalExpenses),
+        netBalance: Math.round(netBalance),
+        breakdown: {
+            sponsorship: Math.round(sponsorship),
+            ticketSales: Math.round(ticketSales),
+            jerseySales: Math.round(jerseySales),
+            wages: Math.round(wages),
+            maintenance: Math.round(maintenance)
+        }
+    };
+}
+
+/**
+ * Evaluate player market value
+ * Formula: (overall^2 × popularity) / 1000
+ * Age adjustment: Players 32+ lose 10% per year
+ */
+export function evaluateMarketValue(player: Player): number {
+    const overall = calculatePlayerOverall(player);
+    const baseValue = (Math.pow(overall, 2) * player.popularity) / 1000;
+
+    // Age adjustment
+    let ageMultiplier = 1;
+    if (player.age >= 32) {
+        const yearsOver32 = player.age - 32;
+        ageMultiplier = Math.pow(0.9, yearsOver32); // 10% decrease per year
+    }
+
+    return Math.round(baseValue * ageMultiplier * 50000); // Convert to currency units
+}
+
+/**
+ * Check FFP compliance
+ */
+export async function checkFFPCompliance(teamId: string): Promise<{
+    status: 'healthy' | 'warning' | 'danger' | 'critical';
+    wagePercentage: number;
+    message: string;
+}> {
+    const accounting = await calculateWeeklyAccounting(teamId);
+    
+    if (accounting.income === 0) {
+        return {
+            status: 'critical',
+            wagePercentage: 100,
+            message: 'No income! Immediate action required.'
+        };
+    }
+
+    const wagePercentage = (accounting.breakdown.wages / accounting.income) * 100;
+
+    if (wagePercentage > 90) {
+        return {
+            status: 'critical',
+            wagePercentage: Math.round(wagePercentage),
+            message: `CRITICAL: Wages are ${Math.round(wagePercentage)}% of income! Risk of bankruptcy.`
+        };
+    } else if (wagePercentage > 70) {
+        return {
+            status: 'danger',
+            wagePercentage: Math.round(wagePercentage),
+            message: `WARNING: Wages are ${Math.round(wagePercentage)}% of income. Reduce spending or increase revenue.`
+        };
+    } else if (wagePercentage > 50) {
+        return {
+            status: 'warning',
+            wagePercentage: Math.round(wagePercentage),
+            message: `Wages are ${Math.round(wagePercentage)}% of income. Stable but monitor closely.`
+        };
+    } else {
+        return {
+            status: 'healthy',
+            wagePercentage: Math.round(wagePercentage),
+            message: `Healthy financial position: Wages are ${Math.round(wagePercentage)}% of income.`
+        };
+    }
+}
+
+/**
+ * Process weekly accounting: deduct expenses, add income, update balance
+ */
+export async function processWeeklyFinances(teamId: string, week: number): Promise<void> {
+    const team = await prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) throw new Error(`Team ${teamId} not found`);
+
+    const accounting = await calculateWeeklyAccounting(teamId);
+
+    // Update team balance
+    const newBalance = team.balance + accounting.netBalance;
+    await prisma.team.update({
+        where: { id: teamId },
+        data: { balance: newBalance }
+    });
+
+    // Create financial record
+    await prisma.clubFinance.create({
+        data: {
+            teamId,
+            week,
+            balance: newBalance,
+            weeklyIncome: accounting.income,
+            weeklyExpenses: accounting.expenses
+        }
+    });
+
+    // Create financial events
+    if (accounting.breakdown.sponsorship > 0) {
+        await prisma.financialEvent.create({
+            data: {
+                teamId,
+                type: 'SPONSORSHIP',
+                amount: accounting.breakdown.sponsorship,
+                description: `Sponsorship income (week ${week})`
+            }
+        });
+    }
+
+    if (accounting.breakdown.ticketSales > 0) {
+        await prisma.financialEvent.create({
+            data: {
+                teamId,
+                type: 'TICKET',
+                amount: accounting.breakdown.ticketSales,
+                description: `Ticket sales (week ${week}, attendance: ${((accounting.breakdown.ticketSales / accounting.breakdown.ticketSales) * 100).toFixed(1)}%)`
+            }
+        });
+    }
+
+    if (accounting.breakdown.jerseySales > 0) {
+        await prisma.financialEvent.create({
+            data: {
+                teamId,
+                type: 'JERSEY',
+                amount: accounting.breakdown.jerseySales,
+                description: `Jersey and merchandise sales (week ${week})`
+            }
+        });
+    }
+
+    if (accounting.breakdown.wages > 0) {
+        await prisma.financialEvent.create({
+            data: {
+                teamId,
+                type: 'WAGE',
+                amount: -accounting.breakdown.wages,
+                description: `Player wages (week ${week})`
+            }
+        });
+    }
+
+    if (accounting.breakdown.maintenance > 0) {
+        await prisma.financialEvent.create({
+            data: {
+                teamId,
+                type: 'MAINTENANCE',
+                amount: -accounting.breakdown.maintenance,
+                description: `Stadium maintenance (week ${week})`
+            }
+        });
+    }
+}
+
+/**
+ * Check if player contract is expiring soon
+ */
+export async function getExpiringContracts(teamId: string): Promise<Player[]> {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { players: true }
+    });
+
+    if (!team) return [];
+
+    // Return players expiring within 10 weeks
+    return team.players.filter(p => p.contractEndWeek <= 10 && p.contractEndWeek > 0);
+}
+
+/**
+ * Handle contract renewal: extend for 2 years and apply 25% wage increase
+ */
+export async function handleContractRenewal(playerId: string, weeks: number = 104): Promise<{
+    success: boolean;
+    newWage?: number;
+    newEndWeek?: number;
+    message: string;
+}> {
+    const player = await prisma.player.findUnique({ where: { id: playerId } });
+    if (!player) {
+        return { success: false, message: 'Player not found' };
+    }
+
+    // Extend contract for specified weeks (default 2 years = 104 weeks)
+    const newWage = Math.round(player.weeklyWage * 1.25);
+    const newEndWeek = player.contractEndWeek + weeks;
+
+    await prisma.player.update({
+        where: { id: playerId },
+        data: {
+            weeklyWage: newWage,
+            contractEndWeek: newEndWeek
+        }
+    });
+
+    return {
+        success: true,
+        newWage,
+        newEndWeek,
+        message: `Contract renewed: ${player.name} now earns $${newWage} per week (+25% increase) until week ${newEndWeek}`
+    };
+}
+
+/**
+ * Auto-renew contracts for AI teams (if contract expiring 6-12 months away)
+ */
+export async function autoRenewContracts(teamId: string): Promise<{
+    renewed: number;
+    failures: number;
+    details: string[];
+}> {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { players: true }
+    });
+
+    if (!team) return { renewed: 0, failures: 0, details: [] };
+
+    const details: string[] = [];
+    let renewed = 0;
+    let failures = 0;
+
+    // Find players with contracts expiring 26-52 weeks (6-12 months)
+    for (const player of team.players) {
+        if (player.contractEndWeek >= 26 && player.contractEndWeek <= 52) {
+            try {
+                const result = await handleContractRenewal(player.id);
+                if (result.success) {
+                    renewed++;
+                    details.push(`✓ ${player.name}: Renewed until week ${result.newEndWeek}`);
+                } else {
+                    failures++;
+                    details.push(`✗ ${player.name}: ${result.message}`);
+                }
+            } catch (error) {
+                failures++;
+                details.push(`✗ ${player.name}: Error during renewal`);
+            }
+        }
+    }
+
+    return { renewed, failures, details };
+}
+
+export default {
+    calculatePlayerOverall,
+    updatePlayerPopularity,
+    updateTeamReputation,
+    calculateWeeklyAccounting,
+    evaluateMarketValue,
+    checkFFPCompliance,
+    processWeeklyFinances,
+    getExpiringContracts,
+    handleContractRenewal
+};

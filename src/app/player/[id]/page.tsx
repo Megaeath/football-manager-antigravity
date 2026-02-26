@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
+import { PlayerContent } from './PlayerContent';
 
-// ... (getPlayer function remains same)
 async function getPlayer(id: string) {
     const player = await prisma.player.findUnique({
         where: { id },
@@ -22,26 +22,82 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
 
     if (!player) return <div className="card">ไม่พบข้อมูลนักเตะ</div>;
 
-    const AttributeItem = ({ label, value }: { label: string, value: number }) => (
-        <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--muted)' }}>{label}</span>
-                <span style={{ fontWeight: 'bold', color: value > 15 ? 'var(--success)' : value > 10 ? 'var(--accent)' : 'inherit' }}>{value}</span>
-            </div>
-            <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
-                <div style={{
-                    height: '100%',
-                    width: `${(value / 20) * 100}%`,
-                    background: value > 15 ? 'var(--success)' : value > 10 ? 'var(--accent)' : 'var(--primary)'
-                }}></div>
-            </div>
-        </div>
-    );
-
     const derivedAvgRating = player.matchStats.length > 0
         ? player.matchStats.reduce((sum: number, stat: any) => sum + (stat.rating || 0), 0) / player.matchStats.length
         : 0;
     const displayAvgRating = player.avgRating > 0 ? player.avgRating : derivedAvgRating;
+
+    // Calculate overall rating
+    const technicalAvg = (
+        (player.passing || 10) + (player.dribbling || 10) + (player.shooting || 10) +
+        (player.crossing || 10) + (player.heading || 10) + (player.tackling || 10) +
+        (player.vision || 10)
+    ) / 7;
+    const mentalAvg = (
+        (player.bravery || 10) + (player.leadership || 10) + (player.positioning || 10) +
+        (player.composure || 10) + (player.aggression || 10) + (player.teamwork || 10)
+    ) / 6;
+    const physicalAvg = (
+        (player.acceleration || 10) + (player.pace || 10) + (player.strength || 10) +
+        (player.stamina || 10) + (player.agility || 10) + (player.balance || 10)
+    ) / 6;
+    const overallRating = (technicalAvg + mentalAvg + physicalAvg) / 3;
+
+    // Calculate market value
+    let ageMultiplier = 1;
+    if (player.age >= 32) {
+        ageMultiplier = Math.pow(0.9, player.age - 32);
+    }
+    const marketValue = Math.round(
+        (Math.pow(overallRating, 2) * (player.popularity || 50)) / 1000 * ageMultiplier * 50000
+    );
+
+    // Prepare attribute data for client component
+    const attributeData = {
+        technical: [
+            {
+                label: 'Technical',
+                items: [
+                    { label: 'Handling (GK)', value: player.handling },
+                    { label: 'Tackling', value: player.tackling },
+                    { label: 'Passing', value: player.passing },
+                    { label: 'Shooting', value: player.shooting },
+                    { label: 'Heading', value: player.heading },
+                    { label: 'Dribbling', value: player.dribbling },
+                    { label: 'Crossing', value: player.crossing },
+                    { label: 'Set Pieces', value: player.setPieces },
+                    { label: 'Throw In', value: player.throw },
+                ]
+            }
+        ],
+        mental: [
+            {
+                label: 'Mental',
+                items: [
+                    { label: 'Aggression', value: player.aggression },
+                    { label: 'Positioning', value: player.positioning },
+                    { label: 'Vision', value: player.vision },
+                    { label: 'Bravery', value: player.bravery },
+                    { label: 'Leadership', value: player.leadership },
+                    { label: 'Teamwork', value: player.teamwork },
+                    { label: 'Composure', value: player.composure },
+                ]
+            }
+        ],
+        physical: [
+            {
+                label: 'Physical',
+                items: [
+                    { label: 'Pace', value: player.pace },
+                    { label: 'Acceleration', value: player.acceleration },
+                    { label: 'Stamina', value: player.stamina },
+                    { label: 'Strength', value: player.strength },
+                    { label: 'Agility', value: player.agility },
+                    { label: 'Balance', value: player.balance },
+                ]
+            }
+        ],
+    };
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -69,127 +125,8 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-                {/* Left: Attributes */}
-                <div className="card">
-                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>พลังความสามารถ (Attributes)</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2.5rem' }}>
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Technical</h4>
-                            <AttributeItem label="Handling (GK)" value={player.handling} />
-                            <AttributeItem label="Tackling" value={player.tackling} />
-                            <AttributeItem label="Passing" value={player.passing} />
-                            <AttributeItem label="Shooting" value={player.shooting} />
-                            <AttributeItem label="Heading" value={player.heading} />
-                            <AttributeItem label="Dribbling" value={player.dribbling} />
-                            <AttributeItem label="Crossing" value={player.crossing} />
-                            <AttributeItem label="Set Pieces" value={player.setPieces} />
-                            <AttributeItem label="Throw In" value={player.throw} />
-                        </div>
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Mental</h4>
-                            <AttributeItem label="Aggression" value={player.aggression} />
-                            <AttributeItem label="Positioning" value={player.positioning} />
-                            <AttributeItem label="Vision" value={player.vision} />
-                            <AttributeItem label="Bravery" value={player.bravery} />
-                            <AttributeItem label="Leadership" value={player.leadership} />
-                            <AttributeItem label="Teamwork" value={player.teamwork} />
-                            <AttributeItem label="Composure" value={player.composure} />
-                        </div>
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Physical</h4>
-                            <AttributeItem label="Pace" value={player.pace} />
-                            <AttributeItem label="Acceleration" value={player.acceleration} />
-                            <AttributeItem label="Stamina" value={player.stamina} />
-                            <AttributeItem label="Strength" value={player.strength} />
-                            <AttributeItem label="Agility" value={player.agility} />
-                            <AttributeItem label="Balance" value={player.balance} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right: Stats & Form */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    <div className="card">
-                        <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>สถิติฤดูกาลนี้</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ลงสนาม</div>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{player.apps}</div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ประตู / แอสซิสต์</div>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{player.goals} / {player.assists}</div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ส่งบอลสำเร็จ</div>
-                                <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                                    {player.passesCompleted} / {player.passesAttempted}
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'normal' }}>
-                                        ({player.passesAttempted > 0 ? ((player.passesCompleted / player.passesAttempted) * 100).toFixed(1) : 0}%)
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เปิดบอลสำเร็จ (Cross)</div>
-                                <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                                    {player.crossesCompleted} / {player.crossesAttempted}
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'normal' }}>
-                                        ({player.crossesAttempted > 0 ? ((player.crossesCompleted / player.crossesAttempted) * 100).toFixed(1) : 0}%)
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เลี้ยงบอลสำเร็จ</div>
-                                <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                                    {player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesWon, 0)} / {player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0)}
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'normal' }}>
-                                        ({player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0) > 0 ?
-                                            ((player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesWon, 0) / player.matchStats.reduce((acc: number, curr: any) => acc + curr.dribblesAttempted, 0)) * 100).toFixed(1) : 0}%)
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ผู้เล่นยอดเยี่ยม (MotM)</div>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent)' }}>🌟 {player.motmCount || 0}</div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ความฟิต</div>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{player.condition}%</div>
-                            </div>
-                            <div style={{ background: 'var(--primary-light)', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>ความสุข (Morale)</div>
-                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--success)' }}>{player.morale}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="card" style={{ flex: 1 }}>
-                        <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>ฟอร์มล่าสุด</h3>
-                        {player.matchStats.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>ยังไม่มีบันทึกการแข่ง</p>}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {player.matchStats.slice(0, 5).map((stat: any) => (
-                                <div key={stat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
-                                    <div>
-                                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>
-                                            v {stat.teamId === stat.match.homeTeamId ? stat.match.awayTeam.name : stat.match.homeTeam.name}
-                                        </div>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-                                            {stat.goals} G • {stat.assists} A
-                                        </div>
-                                    </div>
-                                    <div style={{
-                                        width: '40px', height: '40px', background: stat.rating >= 7.5 ? 'var(--success)' : stat.rating >= 6.5 ? 'var(--accent)' : 'var(--muted)',
-                                        color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
-                                    }}>
-                                        {stat.rating.toFixed(1)}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {/* Content Tabs */}
+            <PlayerContent player={player} attributeData={attributeData} />
         </div>
     );
 }

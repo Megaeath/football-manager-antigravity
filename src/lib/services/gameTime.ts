@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
+import { processWeeklyFinances, autoRenewContracts } from '../engine/financial';
 
 const FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -162,6 +163,28 @@ export async function advanceDay() {
 
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
+
+    // Check if it's a new week (Sunday to Sunday) - process finances every week
+    const currentWeek = Math.floor(settings.currentDate.getUTCDate() / 7);
+    const nextWeek = Math.floor(nextDate.getUTCDate() / 7);
+    const weekChanged = nextWeek !== currentWeek || nextDate.getUTCMonth() !== settings.currentDate.getUTCMonth();
+
+    if (weekChanged) {
+        // Process weekly finances for all teams
+        const allTeams = await prisma.team.findMany();
+        for (const team of allTeams) {
+            try {
+                await processWeeklyFinances(team.id, Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7)));
+                // Auto-renew contracts for AI teams (if not user team)
+                const settings = await getGameTime();
+                if (team.id !== settings.userTeamId) {
+                    await autoRenewContracts(team.id);
+                }
+            } catch (error) {
+                console.error(`Failed to process financials for team ${team.id}:`, error);
+            }
+        }
+    }
 
     if (isNewYear) {
         return await startNewSeason(settings, nextDate);
