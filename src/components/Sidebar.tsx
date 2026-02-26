@@ -11,6 +11,7 @@ export default function Sidebar() {
         { name: 'จัดการทีม', href: '/squad', icon: '📋' },
         { name: 'ตารางการแข่งขัน', href: '/fixtures', icon: '📅' },
         { name: 'ระบบลีก', href: '/league', icon: '🏆' },
+        { name: 'สรุปฤดูกาล', href: '/season-summary', icon: '🏅' },
         { name: 'อันดับนักเตะ', href: '/rankings', icon: '📊' },
         { name: 'ค้นหานักเตะ', href: '/players', icon: '🔍' },
         { name: 'การเงิน', href: '/finances', icon: '💰' },

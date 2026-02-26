@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts } from '../engine/financial';
+import { applySeasonRewards } from './seasonAwards';
 
 const FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -164,6 +165,9 @@ export async function advanceDay() {
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
 
+    console.log('[GameTime] Advancing from', settings.currentDate.toISOString(), 'to', nextDate.toISOString());
+    console.log('[GameTime] Is new year?', isNewYear);
+
     // Check if it's a new week (Sunday to Sunday) - process finances every week
     const currentWeek = Math.floor(settings.currentDate.getUTCDate() / 7);
     const nextWeek = Math.floor(nextDate.getUTCDate() / 7);
@@ -187,6 +191,7 @@ export async function advanceDay() {
     }
 
     if (isNewYear) {
+        console.log('[GameTime] *** STARTING NEW SEASON ***');
         return await startNewSeason(settings, nextDate);
     }
 
@@ -202,6 +207,10 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     const currentYear = settings.currentDate.getUTCFullYear();
     const nextYear = currentYear + 1;
     const seasonStartDate = new Date(Date.UTC(nextYear, 0, 1));
+
+    console.log('[StartNewSeason] Current season:', currentSeason, 'Next season:', nextSeason);
+    console.log('[StartNewSeason] Current year:', currentYear, 'Next year:', nextYear);
+    console.log('[StartNewSeason] Season start date:', seasonStartDate.toISOString());
 
     // 1. Archive Standings
     const leagues = await prisma.league.findMany();
@@ -239,7 +248,10 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         });
     }
 
-    // 2. Reset Player Season Stats
+    // 2. Apply End-of-Season Rewards
+    await applySeasonRewards(currentSeason, currentYear);
+
+    // 3. Reset Player Season Stats
     await prisma.player.updateMany({
         data: {
             goals: 0,
@@ -251,16 +263,18 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
     });
 
-    // 3. Increment League Seasons and Generate New Fixtures
+    // 4. Increment League Seasons and Generate New Fixtures
+    console.log('[StartNewSeason] Step 4: Generating fixtures for', leagues.length, 'leagues');
     for (const league of leagues) {
         await prisma.league.update({
             where: { id: league.id },
             data: { season: nextSeason }
         });
+        console.log('[StartNewSeason] Generating fixtures for league:', league.id, 'Season:', nextSeason, 'Year:', nextYear);
         await generateSeasonFixtures(league.id, nextSeason, nextYear);
     }
 
-    // 4. Handle Retirements
+    // 5. Handle Retirements
     const playersToRetire = await prisma.player.findMany({
         where: {
             isRetired: false,
@@ -297,11 +311,19 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     }
 
     // 5. Update Global Settings
-    return await prisma.globalGameSettings.update({
+    const finalDate = nextDate ?? seasonStartDate;
+    console.log('[StartNewSeason] Step 5: Updating global settings');
+    console.log('[StartNewSeason] Final date:', finalDate.toISOString());
+    console.log('[StartNewSeason] New season:', nextSeason);
+    
+    const result = await prisma.globalGameSettings.update({
         where: { id: settings.id },
         data: {
-            currentDate: nextDate ?? seasonStartDate,
+            currentDate: finalDate,
             currentSeason: nextSeason
         }
     });
+    
+    console.log('[StartNewSeason] *** NEW SEASON STARTED SUCCESSFULLY ***');
+    return result;
 }

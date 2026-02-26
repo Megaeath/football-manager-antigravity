@@ -18,6 +18,7 @@ interface FinancialData {
             sponsorship: number;
             ticketSales: number;
             jerseySales: number;
+            seasonRewards: number;
             wages: number;
             maintenance: number;
         };
@@ -83,7 +84,8 @@ export default function FinancesPage() {
 
     const revenueTotal = data.weeklyData.breakdown.sponsorship + 
                          data.weeklyData.breakdown.ticketSales + 
-                         data.weeklyData.breakdown.jerseySales;
+                         data.weeklyData.breakdown.jerseySales +
+                         data.weeklyData.breakdown.seasonRewards;
 
     return (
         <div className="container" style={{ padding: '2rem' }}>
@@ -162,7 +164,8 @@ export default function FinancesPage() {
                     background: conic-gradient(
                         #3b82f6 0deg ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg,
                         #10b981 ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg,
-                        #f59e0b ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg 360deg
+                        #f59e0b ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg,
+                        #8b5cf6 ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg 360deg
                     );
                     flex-shrink: 0;
                 }
@@ -360,6 +363,10 @@ export default function FinancesPage() {
                                     <div className="legend-color" style={{ background: '#f59e0b' }}></div>
                                     <span>Jersey: {formatCurrency(data.weeklyData.breakdown.jerseySales)}</span>
                                 </div>
+                                <div className="legend-item">
+                                    <div className="legend-color" style={{ background: '#8b5cf6' }}></div>
+                                    <span>Season Rewards: {formatCurrency(data.weeklyData.breakdown.seasonRewards)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -379,6 +386,10 @@ export default function FinancesPage() {
                             <div className="accounting-row">
                                 <div className="accounting-label">👕 Jersey Sales</div>
                                 <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.jerseySales)}</div>
+                            </div>
+                            <div className="accounting-row">
+                                <div className="accounting-label">🏅 Season Rewards</div>
+                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.seasonRewards)}</div>
                             </div>
                             <div className="accounting-row" style={{ borderTop: '2px solid var(--primary)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
                                 <div className="accounting-label" style={{ fontWeight: 'bold' }}>📥 Total Income</div>

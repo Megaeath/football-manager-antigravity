@@ -131,6 +131,10 @@ export async function POST(req: Request) {
             const todayRangeStart = new Date(Date.UTC(utcYear, utcMonth, utcDay));
             const todayRangeEnd = new Date(Date.UTC(utcYear, utcMonth, utcDay + 1));
 
+            console.log('[Process API] Current date:', settings.currentDate);
+            console.log('[Process API] Season:', settings.currentSeason);
+            console.log('[Process API] Searching for matches between:', todayRangeStart.toISOString(), 'and', todayRangeEnd.toISOString());
+
             const matchesToSimulate = await prisma.match.findMany({
                 where: {
                     date: {
@@ -140,6 +144,8 @@ export async function POST(req: Request) {
                     isPlayed: false
                 }
             });
+
+            console.log('[Process API] Found', matchesToSimulate.length, 'unplayed matches for today');
 
             // Check if user team is playing today
             const userMatch = matchesToSimulate.find(m =>

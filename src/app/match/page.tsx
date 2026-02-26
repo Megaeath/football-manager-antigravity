@@ -69,8 +69,10 @@ function MatchContent() {
 
             // Fetch fixtures for this date
             const date = new Date(info.currentDate).toISOString().split('T')[0];
+            console.log('[Match Page] Fetching fixtures for date:', date, 'Season:', info.currentSeason);
             const fixturesRes = await fetch(`/api/league/fixtures?date=${date}`);
             const fixtures = await fixturesRes.json();
+            console.log('[Match Page] Found', fixtures.length, 'matches for', date);
             setTodaysMatches(fixtures);
 
             // If matchId in URL, fetch that specific match
@@ -90,7 +92,12 @@ function MatchContent() {
 
     useEffect(() => {
         fetchData();
-    }, [queryMatchId]);
+    }, [queryMatchId]); // Re-fetch when matchId changes
+    
+    // Also fetch on mount to ensure initial data load
+    useEffect(() => {
+        fetchData();
+    }, []);
 
     const runSimulation = async (matchId: string) => {
         setLoading(true);
@@ -120,16 +127,8 @@ function MatchContent() {
 
             if (data.success) {
                 setMatchData(null);
-                router.replace('/match');
-                if (data.autoAdvanced) {
-                    // All matches were simulated and day was advanced
-                    fetchData();
-                    window.dispatchEvent(new Event('game-date-updated'));
-                } else if (data.requiresUserAction) {
-                    // Other matches simulated, but user's match is today
-                    fetchData(); // Refresh to show results of other matches and current user match
-                    alert('มีการแข่งขันทีมของคุณในวันนี้! กรุณาดำเนินการต่อที่สนามแข่ง');
-                }
+                // Force a hard reload to ensure fresh data after season transition
+                window.location.href = '/match';
             }
         } catch (e) {
             alert('Next process failed: ' + e);
@@ -260,7 +259,16 @@ function MatchContent() {
     // 1. Everything is played
     // 2. OR User is not playing today
     // 3. OR User has played their match already
-    const showNextProcess = unplayedMatches.length === 0 || !isUserPlayingToday || userMatchPlayed;
+    // 4. Always show if no matches at all (off-day or new season without matches scheduled)
+    const showNextProcess = unplayedMatches.length === 0 || !isUserPlayingToday || userMatchPlayed || todaysMatches.length === 0;
+    
+    console.log('[Match Page] Button Logic:', {
+        todaysMatchesCount: todaysMatches.length,
+        unplayedMatchesCount: unplayedMatches.length,
+        isUserPlayingToday,
+        userMatchPlayed,
+        showNextProcess
+    });
 
     const getSubstitutionInfo = (teamId: string) => {
         const subs = (matchData?.events || []).filter((e: any) => e.type === 'SUB' && e.teamId === teamId);

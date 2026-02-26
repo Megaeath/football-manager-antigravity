@@ -42,6 +42,7 @@ interface Player {
     strength: number;
     agility: number;
     balance: number;
+    popularity: number;
 }
 
 interface Match {
@@ -98,7 +99,7 @@ interface NextMatch {
 export default function TeamClient({ team, matches, currentSeason = 1, nextMatch, userTeamId = '' }: { team: Team; matches: Match[]; currentSeason?: number; nextMatch?: NextMatch; userTeamId?: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power'>('pos');
+    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
     const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
@@ -156,6 +157,43 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
         return Math.round(suitability);
     };
 
+    const getMarketValue = (p: Player, basePower: number) => {
+        const basePrice = basePower * basePower * 1000;
+        const ageMultiplier = p.age <= 25 ? 1.2 : p.age >= 32 ? 0.6 : 1.0;
+        const playerPopularityMultiplier = 0.8 + (p.popularity / 100) * 1.0;
+        const clubReputationMultiplier = 0.7 + (team.reputation / 100) * 0.8;
+        const formMultiplier = 0.5 + ((p.avgRating || 0) / 10) * 1.0;
+
+        let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
+        marketValue = Math.min(marketValue, 200000000);
+        return marketValue;
+    };
+
+    const renderMatchTacticValue = (value: string | null | undefined, fallback: string) => (
+        <>
+            <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                {value || fallback}
+            </div>
+            {!value && (
+                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    Default (base): {fallback}
+                </div>
+            )}
+        </>
+    );
+
+    const getNextMatchTactics = (match: NextMatch) => {
+        const isHomeSide = match.homeTeamId === team.id;
+        return {
+            formation: isHomeSide ? match.homeTactics_formation : match.awayTactics_formation,
+            mentality: isHomeSide ? match.homeTactics_mentality : match.awayTactics_mentality,
+            passing: isHomeSide ? match.homeTactics_passing : match.awayTactics_passing,
+            tackling: isHomeSide ? match.homeTactics_tackling : match.awayTactics_tackling,
+            attacking_focus: isHomeSide ? match.homeTactics_attacking_focus : match.awayTactics_attacking_focus,
+            creative_freedom: isHomeSide ? match.homeTactics_creative_freedom : match.awayTactics_creative_freedom
+        };
+    };
+
     const posGroupOrder: Record<string, number> = {
         GK: 0,
         DF: 1,
@@ -200,6 +238,8 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
             setSortDir('desc');
         }
     };
+
+    const nextTactics = nextMatch ? getNextMatchTactics(nextMatch) : null;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -345,6 +385,9 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
                                 </th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('marketValue')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Market Value</button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -382,7 +425,8 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                 ]);
                                 const power = getPower(p);
                                 const basePower = getBasePower(p);
-                                return { p, physical, technical, tactical, mental, power, basePower };
+                                const marketValue = getMarketValue(p, basePower);
+                                return { p, physical, technical, tactical, mental, power, basePower, marketValue };
                             })
                             .sort((a, b) => {
                                 if (sortKey === 'pos') {
@@ -404,12 +448,13 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                     case 'tactical': return dir * (a.tactical - b.tactical);
                                     case 'mental': return dir * (a.mental - b.mental);
                                     case 'power': return dir * (a.power - b.power);
+                                    case 'marketValue': return dir * (a.marketValue - b.marketValue);
                                     case 'name':
                                     default:
                                         return dir * a.p.name.localeCompare(b.p.name);
                                 }
                             })
-                            .map(({ p, physical, technical, tactical, mental, power, basePower }) => (
+                            .map(({ p, physical, technical, tactical, mental, power, basePower, marketValue }) => (
                                 <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
                                     <td style={{ padding: '12px' }}>
                                         <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
@@ -440,6 +485,9 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                                         {power}
                                         {power < basePower && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
+                                    </td>
+                                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>
+                                        {(marketValue / 1000000).toFixed(1)}M
                                     </td>
                                 </tr>
                             ))}
@@ -493,51 +541,6 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {/* Team Tactics & Next Match Tactics */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    {/* Base Team Tactics */}
-                    <div className="card">
-                        <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                            Base Team Tactics
-                        </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Formation</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.formation}
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Mentality</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.mentality}
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Passing Style</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.passing}
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tackling Intensity</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.tackling}
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Attacking Focus</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.attacking_focus}
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Creative Freedom</label>
-                                <div style={{ padding: '12px', background: 'var(--hover-bg)', borderRadius: '6px', fontFamily: 'monospace' }}>
-                                    {team.creative_freedom}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Match-Specific Tactics (if available) */}
                     {nextMatch && team.id !== userTeamId && (nextMatch.homeTeamId === team.id || nextMatch.awayTeamId === team.id) && (
                         <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
@@ -550,39 +553,27 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Formation</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_formation || team.formation : nextMatch.awayTactics_formation || team.formation}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.formation, team.formation)}
                                 </div>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Mentality</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_mentality || team.mentality : nextMatch.awayTactics_mentality || team.mentality}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.mentality, team.mentality)}
                                 </div>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Passing Style</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_passing || team.passing : nextMatch.awayTactics_passing || team.passing}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.passing, team.passing)}
                                 </div>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tackling Intensity</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_tackling || team.tackling : nextMatch.awayTactics_tackling || team.tackling}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.tackling, team.tackling)}
                                 </div>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Attacking Focus</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_attacking_focus || team.attacking_focus : nextMatch.awayTactics_attacking_focus || team.attacking_focus}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.attacking_focus, team.attacking_focus)}
                                 </div>
                                 <div>
                                     <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Creative Freedom</label>
-                                    <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                                        {nextMatch.homeTeamId === team.id ? nextMatch.homeTactics_creative_freedom || team.creative_freedom : nextMatch.awayTactics_creative_freedom || team.creative_freedom}
-                                    </div>
+                                    {renderMatchTacticValue(nextTactics?.creative_freedom, team.creative_freedom)}
                                 </div>
                             </div>
                         </div>
@@ -598,9 +589,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                         {team.players
                             .filter((p: any) => !p.isRetired)
                             .sort((a: any, b: any) => {
-                                const scoreA = a.goals * 3 + a.assists * 2 + (a.avgRating || 0);
-                                const scoreB = b.goals * 3 + b.assists * 2 + (b.avgRating || 0);
-                                return scoreB - scoreA;
+                                return (b.avgRating || 0) - (a.avgRating || 0);
                             })
                             .slice(0, 5)
                             .map((p: any, idx: number) => (
@@ -609,13 +598,18 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                     background: 'var(--hover-bg)',
                                     borderRadius: '6px',
                                     borderLeft: '4px solid var(--primary)',
-                                    cursor: 'pointer',
                                     transition: 'all 0.2s'
                                 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                                         <div>
                                             <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                                                #{idx + 1} {p.name}
+                                                #{idx + 1}{' '}
+                                                <button
+                                                    onClick={() => router.push(`/team/${team.id}?playerId=${p.id}`)}
+                                                    style={{ fontWeight: 'bold', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                                >
+                                                    {p.name}
+                                                </button>
                                             </div>
                                             <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
                                                 {p.naturalPosition} • Age {p.age}

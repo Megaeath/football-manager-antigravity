@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
+import NextProcessButton from '@/components/NextProcessButton';
 
 export default async function Home() {
     const gameInfo = await getGameTime();
@@ -169,6 +170,9 @@ export default async function Home() {
                     <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8, marginBottom: '4px' }}>วันที่ปัจจุบัน</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: '700' }}>{dateStr}</div>
                     <div style={{ fontSize: '0.8rem', marginTop: '8px', opacity: 0.8 }}>ฤดูกาล {settings?.currentSeason || 1}</div>
+                    <div style={{ marginTop: '12px' }}>
+                        <NextProcessButton />
+                    </div>
                 </div>
             </div>
 

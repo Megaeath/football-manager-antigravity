@@ -46,6 +46,21 @@ export async function GET(request: NextRequest) {
         // Calculate attendance: 60% base + up to 35% from reputation
         const attendanceRate = 0.60 + (reputation / 100) * 0.35;
         
+        const settings = await prisma.globalGameSettings.findFirst();
+        const currentDate = settings?.currentDate || new Date();
+        const weekStart = new Date(currentDate);
+        weekStart.setUTCDate(weekStart.getUTCDate() - 7);
+
+        const seasonRewardAgg = await prisma.financialEvent.aggregate({
+            where: {
+                teamId,
+                type: 'SEASON_REWARD',
+                date: { gte: weekStart, lte: currentDate }
+            },
+            _sum: { amount: true }
+        });
+        const seasonRewards = seasonRewardAgg._sum.amount || 0;
+
         // Revenue calculation
         const sponsorship = 20000 * (1 + reputation / 100);
         const ticketSales = stadiumCapacity * attendanceRate * 10;
@@ -54,7 +69,7 @@ export async function GET(request: NextRequest) {
             : 50;
         const jerseySales = 500 * (averagePopularity / 100) * team.players.length;
 
-        const totalIncome = sponsorship + ticketSales + jerseySales;
+        const totalIncome = sponsorship + ticketSales + jerseySales + seasonRewards;
         const totalExpenses = totalWages + maintenanceCost;
         const netBalance = totalIncome - totalExpenses;
 
@@ -94,6 +109,7 @@ export async function GET(request: NextRequest) {
                     sponsorship: Math.round(sponsorship),
                     ticketSales: Math.round(ticketSales),
                     jerseySales: Math.round(jerseySales),
+                    seasonRewards: Math.round(seasonRewards),
                     wages: Math.round(totalWages),
                     maintenance: Math.round(maintenanceCost)
                 }
