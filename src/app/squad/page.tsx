@@ -15,7 +15,13 @@ async function getUserTeam() {
             where: { id: settings.userTeamId },
             include: {
                 players: {
-                    where: { isRetired: false }
+                    where: { isRetired: false },
+                    include: {
+                        matchStats: {
+                            where: { match: { isPlayed: true } },
+                            select: { rating: true }
+                        }
+                    }
                 },
                 homeMatches: { include: { awayTeam: true, homeTeam: true } },
                 awayMatches: { include: { homeTeam: true, awayTeam: true } }
@@ -26,7 +32,13 @@ async function getUserTeam() {
     return prisma.team.findFirst({
         include: {
             players: {
-                where: { isRetired: false }
+                where: { isRetired: false },
+                include: {
+                    matchStats: {
+                        where: { match: { isPlayed: true } },
+                        select: { rating: true }
+                    }
+                }
             },
             homeMatches: { include: { awayTeam: true, homeTeam: true } },
             awayMatches: { include: { homeTeam: true, awayTeam: true } }
@@ -56,6 +68,27 @@ export default async function SquadPage() {
         const fitnessFactor = Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2);
         const fitnessSuitability = Math.round(baseSuitability * fitnessFactor);
 
+        // Calculate market value (same formula as API)
+        const natPos = p.naturalPosition.split('_')[0];
+        const power = Math.round(calculateSuitability(attrs, natPos));
+        
+        // Calculate average rating from match stats (same as API)
+        const avgRating = p.matchStats && p.matchStats.length > 0
+            ? Number((p.matchStats.reduce((sum, stat) => sum + stat.rating, 0) / p.matchStats.length).toFixed(2))
+            : 0;
+        
+        const basePrice = power * power * 1000;
+        const ageMultiplier = p.age <= 25 ? 1.2 : p.age >= 32 ? 0.6 : 1.0;
+        
+        const playerPopularityMultiplier = 0.8 + (p.popularity / 100) * 1.0;
+        const clubReputationMultiplier = 0.7 + ((team.reputation || 50) / 100) * 0.8;
+        
+        // Use avgRating from match stats (same as API)
+        const formMultiplier = 0.5 + (Math.min(avgRating, 10) / 10) * 1.0;
+        
+        let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
+        marketValue = Math.min(marketValue, 200000000);
+
         return {
             id: p.id,
             name: p.name,
@@ -72,7 +105,10 @@ export default async function SquadPage() {
             apps: p.apps,
             avgRating: p.avgRating,
             birthDate: p.birthDate,
-            retirementAge: p.retirementAge
+            retirementAge: p.retirementAge,
+            popularity: p.popularity,
+            clubReputation: team.reputation,
+            marketValue
         };
     });
 

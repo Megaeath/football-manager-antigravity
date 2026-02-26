@@ -18,6 +18,10 @@ type TeamMatchStats = {
     passesCompleted: number;
     crossesAttempted: number;
     crossesCompleted: number;
+    tacklesAttempted: number;
+    tacklesWon: number;
+    dribblesAttempted: number;
+    dribblesWon: number;
 }
 
 type MatchData = {
@@ -149,6 +153,95 @@ function MatchContent() {
                 </div>
                 <div style={{ flex: 1, textAlign: 'left', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.1rem' }}>
                     {awayVal}{isPercentage ? '%' : ''}
+                </div>
+            </div>
+        );
+    };
+
+    const StatRowWithChart = ({ label, homeVal, awayVal, isPercentage = false, inverse = false }: { label: string, homeVal: number, awayVal: number, isPercentage?: boolean, inverse?: boolean }) => {
+        const homeWin = inverse ? homeVal < awayVal : homeVal > awayVal;
+        const awayWin = inverse ? awayVal < homeVal : awayVal > homeVal;
+        const maxVal = Math.max(homeVal, awayVal, 1);
+        const homePercent = (homeVal / maxVal) * 100;
+        const awayPercent = (awayVal / maxVal) * 100;
+
+        return (
+            <div>
+                {/* Numbers row */}
+                <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ flex: 1, textAlign: 'left', fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1.2rem' }}>
+                        {homeVal}{isPercentage ? '%' : ''}
+                    </div>
+                    <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>
+                        {label}
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'right', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.2rem' }}>
+                        {awayVal}{isPercentage ? '%' : ''}
+                    </div>
+                </div>
+                {/* Diverging bar chart row */}
+                <div style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0 0.8rem 0', borderBottom: '1px solid var(--border)' }}>
+                    {/* Home bar - grows toward center from left */}
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <div style={{
+                            height: '16px',
+                            background: homeWin ? '#10b981' : '#ef4444',
+                            borderRadius: '4px 0 0 4px',
+                            transition: 'all 0.3s ease',
+                            width: `${homePercent}%`,
+                            minWidth: homePercent > 5 ? 'auto' : '0px'
+                        }} />
+                    </div>
+                    {/* Center label space */}
+                    <div style={{ width: '160px' }} />
+                    {/* Away bar - grows toward center from right */}
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                        <div style={{
+                            height: '16px',
+                            background: awayWin ? '#10b981' : '#ef4444',
+                            borderRadius: '0 4px 4px 0',
+                            transition: 'all 0.3s ease',
+                            width: `${awayPercent}%`,
+                            minWidth: awayPercent > 5 ? 'auto' : '0px'
+                        }} />
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const StatBarChart = ({ label, homeVal, awayVal, isPercentage = false }: { label: string, homeVal: number, awayVal: number, isPercentage?: boolean }) => {
+        const homeWin = homeVal > awayVal;
+        const awayWin = awayVal > homeVal;
+
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)', gap: '12px' }}>
+                <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                    <div style={{ fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1.1rem', minWidth: '40px', textAlign: 'right' }}>
+                        {homeVal}{isPercentage ? '%' : ''}
+                    </div>
+                    <div style={{
+                        width: '80px',
+                        height: '24px',
+                        background: homeWin ? '#10b981' : '#ef4444',
+                        borderRadius: '4px',
+                        transition: 'all 0.3s ease'
+                    }} />
+                </div>
+                <div style={{ width: '140px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                    {label}
+                </div>
+                <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px' }}>
+                    <div style={{
+                        width: '80px',
+                        height: '24px',
+                        background: awayWin ? '#10b981' : '#ef4444',
+                        borderRadius: '4px',
+                        transition: 'all 0.3s ease'
+                    }} />
+                    <div style={{ fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.1rem', minWidth: '40px', textAlign: 'left' }}>
+                        {awayVal}{isPercentage ? '%' : ''}
+                    </div>
                 </div>
             </div>
         );
@@ -318,23 +411,33 @@ function MatchContent() {
                     <div style={{ padding: '2rem' }}>
                         {activeTab === 'stats' && (
                             <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                                <StatRow label="Possession" homeVal={matchData.teamStats.home.possession} awayVal={matchData.teamStats.away.possession} isPercentage />
-                                <StatRow label="Shots (On Target)" homeVal={matchData.teamStats.home.shotsOnTarget} awayVal={matchData.teamStats.away.shotsOnTarget} />
-                                <StatRow label="Pass Accuracy"
+                                <StatRowWithChart label="Possession" homeVal={matchData.teamStats.home.possession} awayVal={matchData.teamStats.away.possession} isPercentage />
+                                <StatRowWithChart label="Shots (On Target)" homeVal={matchData.teamStats.home.shotsOnTarget} awayVal={matchData.teamStats.away.shotsOnTarget} />
+                                <StatRowWithChart label="Pass Accuracy"
                                     homeVal={Math.round((matchData.teamStats.home.passesCompleted / (matchData.teamStats.home.passesAttempted || 1)) * 100)}
                                     awayVal={Math.round((matchData.teamStats.away.passesCompleted / (matchData.teamStats.away.passesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
-                                <StatRow label="Cross Accuracy"
+                                <StatRowWithChart label="Cross Accuracy"
                                     homeVal={Math.round((matchData.teamStats.home.crossesCompleted / (matchData.teamStats.home.crossesAttempted || 1)) * 100)}
                                     awayVal={Math.round((matchData.teamStats.away.crossesCompleted / (matchData.teamStats.away.crossesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
-                                <StatRow label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
-                                <StatRow label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
-                                <StatRow label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
-                                <StatRow label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
-                                <StatRow label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
+                                <StatRowWithChart label="Tackling %"
+                                    homeVal={Math.round((matchData.teamStats.home.tacklesWon / (matchData.teamStats.home.tacklesAttempted || 1)) * 100)}
+                                    awayVal={Math.round((matchData.teamStats.away.tacklesWon / (matchData.teamStats.away.tacklesAttempted || 1)) * 100)}
+                                    isPercentage
+                                />
+                                <StatRowWithChart label="Dribbling %"
+                                    homeVal={Math.round((matchData.teamStats.home.dribblesWon / (matchData.teamStats.home.dribblesAttempted || 1)) * 100)}
+                                    awayVal={Math.round((matchData.teamStats.away.dribblesWon / (matchData.teamStats.away.dribblesAttempted || 1)) * 100)}
+                                    isPercentage
+                                />
+                                <StatRowWithChart label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
+                                <StatRowWithChart label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
+                                <StatRowWithChart label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
+                                <StatRowWithChart label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
+                                <StatRowWithChart label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
                             </div>
                         )}
 

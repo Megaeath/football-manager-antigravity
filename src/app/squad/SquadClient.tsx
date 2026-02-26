@@ -24,6 +24,9 @@ type PlayerProps = {
     avgRating: number;
     birthDate: Date;
     retirementAge: number;
+    popularity: number;
+    clubReputation: number;
+    marketValue: number;
 };
 
 type MatchType = {
@@ -263,13 +266,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const getMarketValue = (p: PlayerProps) => {
-        const overall = calculatePlayerOverall(p.rawAttributes);
-        const popularity = 50; // Default popularity
-        let ageMultiplier = 1;
-        if (p.age >= 32) {
-            ageMultiplier = Math.pow(0.9, p.age - 32);
-        }
-        return Math.round((Math.pow(overall, 2) * popularity) / 1000 * ageMultiplier * 50000);
+        // Use market value calculated on server
+        return p.marketValue;
     };
 
     const getBasePower = (p: PlayerProps) => {

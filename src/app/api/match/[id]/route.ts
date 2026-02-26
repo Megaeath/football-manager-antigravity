@@ -73,7 +73,11 @@ export async function GET(
             crossesAttempted: 0,
             crossesCompleted: 0,
             freeKicks: 0,
-            throws: 0
+            throws: 0,
+            tacklesAttempted: 0,
+            tacklesWon: 0,
+            dribblesAttempted: 0,
+            dribblesWon: 0
         };
 
         const baseTeamStats = match.stats ? JSON.parse(match.stats) : null;
@@ -95,6 +99,10 @@ export async function GET(
             bucket.freeKicks += ps.freeKicks || 0;
             bucket.corners += ps.corners || 0;
             bucket.throws += ps.throws || 0;
+            bucket.tacklesAttempted += ps.tacklesAttempted || 0;
+            bucket.tacklesWon += ps.tacklesWon || 0;
+            bucket.dribblesAttempted += ps.dribblesAttempted || 0;
+            bucket.dribblesWon += ps.dribblesWon || 0;
         });
 
         // Calculate possession based on passes completed
