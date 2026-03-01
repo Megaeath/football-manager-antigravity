@@ -2,11 +2,12 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
+import { calculatePlayerPower, getEffectiveAttributes, getFitnessFactor, toPlayerAttributes } from '@/lib/engine/playerPower';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
 import PlayerModal from '@/components/PlayerModal';
 import { getClubReputation } from '@/lib/reputation';
+import TacticsTabs from '@/components/TacticsTabs';
 
 interface Player {
     id: string;
@@ -43,6 +44,7 @@ interface Player {
     agility: number;
     balance: number;
     popularity: number;
+    exp?: number;
 }
 
 interface Match {
@@ -113,13 +115,12 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
     }, [searchParams]);
 
     const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
-    const getFitnessFactor = (condition: number) => Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
     const toHundred = (values: number[]) => {
         if (!values.length) return 0;
         const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
         return Math.round((avg / 20) * 100);
     };
-    const buildAttributes = (p: Player): PlayerAttributes => ({
+    const buildAttributes = (p: Player): PlayerAttributes => toPlayerAttributes({
         handling: p.handling,
         tackling: p.tackling,
         passing: p.passing,
@@ -143,18 +144,28 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
         agility: p.agility,
         balance: p.balance
     });
-    const getPower = (p: Player) => {
+    const getPowerBreakdown = (p: Player) => {
         const attrs = buildAttributes(p);
         const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
-        const suitability = calculateSuitability(attrs, targetPos);
-        return Math.round(suitability * getFitnessFactor(p.condition));
-    };
+        const withExp = calculatePlayerPower({
+            attributes: attrs,
+            targetPosition: targetPos,
+            condition: p.condition,
+            exp: p.exp || 0
+        });
+        const withoutExp = calculatePlayerPower({
+            attributes: attrs,
+            targetPosition: targetPos,
+            condition: p.condition,
+            exp: 0
+        });
 
-    const getBasePower = (p: Player) => {
-        const attrs = buildAttributes(p);
-        const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
-        const suitability = calculateSuitability(attrs, targetPos);
-        return Math.round(suitability);
+        return {
+            power: withExp.powerWithExp,
+            basePowerNoFitness: withExp.powerWithExpNoFitness,
+            noExpPower: withoutExp.powerWithExp,
+            effectiveAttributes: getEffectiveAttributes(attrs, p.exp || 0)
+        };
     };
 
     const getMarketValue = (p: Player, basePower: number) => {
@@ -169,30 +180,6 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
         return marketValue;
     };
 
-    const renderMatchTacticValue = (value: string | null | undefined, fallback: string) => (
-        <>
-            <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '6px', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                {value || fallback}
-            </div>
-            {!value && (
-                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--muted)' }}>
-                    Default (base): {fallback}
-                </div>
-            )}
-        </>
-    );
-
-    const getNextMatchTactics = (match: NextMatch) => {
-        const isHomeSide = match.homeTeamId === team.id;
-        return {
-            formation: isHomeSide ? match.homeTactics_formation : match.awayTactics_formation,
-            mentality: isHomeSide ? match.homeTactics_mentality : match.awayTactics_mentality,
-            passing: isHomeSide ? match.homeTactics_passing : match.awayTactics_passing,
-            tackling: isHomeSide ? match.homeTactics_tackling : match.awayTactics_tackling,
-            attacking_focus: isHomeSide ? match.homeTactics_attacking_focus : match.awayTactics_attacking_focus,
-            creative_freedom: isHomeSide ? match.homeTactics_creative_freedom : match.awayTactics_creative_freedom
-        };
-    };
 
     const posGroupOrder: Record<string, number> = {
         GK: 0,
@@ -213,8 +200,12 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
         const playerPowers = team.players.map(p => {
             const attrs = buildAttributes(p);
             const targetPos = getBasePosition(p.tacticalPosition) || p.naturalPosition;
-            const suitability = calculateSuitability(attrs, targetPos);
-            return Math.round(suitability * getFitnessFactor(p.condition));
+            return calculatePlayerPower({
+                attributes: attrs,
+                targetPosition: targetPos,
+                condition: p.condition,
+                exp: p.exp || 0
+            }).powerWithExp;
         });
         
         const bestPlayers = playerPowers.sort((a: number, b: number) => b - a).slice(0, 11);
@@ -238,8 +229,6 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
             setSortDir('desc');
         }
     };
-
-    const nextTactics = nextMatch ? getNextMatchTactics(nextMatch) : null;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -394,39 +383,42 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                             {[...team.players]
                                 .map(p => {
                                 const attrs = buildAttributes(p);
+                                const breakdown = getPowerBreakdown(p);
+                                const attrsForDisplay = breakdown.effectiveAttributes;
                                 const physical = toHundred([
-                                    attrs.pace,
-                                    attrs.acceleration,
-                                    attrs.stamina,
-                                    attrs.strength,
-                                    attrs.agility,
-                                    attrs.balance
+                                    attrsForDisplay.pace,
+                                    attrsForDisplay.acceleration,
+                                    attrsForDisplay.stamina,
+                                    attrsForDisplay.strength,
+                                    attrsForDisplay.agility,
+                                    attrsForDisplay.balance
                                 ]);
                                 const technical = toHundred([
-                                    attrs.handling,
-                                    attrs.tackling,
-                                    attrs.passing,
-                                    attrs.shooting,
-                                    attrs.heading,
-                                    attrs.dribbling,
-                                    attrs.crossing,
-                                    attrs.setPieces
+                                    attrsForDisplay.handling,
+                                    attrsForDisplay.tackling,
+                                    attrsForDisplay.passing,
+                                    attrsForDisplay.shooting,
+                                    attrsForDisplay.heading,
+                                    attrsForDisplay.dribbling,
+                                    attrsForDisplay.crossing,
+                                    attrsForDisplay.setPieces
                                 ]);
                                 const tactical = toHundred([
-                                    attrs.aggression,
-                                    attrs.positioning,
-                                    attrs.vision,
-                                    attrs.bravery,
-                                    attrs.leadership
+                                    attrsForDisplay.aggression,
+                                    attrsForDisplay.positioning,
+                                    attrsForDisplay.vision,
+                                    attrsForDisplay.bravery,
+                                    attrsForDisplay.leadership
                                 ]);
                                 const mental = toHundred([
-                                    attrs.teamwork,
-                                    attrs.composure
+                                    attrsForDisplay.teamwork,
+                                    attrsForDisplay.composure
                                 ]);
-                                const power = getPower(p);
-                                const basePower = getBasePower(p);
-                                const marketValue = getMarketValue(p, basePower);
-                                return { p, physical, technical, tactical, mental, power, basePower, marketValue };
+                                const power = breakdown.power;
+                                const basePowerNoFitness = breakdown.basePowerNoFitness;
+                                const noExpPower = breakdown.noExpPower;
+                                const marketValue = getMarketValue(p, basePowerNoFitness);
+                                return { p, physical, technical, tactical, mental, power, basePowerNoFitness, noExpPower, marketValue };
                             })
                             .sort((a, b) => {
                                 if (sortKey === 'pos') {
@@ -454,7 +446,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                         return dir * a.p.name.localeCompare(b.p.name);
                                 }
                             })
-                            .map(({ p, physical, technical, tactical, mental, power, basePower, marketValue }) => (
+                            .map(({ p, physical, technical, tactical, mental, power, basePowerNoFitness, noExpPower, marketValue }) => (
                                 <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
                                     <td style={{ padding: '12px' }}>
                                         <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
@@ -484,7 +476,8 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                     <td style={{ padding: '12px', textAlign: 'center' }}>{mental}</td>
                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                                         {power}
-                                        {power < basePower && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
+                                        {power > noExpPower && <span style={{ color: '#2e7d32', fontSize: '0.8rem' }}>⬆️</span>}
+                                        {power < basePowerNoFitness && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
                                     </td>
                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>
                                         {(marketValue / 1000000).toFixed(1)}M
@@ -539,45 +532,17 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
 
             {activeTab === 'tactics' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                {/* Team Tactics & Next Match Tactics */}
+                {/* Team Tactics */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    {/* Match-Specific Tactics (if available) */}
-                    {nextMatch && team.id !== userTeamId && (nextMatch.homeTeamId === team.id || nextMatch.awayTeamId === team.id) && (
-                        <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
-                            <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', color: 'var(--accent)' }}>
-                                ⚙️ Auto-Selected for Next Match
-                            </h3>
-                            <div style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                                vs {nextMatch.homeTeamId === team.id ? nextMatch.awayTeam?.name : nextMatch.homeTeam?.name} on {new Date(nextMatch.date).toLocaleDateString('th-TH')}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Formation</label>
-                                    {renderMatchTacticValue(nextTactics?.formation, team.formation)}
-                                </div>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Mentality</label>
-                                    {renderMatchTacticValue(nextTactics?.mentality, team.mentality)}
-                                </div>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Passing Style</label>
-                                    {renderMatchTacticValue(nextTactics?.passing, team.passing)}
-                                </div>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tackling Intensity</label>
-                                    {renderMatchTacticValue(nextTactics?.tackling, team.tackling)}
-                                </div>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Attacking Focus</label>
-                                    {renderMatchTacticValue(nextTactics?.attacking_focus, team.attacking_focus)}
-                                </div>
-                                <div>
-                                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Creative Freedom</label>
-                                    {renderMatchTacticValue(nextTactics?.creative_freedom, team.creative_freedom)}
-                                </div>
-                            </div>
+                    <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 style={{ margin: 0 }}>3-Plan Tactics</h3>
+                            <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                                Formation: {team.formation}
+                            </span>
                         </div>
-                    )}
+                        <TacticsTabs teamId={team.id} readOnly={team.id !== userTeamId} />
+                    </div>
                 </div>
 
                 {/* Top 5 Performers */}

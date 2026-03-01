@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
-import { calculateSuitability } from '../../lib/engine/suitability';
 import { PlayerAttributes } from '../../lib/engine/types';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 import SquadClient from './SquadClient';
 import { Suspense } from 'react';
 import { getGameTime } from '@/lib/services/gameTime';
@@ -14,6 +14,7 @@ async function getUserTeam() {
         return prisma.team.findUnique({
             where: { id: settings.userTeamId },
             include: {
+                tactics: true,
                 players: {
                     where: { isRetired: false },
                     include: {
@@ -31,6 +32,7 @@ async function getUserTeam() {
 
     return prisma.team.findFirst({
         include: {
+            tactics: true,
             players: {
                 where: { isRetired: false },
                 include: {
@@ -52,25 +54,63 @@ export default async function SquadPage() {
 
     if (!team) return <div>Team not found. Please seed the database.</div>;
 
+    const ensuredTactics = team.tactics ?? await prisma.teamTactics.upsert({
+        where: { teamId: team.id },
+        update: {},
+        create: {
+            teamId: team.id,
+            normalFormation: team.formation,
+            normalMentality: team.mentality,
+            normalPassing: team.passing,
+            normalTackling: team.tackling,
+            normalAttacking_focus: team.attacking_focus,
+            normalCreative_freedom: team.creative_freedom,
+            behindFormation: team.formation,
+            behindMentality: 'ALL_OUT_ATTACK',
+            behindPassing: 'DIRECT',
+            behindTackling: 'HARD',
+            behindAttacking_focus: 'WINGS',
+            behindCreative_freedom: 'MAXIMUM',
+            leadingFormation: team.formation,
+            leadingMentality: 'ULTRA_DEFENSIVE',
+            leadingPassing: 'SHORT',
+            leadingTackling: 'HARD',
+            leadingAttacking_focus: 'CENTER',
+            leadingCreative_freedom: 'NORMAL'
+        }
+    });
+
     const playerswithSuitability = team.players.map(p => {
         // Map DB attributes to Engine attributes
-        const attrs: PlayerAttributes = {
+        const attrs: PlayerAttributes = toPlayerAttributes({
             handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
             heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, throw: p.throw,
             aggression: p.aggression, positioning: p.positioning, vision: p.vision,
             bravery: p.bravery, leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
             pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
             agility: p.agility, balance: p.balance, crossing: p.crossing
-        };
+        });
 
         const currentPosId = p.tacticalPosition ? p.tacticalPosition.split('_')[0] : null;
-        const baseSuitability = currentPosId ? calculateSuitability(attrs, currentPosId) : 0;
-        const fitnessFactor = Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2);
-        const fitnessSuitability = Math.round(baseSuitability * fitnessFactor);
+        const currentPosPower = currentPosId
+            ? calculatePlayerPower({
+                attributes: attrs,
+                targetPosition: currentPosId,
+                condition: p.condition,
+                exp: p.exp || 0
+            })
+            : null;
+        const baseSuitability = currentPosPower?.baseSuitabilityWithExp || 0;
+        const fitnessSuitability = currentPosPower?.powerWithExp || 0;
 
         // Calculate market value (same formula as API)
         const natPos = p.naturalPosition.split('_')[0];
-        const power = Math.round(calculateSuitability(attrs, natPos));
+        const power = calculatePlayerPower({
+            attributes: attrs,
+            targetPosition: natPos,
+            condition: 100,
+            exp: p.exp || 0
+        }).powerWithExp;
         
         // Calculate average rating from match stats (same as API)
         const avgRating = p.matchStats && p.matchStats.length > 0
@@ -108,7 +148,8 @@ export default async function SquadPage() {
             retirementAge: p.retirementAge,
             popularity: p.popularity,
             clubReputation: team.reputation,
-            marketValue
+            marketValue,
+            exp: p.exp || 0
         };
     });
 
@@ -117,11 +158,11 @@ export default async function SquadPage() {
 
     const currentTactics = {
         formation: team.formation,
-        mentality: team.mentality,
-        passing: team.passing,
-        tackling: team.tackling,
-        attacking_focus: team.attacking_focus,
-        creative_freedom: team.creative_freedom
+        mentality: ensuredTactics.normalMentality,
+        passing: ensuredTactics.normalPassing,
+        tackling: ensuredTactics.normalTackling,
+        attacking_focus: ensuredTactics.normalAttacking_focus,
+        creative_freedom: ensuredTactics.normalCreative_freedom
     };
 
     // Combine and sort matches

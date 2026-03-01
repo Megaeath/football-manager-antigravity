@@ -1,8 +1,7 @@
 import prisma from '@/lib/prisma';
 import Link from 'next/link';
 import SeasonSelector from '@/components/SeasonSelector';
-import { calculateSuitability } from '@/lib/engine/suitability';
-import type { PlayerAttributes } from '@/lib/engine/types';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 export default async function LeaguePage({ searchParams }: { searchParams: Promise<{ season?: string }> }) {
     const params = await searchParams;
@@ -79,7 +78,7 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                 power: (() => {
                     // Calculate power for each player and sort to get best 11
                     const playerPowers = team.players.map((p: any) => {
-                        const attrs: PlayerAttributes = {
+                        const attrs = toPlayerAttributes({
                             handling: p.handling,
                             tackling: p.tackling,
                             passing: p.passing,
@@ -102,12 +101,15 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                             strength: p.strength,
                             agility: p.agility,
                             balance: p.balance
-                        };
+                        });
                         
                         const basePos = (p.naturalPosition || 'GK').split('_')[0];
-                        const suitability = calculateSuitability(attrs, basePos);
-                        const fitnessFactor = Math.pow(Math.max(0, Math.min(1, p.condition / 100)), 1.2);
-                        const power = Math.round(suitability * fitnessFactor);
+                        const power = calculatePlayerPower({
+                            attributes: attrs,
+                            targetPosition: basePos,
+                            condition: p.condition,
+                            exp: p.exp || 0
+                        }).powerWithExp;
                         return power;
                     });
                     

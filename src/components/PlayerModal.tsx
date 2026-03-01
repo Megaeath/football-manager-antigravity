@@ -6,6 +6,8 @@ import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { getPlayerReputation } from '@/lib/reputation';
 import { ContractTab } from '@/components/ContractTab';
+import { getEffectiveAttributes, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { getExpBonus } from '@/lib/engine/experience';
 
 interface PlayerData {
     id: string;
@@ -21,6 +23,7 @@ interface PlayerData {
     contractStartWeek?: number;
     contractEndWeek?: number;
     weeklyWage?: number;
+    exp?: number;
     handling: number;
     tackling: number;
     passing: number;
@@ -145,6 +148,36 @@ export default function PlayerModal() {
     if (!playerId) return null;
 
     const currentSeasonStats = player?.seasonStats?.find(s => s.season === selectedSeason);
+    const expBonus = getExpBonus(player?.exp || 0);
+    const effectiveAttributes = player
+        ? getEffectiveAttributes(
+            toPlayerAttributes({
+                handling: player.handling,
+                tackling: player.tackling,
+                passing: player.passing,
+                shooting: player.shooting,
+                heading: player.heading,
+                dribbling: player.dribbling,
+                crossing: player.crossing,
+                setPieces: player.setPieces,
+                throw: player.throw,
+                aggression: player.aggression,
+                positioning: player.positioning,
+                vision: player.vision,
+                bravery: player.bravery,
+                leadership: player.leadership,
+                teamwork: player.teamwork,
+                composure: player.composure,
+                pace: player.pace,
+                acceleration: player.acceleration,
+                stamina: player.stamina,
+                strength: player.strength,
+                agility: player.agility,
+                balance: player.balance
+            }),
+            player.exp || 0
+        )
+        : null;
 
     return (
         <>
@@ -228,6 +261,12 @@ export default function PlayerModal() {
                                             </div>
                                         </div>
                                         <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>EXP</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--accent)' }}>
+                                                {player.exp || 0} <span style={{ fontSize: '0.9rem', color: 'var(--success)' }}>(+{Math.floor((player.exp || 0) / 100)})</span>
+                                            </div>
+                                        </div>
+                                        <div>
                                             <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Market Value</div>
                                             <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fbbf24' }}>
                                                 ${player.marketValue ? player.marketValue.toLocaleString() : '0'}
@@ -289,40 +328,40 @@ export default function PlayerModal() {
                                 {activeTab === 'attributes' && (
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '2rem' }}>
                                         <AttributeSection label="Physical" items={[
-                                            { label: 'Acceleration', value: player.acceleration },
-                                            { label: 'Agility', value: player.agility },
-                                            { label: 'Balance', value: player.balance },
-                                            { label: 'Pace', value: player.pace },
-                                            { label: 'Stamina', value: player.stamina },
-                                            { label: 'Strength', value: player.strength }
-                                        ]} />
+                                            { label: 'Acceleration', value: effectiveAttributes?.acceleration ?? player.acceleration },
+                                            { label: 'Agility', value: effectiveAttributes?.agility ?? player.agility },
+                                            { label: 'Balance', value: effectiveAttributes?.balance ?? player.balance },
+                                            { label: 'Pace', value: effectiveAttributes?.pace ?? player.pace },
+                                            { label: 'Stamina', value: effectiveAttributes?.stamina ?? player.stamina },
+                                            { label: 'Strength', value: effectiveAttributes?.strength ?? player.strength }
+                                        ]} bonus={expBonus} />
 
                                         <AttributeSection label="Technical" items={[
-                                            { label: 'Crossing', value: player.crossing },
-                                            { label: 'Dribbling', value: player.dribbling },
-                                            { label: 'Handling (GK)', value: player.handling },
-                                            { label: 'Heading', value: player.heading },
-                                            { label: 'Passing', value: player.passing },
-                                            { label: 'Shooting', value: player.shooting },
-                                            { label: 'Tackling', value: player.tackling },
-                                            { label: 'Throw In', value: player.throw }
-                                        ]} />
+                                            { label: 'Crossing', value: effectiveAttributes?.crossing ?? player.crossing },
+                                            { label: 'Dribbling', value: effectiveAttributes?.dribbling ?? player.dribbling },
+                                            { label: 'Handling (GK)', value: effectiveAttributes?.handling ?? player.handling },
+                                            { label: 'Heading', value: effectiveAttributes?.heading ?? player.heading },
+                                            { label: 'Passing', value: effectiveAttributes?.passing ?? player.passing },
+                                            { label: 'Shooting', value: effectiveAttributes?.shooting ?? player.shooting },
+                                            { label: 'Tackling', value: effectiveAttributes?.tackling ?? player.tackling },
+                                            { label: 'Throw In', value: effectiveAttributes?.throw ?? player.throw }
+                                        ]} bonus={expBonus} />
 
                                         <AttributeSection label="Tactical" items={[
-                                            { label: 'Aggression', value: player.aggression },
-                                            { label: 'Bravery', value: player.bravery },
-                                            { label: 'Leadership', value: player.leadership },
-                                            { label: 'Positioning', value: player.positioning },
-                                            { label: 'Set Pieces', value: player.setPieces },
-                                            { label: 'Vision', value: player.vision }
-                                        ]} />
+                                            { label: 'Aggression', value: effectiveAttributes?.aggression ?? player.aggression },
+                                            { label: 'Bravery', value: effectiveAttributes?.bravery ?? player.bravery },
+                                            { label: 'Leadership', value: effectiveAttributes?.leadership ?? player.leadership },
+                                            { label: 'Positioning', value: effectiveAttributes?.positioning ?? player.positioning },
+                                            { label: 'Set Pieces', value: effectiveAttributes?.setPieces ?? player.setPieces },
+                                            { label: 'Vision', value: effectiveAttributes?.vision ?? player.vision }
+                                        ]} bonus={expBonus} />
 
                                         <AttributeSection label="Mental" items={[
-                                            { label: 'Composure', value: player.composure },
+                                            { label: 'Composure', value: effectiveAttributes?.composure ?? player.composure },
                                             { label: 'Concentration', value: player.concentration },
                                             { label: 'Decision', value: player.decision },
-                                            { label: 'Teamwork', value: player.teamwork }
-                                        ]} />
+                                            { label: 'Teamwork', value: effectiveAttributes?.teamwork ?? player.teamwork }
+                                        ]} bonus={expBonus} />
                                     </div>
                                 )}
 
@@ -522,7 +561,7 @@ function StatCard({ icon, label, value, suffix }: { icon: string; label: string;
     );
 }
 
-function AttributeSection({ label, items }: { label: string; items: Array<{ label: string; value: number }> }) {
+function AttributeSection({ label, items, bonus = 0 }: { label: string; items: Array<{ label: string; value: number }>; bonus?: number }) {
     return (
         <div>
             <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>
@@ -534,6 +573,7 @@ function AttributeSection({ label, items }: { label: string; items: Array<{ labe
                         <span style={{ color: 'var(--muted)' }}>{item.label}</span>
                         <span style={{ fontWeight: 'bold', color: item.value > 15 ? 'var(--success)' : item.value > 10 ? 'var(--accent)' : 'inherit' }}>
                             {item.value}
+                            {bonus !== 0 && <span style={{ marginLeft: 6, color: bonus > 0 ? 'var(--success)' : '#c62828', fontSize: '0.8rem' }}>({bonus > 0 ? '+' : ''}{bonus})</span>}
                         </span>
                     </div>
                     <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>

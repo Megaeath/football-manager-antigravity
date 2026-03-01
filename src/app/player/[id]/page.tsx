@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
 import { PlayerContent } from './PlayerContent';
+import { getExpBonus, getExpMultiplier } from '@/lib/engine/experience';
 
 async function getPlayer(id: string) {
     const player = await prisma.player.findUnique({
@@ -53,20 +54,24 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
     );
 
     // Prepare attribute data for client component
+    const exp = player.exp || 0;
+    const expBonus = getExpBonus(exp);
+    const expMultiplier = getExpMultiplier(exp);
+    
     const attributeData = {
         technical: [
             {
                 label: 'Technical',
                 items: [
-                    { label: 'Handling (GK)', value: player.handling },
-                    { label: 'Tackling', value: player.tackling },
-                    { label: 'Passing', value: player.passing },
-                    { label: 'Shooting', value: player.shooting },
-                    { label: 'Heading', value: player.heading },
-                    { label: 'Dribbling', value: player.dribbling },
-                    { label: 'Crossing', value: player.crossing },
-                    { label: 'Set Pieces', value: player.setPieces },
-                    { label: 'Throw In', value: player.throw },
+                    { label: 'Handling (GK)', value: player.handling, bonus: expBonus },
+                    { label: 'Tackling', value: player.tackling, bonus: expBonus },
+                    { label: 'Passing', value: player.passing, bonus: expBonus },
+                    { label: 'Shooting', value: player.shooting, bonus: expBonus },
+                    { label: 'Heading', value: player.heading, bonus: expBonus },
+                    { label: 'Dribbling', value: player.dribbling, bonus: expBonus },
+                    { label: 'Crossing', value: player.crossing, bonus: expBonus },
+                    { label: 'Set Pieces', value: player.setPieces, bonus: expBonus },
+                    { label: 'Throw In', value: player.throw, bonus: expBonus },
                 ]
             }
         ],
@@ -74,13 +79,13 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
             {
                 label: 'Mental',
                 items: [
-                    { label: 'Aggression', value: player.aggression },
-                    { label: 'Positioning', value: player.positioning },
-                    { label: 'Vision', value: player.vision },
-                    { label: 'Bravery', value: player.bravery },
-                    { label: 'Leadership', value: player.leadership },
-                    { label: 'Teamwork', value: player.teamwork },
-                    { label: 'Composure', value: player.composure },
+                    { label: 'Aggression', value: player.aggression, bonus: expBonus },
+                    { label: 'Positioning', value: player.positioning, bonus: expBonus },
+                    { label: 'Vision', value: player.vision, bonus: expBonus },
+                    { label: 'Bravery', value: player.bravery, bonus: expBonus },
+                    { label: 'Leadership', value: player.leadership, bonus: expBonus },
+                    { label: 'Teamwork', value: player.teamwork, bonus: expBonus },
+                    { label: 'Composure', value: player.composure, bonus: expBonus },
                 ]
             }
         ],
@@ -88,15 +93,18 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
             {
                 label: 'Physical',
                 items: [
-                    { label: 'Pace', value: player.pace },
-                    { label: 'Acceleration', value: player.acceleration },
-                    { label: 'Stamina', value: player.stamina },
-                    { label: 'Strength', value: player.strength },
-                    { label: 'Agility', value: player.agility },
-                    { label: 'Balance', value: player.balance },
+                    { label: 'Pace', value: player.pace, bonus: expBonus },
+                    { label: 'Acceleration', value: player.acceleration, bonus: expBonus },
+                    { label: 'Stamina', value: player.stamina, bonus: expBonus },
+                    { label: 'Strength', value: player.strength, bonus: expBonus },
+                    { label: 'Agility', value: player.agility, bonus: expBonus },
+                    { label: 'Balance', value: player.balance, bonus: expBonus },
                 ]
             }
         ],
+        exp: exp,
+        expBonus: expBonus,
+        expMultiplier: expMultiplier,
     };
 
     return (

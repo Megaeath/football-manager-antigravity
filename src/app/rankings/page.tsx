@@ -2,7 +2,7 @@ import prisma from '@/lib/prisma';
 import SeasonSelector from '@/components/SeasonSelector';
 import { getGameTime } from '@/lib/services/gameTime';
 import RankingsClient from './RankingsClient';
-import { calculateSuitability } from '@/lib/engine/suitability';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 export default async function RankingsPage({
     searchParams
@@ -43,6 +43,7 @@ export default async function RankingsPage({
             p.strength,
             p.agility,
             p.balance,
+            p.exp,
             SUM(pms.goals) as goals,
             SUM(pms.assists) as assists,
             SUM(pms.yellowCards) as yellowCards,
@@ -69,7 +70,7 @@ export default async function RankingsPage({
 
     // Convert BigInts to Numbers and calculate power
     const stats = rawStats.map(s => {
-        const attrs = {
+        const attrs = toPlayerAttributes({
             handling: Number(s.handling || 0),
             tackling: Number(s.tackling || 0),
             passing: Number(s.passing || 0),
@@ -92,9 +93,14 @@ export default async function RankingsPage({
             strength: Number(s.strength || 0),
             agility: Number(s.agility || 0),
             balance: Number(s.balance || 0)
-        };
+        });
         const basePos = s.position.split('_')[0];
-        const power = Math.round(calculateSuitability(attrs, basePos));
+        const power = calculatePlayerPower({
+            attributes: attrs,
+            targetPosition: basePos,
+            condition: 100,
+            exp: Number((s as any).exp || 0)
+        }).powerWithExp;
 
         return {
             ...s,

@@ -85,6 +85,7 @@ function getPassingStyleBuff(passing: string) {
         case 'SHORT':
             return { shortPass: 1.3, longPass: 0.7 };
         case 'LONG':
+        case 'DIRECT':
             return { shortPass: 0.7, longPass: 1.3 };
         default: // MIXED
             return { shortPass: 1.0, longPass: 1.0 };
@@ -105,14 +106,23 @@ function getTacklingBuff(tackling: string) {
 
 function getAttackingFocusBuff(attackingFocus: string, playerPosition: string) {
     // Returns weight modifier for position selection in attack
-    // Positions: GK, DR, DC, DL, DMR, DMC, DML, MR, MC, ML, AMR, AMC, AML, FWR, FWC, FWL
-    const isCenter = playerPosition === 'MC' || playerPosition === 'AMC' || playerPosition === 'FWC' || playerPosition === 'DMC';
-    const isWing = playerPosition === 'MR' || playerPosition === 'ML' || playerPosition === 'AMR' || playerPosition === 'AML' || playerPosition === 'FWR' || playerPosition === 'FWL' || playerPosition === 'DR' || playerPosition === 'DL' || playerPosition === 'DMR' || playerPosition === 'DML';
+    // Supports both natural positions (e.g. FW) and tactical slots (e.g. FW_R)
+    const normalized = (playerPosition || '').replace('_', '').toUpperCase();
+
+    const centerSet = new Set(['MC', 'AMC', 'FWC', 'DMC', 'DC', 'FW']);
+    const wingSet = new Set(['MR', 'ML', 'AMR', 'AML', 'FWR', 'FWL', 'DR', 'DL', 'DMR', 'DML']);
+
+    const isCenter = centerSet.has(normalized);
+    const isWing = wingSet.has(normalized);
 
     switch (attackingFocus) {
         case 'CENTER':
+        case 'CENTRAL':
+        case 'FORWARD':
             return isCenter ? 1.4 : (isWing ? 0.7 : 1.0);
         case 'WINGS':
+        case 'LEFT':
+        case 'RIGHT':
             return isWing ? 1.4 : (isCenter ? 0.7 : 1.0);
         default: // MIXED
             return 1.0;
@@ -126,12 +136,21 @@ function getCreativeFreedomBuff(creativeFreeze: string) {
     // FREEDOM: Prioritizes individual skill and decision-making
     switch (creativeFreeze) {
         case 'STRICT':
+        case 'RESTRICTED':
             return { shooting: 0.85, dribble: 0.8, riskTaking: 0.7 };
         case 'FREEDOM':
+        case 'MAXIMUM':
             return { shooting: 1.2, dribble: 1.2, riskTaking: 1.3 };
         default: // NORMAL
             return { shooting: 1.0, dribble: 1.0, riskTaking: 1.0 };
     }
+}
+
+function getActiveTacticByScore(team: TeamState, goalsFor: number, goalsAgainst: number) {
+    if (!team.tacticalPlans) return team.tactics;
+    if (goalsFor > goalsAgainst) return team.tacticalPlans.leading;
+    if (goalsFor < goalsAgainst) return team.tacticalPlans.behind;
+    return team.tacticalPlans.normal;
 }
 
 function getDrainForIntensity(intensity: Intensity) {
@@ -725,6 +744,10 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
     for (let minute = 1; minute <= 90; minute++) {
         matchState.minute = minute;
 
+        // Dynamic tactical plan switching for both teams based on live score
+        homeTeam.tactics = getActiveTacticByScore(homeTeam, matchState.homeScore, matchState.awayScore);
+        awayTeam.tactics = getActiveTacticByScore(awayTeam, matchState.awayScore, matchState.homeScore);
+
         const ticksPerMinute = 12; // 1 tick = 5 seconds (60s / 12 = 5s)
         for (let tick = 0; tick < ticksPerMinute; tick++) {
             const isHomeAttacking = ball.possession === 'home';
@@ -863,7 +886,11 @@ function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking
         );
 
         for (const player of candidates) {
-            weightedCandidates.push({ player, weight: group.weight });
+            const focusWeight = getAttackingFocusBuff(
+                team.tactics?.attacking_focus || 'MIXED',
+                player.tacticalPosition || player.position
+            );
+            weightedCandidates.push({ player, weight: group.weight * focusWeight });
         }
     }
 

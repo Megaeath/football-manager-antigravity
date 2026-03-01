@@ -37,6 +37,7 @@ function mapPlayer(p: any): PlayerState {
         },
         condition: p.condition,
         morale: p.morale,
+        exp: p.exp || 0,
         tacticalPosition: p.tacticalPosition, // Map new field
         cards: { yellow: 0, red: 0 },
         stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }

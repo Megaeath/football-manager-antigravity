@@ -15,7 +15,6 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
         });
         if (homeTeam) {
             const autoTactics = autoSelectTactics(homeTeam.players);
-            updates.homeTactics_formation = autoTactics.formation;
             updates.homeTactics_mentality = autoTactics.mentality;
             updates.homeTactics_passing = autoTactics.passing;
             updates.homeTactics_tackling = autoTactics.tackling;
@@ -32,7 +31,6 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
         });
         if (awayTeam) {
             const autoTactics = autoSelectTactics(awayTeam.players);
-            updates.awayTactics_formation = autoTactics.formation;
             updates.awayTactics_mentality = autoTactics.mentality;
             updates.awayTactics_passing = autoTactics.passing;
             updates.awayTactics_tackling = autoTactics.tackling;
@@ -60,7 +58,6 @@ export async function POST(req: Request) {
             const updates: any = {};
             
             if (homeTactics) {
-                if (homeTactics.formation) updates.homeTactics_formation = homeTactics.formation;
                 if (homeTactics.mentality) updates.homeTactics_mentality = homeTactics.mentality;
                 if (homeTactics.passing) updates.homeTactics_passing = homeTactics.passing;
                 if (homeTactics.tackling) updates.homeTactics_tackling = homeTactics.tackling;
@@ -69,7 +66,6 @@ export async function POST(req: Request) {
             }
             
             if (awayTactics) {
-                if (awayTactics.formation) updates.awayTactics_formation = awayTactics.formation;
                 if (awayTactics.mentality) updates.awayTactics_mentality = awayTactics.mentality;
                 if (awayTactics.passing) updates.awayTactics_passing = awayTactics.passing;
                 if (awayTactics.tackling) updates.awayTactics_tackling = awayTactics.tackling;

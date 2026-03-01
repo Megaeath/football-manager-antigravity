@@ -1,10 +1,9 @@
-import { PlayerAttributes, Position } from './types';
+// Test suitability calculation
 
-export function calculateSuitability(attributes: PlayerAttributes, targetPosition: string): number {
-    let score = 0;
-    const weights: Record<string, number> = {};
+function calculateSuitability(attributes, targetPosition) {
+    const weights = {};
 
-    // Define weights based on target position - these are relative importances, not absolute
+    // Define weights based on target position
     if (targetPosition === 'GK') {
         weights.handling = 3;
         weights.positioning = 2;
@@ -55,29 +54,52 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.positioning = 2;
     }
 
-    // Calculate weighted sum of attributes that matter for the position
-    let weightedSum = 0;
+    // Calculate weighted sum
     let totalWeight = 0;
-    let attributeCount = 0;
+    let currentSum = 0;
 
-    // Include all attributes but weight those relevant to position more heavily
-    const allAttributeKeys: (keyof PlayerAttributes)[] = [
-        'handling', 'tackling', 'passing', 'shooting', 'heading', 'dribbling',
-        'crossing', 'setPieces', 'throw', 'aggression', 'positioning', 'vision',
-        'bravery', 'leadership', 'teamwork', 'composure', 'pace', 'acceleration',
-        'stamina', 'strength', 'agility', 'balance'
-    ];
-
-    allAttributeKeys.forEach(stat => {
-        const attrValue = attributes[stat] || 0;
-        const weight = weights[stat] || 0.5; // Default weight for non-position attributes
-        weightedSum += attrValue * weight;
-        totalWeight += weight;
-        if (attrValue > 0) attributeCount++;
+    Object.keys(weights).forEach(stat => {
+        if (stat in attributes) {
+            const attrValue = attributes[stat] || 0;
+            currentSum += attrValue * weights[stat];
+            totalWeight += weights[stat];
+        }
     });
 
     if (totalWeight === 0) return 50;
 
-    // Return as percentage where 20 = 100%
-    return Math.round((weightedSum / totalWeight / 20) * 100);
+    // New formula
+    return Math.round((currentSum / totalWeight / 20) * 100);
 }
+
+// Test with a typical attribute
+const testAttrs = {
+    handling: 3,
+    tackling: 5,
+    passing: 6,
+    shooting: 8,
+    heading: 4,
+    dribbling: 5,
+    crossing: 2,
+    setPieces: 3,
+    throw: 2,
+    aggression: 6,
+    positioning: 4,
+    vision: 5,
+    bravery: 4,
+    leadership: 3,
+    teamwork: 5,
+    composure: 6,
+    pace: 7,
+    acceleration: 6,
+    stamina: 5,
+    strength: 5,
+    agility: 5,
+    balance: 5
+};
+
+console.log('Testing suitability calculation:');
+console.log('FW position: ', calculateSuitability(testAttrs, 'FW'));
+console.log('ST position: ', calculateSuitability(testAttrs, 'ST'));
+console.log('CM position: ', calculateSuitability(testAttrs, 'CM'));
+console.log('DR position: ', calculateSuitability(testAttrs, 'DR'));

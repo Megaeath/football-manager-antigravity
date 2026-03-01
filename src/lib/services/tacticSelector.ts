@@ -91,7 +91,7 @@ function selectFormation(analysis: SquadAnalysis): string {
 
     // Strong defense
     if (defRatio > 0.45) {
-        return analysis.wingers >= 2 ? '5-3-2' : '4-5-1';
+        return '4-5-1';
     }
 
     // Balanced
@@ -101,7 +101,7 @@ function selectFormation(analysis: SquadAnalysis): string {
 
     // Attack-oriented
     if (fwdRatio > 0.35) {
-        return analysis.hasSpeedsters ? '4-2-4' : '4-1-4-1';
+        return '4-3-3';
     }
 
     return '4-4-2';
@@ -111,49 +111,49 @@ function selectMentality(analysis: SquadAnalysis): string {
     const { avgPace, avgPhysical, avgTechnical, hasSpeedsters } = analysis;
 
     // High pace + technical = attacking
-    if (hasSpeedsters && avgTechnical >= 11) return 'Attack';
-    if (avgPace > 12 && avgTechnical > 11) return 'Attack';
+    if (hasSpeedsters && avgTechnical >= 11) return 'ATTACKING';
+    if (avgPace > 12 && avgTechnical > 11) return 'ATTACKING';
 
     // Balanced attributes = balanced mentality
-    if (avgPace >= 10 && avgPhysical >= 10 && avgTechnical >= 10) return 'Balanced';
+    if (avgPace >= 10 && avgPhysical >= 10 && avgTechnical >= 10) return 'NORMAL';
 
     // Low pace or weak technical = defensive
-    if (avgPace < 10 || avgTechnical < 10) return 'Defensive';
+    if (avgPace < 10 || avgTechnical < 10) return 'DEFENSIVE';
 
-    return 'Balanced';
+    return 'NORMAL';
 }
 
 function selectPassing(analysis: SquadAnalysis): string {
     const { avgPassing, hasStrongPassers } = analysis;
 
-    if (hasStrongPassers && avgPassing >= 13) return 'Short';
-    if (avgPassing >= 12) return 'Mixed';
-    return 'Direct';
+    if (hasStrongPassers && avgPassing >= 13) return 'SHORT';
+    if (avgPassing >= 12) return 'MIXED';
+    return 'DIRECT';
 }
 
 function selectTackling(analysis: SquadAnalysis): string {
     const { avgPhysical, hasPhysicalPlayers } = analysis;
 
-    if (hasPhysicalPlayers && avgPhysical >= 13) return 'High';
-    if (avgPhysical >= 11) return 'Medium';
-    return 'Low';
+    if (hasPhysicalPlayers && avgPhysical >= 13) return 'HARD';
+    if (avgPhysical >= 11) return 'NORMAL';
+    return 'SOFT';
 }
 
 function selectAttackingFocus(analysis: SquadAnalysis): string {
     const { avgTechnical, hasSpeedsters, wingers } = analysis;
 
-    if (hasSpeedsters && avgTechnical >= 12 && wingers >= 2) return 'Wings';
-    if (avgTechnical >= 13) return 'Through Balls';
-    if (hasSpeedsters) return 'Counter Attack';
-    return 'Balanced';
+    if (hasSpeedsters && avgTechnical >= 12 && wingers >= 2) return 'WINGS';
+    if (avgTechnical >= 13) return 'CENTER';
+    if (hasSpeedsters) return 'WINGS';
+    return 'MIXED';
 }
 
 function selectCreativeFreedom(analysis: SquadAnalysis): string {
     const { hasStrongPassers, avgPassing } = analysis;
 
-    if (hasStrongPassers && avgPassing >= 14) return 'Structured';
-    if (avgPassing >= 12) return 'Balanced';
-    return 'Open Play';
+    if (hasStrongPassers && avgPassing >= 14) return 'RESTRICTED';
+    if (avgPassing >= 12) return 'NORMAL';
+    return 'MAXIMUM';
 }
 
 export function autoSelectTactics(players: Player[]) {

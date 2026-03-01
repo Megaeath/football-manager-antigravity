@@ -3,12 +3,15 @@
 import { useState, useEffect } from 'react';
 import { ContractTab } from '@/components/ContractTab';
 
-type AttributeItemType = { label: string; value: number };
+type AttributeItemType = { label: string; value: number; bonus?: number };
 type AttributeGroupType = { label: string; items: AttributeItemType[] };
 type AttributeDataType = {
     technical: AttributeGroupType[];
     mental: AttributeGroupType[];
     physical: AttributeGroupType[];
+    exp?: number;
+    expBonus?: number;
+    expMultiplier?: number;
 };
 
 type MatchStatType = {
@@ -56,23 +59,36 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
         fetchUserTeam();
     }, []);
 
-    const AttributeItem = ({ label, value }: { label: string; value: number }) => (
-        <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--muted)' }}>{label}</span>
-                <span style={{ fontWeight: 'bold', color: value > 15 ? 'var(--success)' : value > 10 ? 'var(--accent)' : 'inherit' }}>{value}</span>
+    const AttributeItem = ({ label, value, bonus = 0 }: { label: string; value: number; bonus?: number }) => {
+        const displayValue = Math.min(value + bonus, 20);
+        const hasBonus = bonus > 0;
+        
+        return (
+            <div style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--muted)' }}>{label}</span>
+                    <span style={{ fontWeight: 'bold', color: displayValue > 15 ? 'var(--success)' : displayValue > 10 ? 'var(--accent)' : 'inherit' }}>
+                        {hasBonus ? (
+                            <>
+                                {value} <span style={{ color: 'var(--success)' }}>+{bonus}</span> = {displayValue}
+                            </>
+                        ) : (
+                            displayValue
+                        )}
+                    </span>
+                </div>
+                <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div
+                        style={{
+                            height: '100%',
+                            width: `${(displayValue / 20) * 100}%`,
+                            background: displayValue > 15 ? 'var(--success)' : displayValue > 10 ? 'var(--accent)' : 'var(--primary)',
+                        }}
+                    ></div>
+                </div>
             </div>
-            <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
-                <div
-                    style={{
-                        height: '100%',
-                        width: `${(value / 20) * 100}%`,
-                        background: value > 15 ? 'var(--success)' : value > 10 ? 'var(--accent)' : 'var(--primary)',
-                    }}
-                ></div>
-            </div>
-        </div>
-    );
+        );
+    };
 
     const tabStyle = (tab: string) => ({
         padding: '0.75rem 1.5rem',
@@ -107,24 +123,42 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             {/* Tab Content */}
             {activeTab === 'attributes' && (
                 <div className="card">
-                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>พลังความสามารถ (Attributes)</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>
+                        <h3 style={{ margin: 0 }}>พลังความสามารถ (Attributes)</h3>
+                        {attributeData.exp !== undefined && (
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase' }}>EXP</div>
+                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--accent)' }}>{attributeData.exp}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase' }}>Bonus</div>
+                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--success)' }}>{(attributeData.expBonus || 0) >= 0 ? '+' : ''}{attributeData.expBonus}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase' }}>Multiplier</div>
+                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--primary)' }}>×{attributeData.expMultiplier?.toFixed(1)}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2.5rem' }}>
                         <div>
                             <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Technical</h4>
                             {attributeData.technical[0].items.map((item) => (
-                                <AttributeItem key={item.label} label={item.label} value={item.value} />
+                                <AttributeItem key={item.label} label={item.label} value={item.value} bonus={item.bonus} />
                             ))}
                         </div>
                         <div>
                             <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Mental</h4>
                             {attributeData.mental[0].items.map((item) => (
-                                <AttributeItem key={item.label} label={item.label} value={item.value} />
+                                <AttributeItem key={item.label} label={item.label} value={item.value} bonus={item.bonus} />
                             ))}
                         </div>
                         <div>
                             <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '1rem' }}>Physical</h4>
                             {attributeData.physical[0].items.map((item) => (
-                                <AttributeItem key={item.label} label={item.label} value={item.value} />
+                                <AttributeItem key={item.label} label={item.label} value={item.value} bonus={item.bonus} />
                             ))}
                         </div>
                     </div>

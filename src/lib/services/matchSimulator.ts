@@ -1,8 +1,9 @@
 import prisma from '@/lib/prisma';
 import { simulateMatch } from '../engine/match';
-import { calculateSuitability } from '../engine/suitability';
 import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes } from '../engine/types';
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
+import { calculateMatchExp } from '../engine/experience';
+import { calculatePlayerPower, getEffectiveAttributes, toPlayerAttributes } from '../engine/playerPower';
 
 const FORMATIONS: Record<string, { id: string }[]> = {
     '4-4-2': [
@@ -31,19 +32,6 @@ const FORMATIONS: Record<string, { id: string }[]> = {
         { id: 'FW' },
         { id: 'FW_L' }
     ],
-    '5-3-2': [
-        { id: 'GK' },
-        { id: 'DR' },
-        { id: 'DC_R' },
-        { id: 'DC' },
-        { id: 'DC_L' },
-        { id: 'DL' },
-        { id: 'MC_R' },
-        { id: 'MC' },
-        { id: 'MC_L' },
-        { id: 'FW_R' },
-        { id: 'FW_L' }
-    ],
     '4-5-1': [
         { id: 'GK' },
         { id: 'DR' },
@@ -60,7 +48,7 @@ const FORMATIONS: Record<string, { id: string }[]> = {
 };
 
 function mapAttributes(p: any): PlayerAttributes {
-    return {
+    return toPlayerAttributes({
         handling: p.handling,
         tackling: p.tackling,
         passing: p.passing,
@@ -83,13 +71,16 @@ function mapAttributes(p: any): PlayerAttributes {
         strength: p.strength,
         agility: p.agility,
         balance: p.balance
-    };
+    });
 }
 
 function getFitnessSuitability(attributes: PlayerAttributes, targetPosition: string, condition: number): number {
-    const base = calculateSuitability(attributes, targetPosition);
-    const factor = Math.pow(Math.max(0, Math.min(1, condition / 100)), 1.2);
-    return Math.round(base * factor);
+    return calculatePlayerPower({
+        attributes,
+        targetPosition,
+        condition,
+        exp: 0
+    }).powerWithExp;
 }
 
 function autoSelectLineup(team: any) {
@@ -104,7 +95,12 @@ function autoSelectLineup(team: any) {
             .map((p: any) => ({
                 playerId: p.id,
                 position: slot.id,
-                suitability: getFitnessSuitability(mapAttributes(p), slotBase, p.condition)
+                        suitability: calculatePlayerPower({
+                            attributes: mapAttributes(p),
+                            targetPosition: slotBase,
+                            condition: p.condition,
+                            exp: p.exp || 0
+                        }).powerWithExp
             }))
             .sort((a: any, b: any) => b.suitability - a.suitability)[0];
 
@@ -118,21 +114,18 @@ function autoSelectLineup(team: any) {
 }
 
 function mapPlayer(p: any): PlayerState {
+    // Apply EXP bonus to all attributes
+    const exp = p.exp || 0;
+    const effectiveAttributes = getEffectiveAttributes(mapAttributes(p), exp);
+    
     return {
         id: p.id,
         name: p.name,
         position: p.naturalPosition as Position,
-        attributes: {
-            handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
-            heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, crossing: p.crossing,
-            throw: p.throw || 10,
-            aggression: p.aggression, positioning: p.positioning, vision: p.vision, bravery: p.bravery,
-            leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
-            pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
-            agility: p.agility, balance: p.balance,
-        },
+        attributes: effectiveAttributes,
         condition: p.condition,
         morale: p.morale,
+        exp: exp,
         tacticalPosition: p.tacticalPosition,
         cards: { yellow: 0, red: 0 },
         stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }
@@ -143,8 +136,8 @@ export async function processMatch(matchId: string) {
     const matchDB = await prisma.match.findUnique({
         where: { id: matchId },
         include: {
-            homeTeam: { include: { players: { where: { isRetired: false } } } },
-            awayTeam: { include: { players: { where: { isRetired: false } } } }
+            homeTeam: { include: { players: { where: { isRetired: false } }, tactics: true } },
+            awayTeam: { include: { players: { where: { isRetired: false } }, tactics: true } }
         }
     }) as any;
 
@@ -210,12 +203,38 @@ export async function processMatch(matchId: string) {
         id: matchDB.homeTeam.id,
         name: matchDB.homeTeam.name,
         tactics: {
-            formation: matchDB.homeTactics_formation || matchDB.homeTeam.formation,
+            formation: matchDB.homeTeam.formation,
             mentality: matchDB.homeTactics_mentality || matchDB.homeTeam.mentality,
             passing: matchDB.homeTactics_passing || matchDB.homeTeam.passing,
             tackling: matchDB.homeTactics_tackling || matchDB.homeTeam.tackling,
             attacking_focus: matchDB.homeTactics_attacking_focus || matchDB.homeTeam.attacking_focus,
             creative_freedom: matchDB.homeTactics_creative_freedom || matchDB.homeTeam.creative_freedom
+        },
+        tacticalPlans: {
+            normal: {
+                formation: matchDB.homeTeam.formation,
+                mentality: matchDB.homeTeam.tactics?.normalMentality || matchDB.homeTeam.mentality,
+                passing: matchDB.homeTeam.tactics?.normalPassing || matchDB.homeTeam.passing,
+                tackling: matchDB.homeTeam.tactics?.normalTackling || matchDB.homeTeam.tackling,
+                attacking_focus: matchDB.homeTeam.tactics?.normalAttacking_focus || matchDB.homeTeam.attacking_focus,
+                creative_freedom: matchDB.homeTeam.tactics?.normalCreative_freedom || matchDB.homeTeam.creative_freedom
+            },
+            behind: {
+                formation: matchDB.homeTeam.formation,
+                mentality: matchDB.homeTeam.tactics?.behindMentality || matchDB.homeTeam.mentality,
+                passing: matchDB.homeTeam.tactics?.behindPassing || matchDB.homeTeam.passing,
+                tackling: matchDB.homeTeam.tactics?.behindTackling || matchDB.homeTeam.tackling,
+                attacking_focus: matchDB.homeTeam.tactics?.behindAttacking_focus || matchDB.homeTeam.attacking_focus,
+                creative_freedom: matchDB.homeTeam.tactics?.behindCreative_freedom || matchDB.homeTeam.creative_freedom
+            },
+            leading: {
+                formation: matchDB.homeTeam.formation,
+                mentality: matchDB.homeTeam.tactics?.leadingMentality || matchDB.homeTeam.mentality,
+                passing: matchDB.homeTeam.tactics?.leadingPassing || matchDB.homeTeam.passing,
+                tackling: matchDB.homeTeam.tactics?.leadingTackling || matchDB.homeTeam.tackling,
+                attacking_focus: matchDB.homeTeam.tactics?.leadingAttacking_focus || matchDB.homeTeam.attacking_focus,
+                creative_freedom: matchDB.homeTeam.tactics?.leadingCreative_freedom || matchDB.homeTeam.creative_freedom
+            }
         },
         players: matchDB.homeTeam.players.map(mapPlayer)
     };
@@ -224,12 +243,38 @@ export async function processMatch(matchId: string) {
         id: matchDB.awayTeam.id,
         name: matchDB.awayTeam.name,
         tactics: {
-            formation: matchDB.awayTactics_formation || matchDB.awayTeam.formation,
+            formation: matchDB.awayTeam.formation,
             mentality: matchDB.awayTactics_mentality || matchDB.awayTeam.mentality,
             passing: matchDB.awayTactics_passing || matchDB.awayTeam.passing,
             tackling: matchDB.awayTactics_tackling || matchDB.awayTeam.tackling,
             attacking_focus: matchDB.awayTactics_attacking_focus || matchDB.awayTeam.attacking_focus,
             creative_freedom: matchDB.awayTactics_creative_freedom || matchDB.awayTeam.creative_freedom
+        },
+        tacticalPlans: {
+            normal: {
+                formation: matchDB.awayTeam.formation,
+                mentality: matchDB.awayTeam.tactics?.normalMentality || matchDB.awayTeam.mentality,
+                passing: matchDB.awayTeam.tactics?.normalPassing || matchDB.awayTeam.passing,
+                tackling: matchDB.awayTeam.tactics?.normalTackling || matchDB.awayTeam.tackling,
+                attacking_focus: matchDB.awayTeam.tactics?.normalAttacking_focus || matchDB.awayTeam.attacking_focus,
+                creative_freedom: matchDB.awayTeam.tactics?.normalCreative_freedom || matchDB.awayTeam.creative_freedom
+            },
+            behind: {
+                formation: matchDB.awayTeam.formation,
+                mentality: matchDB.awayTeam.tactics?.behindMentality || matchDB.awayTeam.mentality,
+                passing: matchDB.awayTeam.tactics?.behindPassing || matchDB.awayTeam.passing,
+                tackling: matchDB.awayTeam.tactics?.behindTackling || matchDB.awayTeam.tackling,
+                attacking_focus: matchDB.awayTeam.tactics?.behindAttacking_focus || matchDB.awayTeam.attacking_focus,
+                creative_freedom: matchDB.awayTeam.tactics?.behindCreative_freedom || matchDB.awayTeam.creative_freedom
+            },
+            leading: {
+                formation: matchDB.awayTeam.formation,
+                mentality: matchDB.awayTeam.tactics?.leadingMentality || matchDB.awayTeam.mentality,
+                passing: matchDB.awayTeam.tactics?.leadingPassing || matchDB.awayTeam.passing,
+                tackling: matchDB.awayTeam.tactics?.leadingTackling || matchDB.awayTeam.tackling,
+                attacking_focus: matchDB.awayTeam.tactics?.leadingAttacking_focus || matchDB.awayTeam.attacking_focus,
+                creative_freedom: matchDB.awayTeam.tactics?.leadingCreative_freedom || matchDB.awayTeam.creative_freedom
+            }
         },
         players: matchDB.awayTeam.players.map(mapPlayer)
     };
@@ -349,6 +394,36 @@ export async function processMatch(matchId: string) {
         }
 
         for (const stat of playerStats) {
+            // Calculate EXP gain from match performance
+            const player = await tx.player.findUnique({
+                where: { id: stat.playerId },
+                select: { naturalPosition: true, age: true, exp: true }
+            });
+            
+                if (!player) continue; // Skip if player not found
+            
+                const isMotm = motm?.playerId === stat.playerId;
+            const cleanSheet = (stat.teamId === matchDB.homeTeamId && result.awayScore === 0) ||
+                              (stat.teamId === matchDB.awayTeamId && result.homeScore === 0);
+            
+            const expGain = calculateMatchExp({
+                playerId: stat.playerId,
+                minutes: stat.minutes,
+                rating: stat.rating,
+                goals: stat.goals,
+                assists: stat.assists,
+                yellowCards: stat.yellowCards,
+                redCards: stat.redCards,
+                    position: player.naturalPosition,
+                cleanSheet: cleanSheet,
+                isMotm: isMotm
+            });
+            
+                // Calculate safe exp increment (cap at 1000, don't go below 0)
+                const currentExp = player.exp || 0;
+                const newExp = Math.max(0, Math.min(1000, currentExp + expGain.totalGain));
+            
+            // Update player stats including EXP
             await (tx.player as any).update({
                 where: { id: stat.playerId },
                 data: {
@@ -364,7 +439,8 @@ export async function processMatch(matchId: string) {
                     crossesCompleted: { increment: stat.crossesCompleted },
                     freeKicks: { increment: stat.freeKicks || 0 },
                     corners: { increment: stat.corners || 0 },
-                    throws: { increment: stat.throws || 0 }
+                    throws: { increment: stat.throws || 0 },
+                        exp: newExp
                 }
             });
         }

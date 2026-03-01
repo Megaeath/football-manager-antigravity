@@ -24,6 +24,20 @@ export async function GET(
             }
         });
 
+        // Fetch player names for events
+        const eventsWithPlayers = await Promise.all(
+            (match?.events || []).map(async (event: any) => {
+                if (event.playerId) {
+                    const player = await prisma.player.findUnique({
+                        where: { id: event.playerId },
+                        select: { name: true }
+                    });
+                    return { ...event, playerName: player?.name || 'Unknown' };
+                }
+                return event;
+            })
+        );
+
         if (!match) {
             return NextResponse.json({ error: 'Match not found' }, { status: 404 });
         }
@@ -128,9 +142,11 @@ export async function GET(
             awayTeamId: match.awayTeamId,
             homeTeamName: (match as any).homeTeam.name,
             awayTeamName: (match as any).awayTeam.name,
+            homeTeam: (match as any).homeTeam,
+            awayTeam: (match as any).awayTeam,
             isPlayed: match.isPlayed,
             teamStats: mergedTeamStats,
-            events: match.events,
+            events: eventsWithPlayers,
             playerStats: formattedStats,
             motmPlayerId: (match as any).motmPlayerId
         };

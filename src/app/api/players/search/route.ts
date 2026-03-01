@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
-import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 export async function GET() {
     try {
@@ -23,7 +23,7 @@ export async function GET() {
 
         // Map to include market value and contract info
         const result = players.map(player => {
-            const attrs: PlayerAttributes = {
+            const attrs: PlayerAttributes = toPlayerAttributes({
                 handling: player.handling,
                 tackling: player.tackling,
                 passing: player.passing,
@@ -46,9 +46,14 @@ export async function GET() {
                 agility: player.agility,
                 balance: player.balance,
                 crossing: player.crossing
-            };
+            });
             const natPos = player.naturalPosition.split('_')[0];
-            const power = Math.round(calculateSuitability(attrs, natPos));
+            const power = calculatePlayerPower({
+                attributes: attrs,
+                targetPosition: natPos,
+                condition: 100,
+                exp: player.exp || 0
+            }).powerWithExp;
 
             // Calculate average rating from match stats
             const avgRating = player.matchStats.length > 0

@@ -371,7 +371,21 @@ function MatchContent() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '2.5rem', textAlign: 'center' }}>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>HOME</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{matchData.homeTeamName}</div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>{matchData.homeTeamName}</div>
+                            {/* Home Team Goals */}
+                            <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
+                                {(matchData.events || [])
+                                    .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.homeTeam?.id)
+                                    .map((e: any, idx: number) => {
+                                        const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
+                                        return (
+                                            <div key={idx}>
+                                                {playerName} {e.minute}'
+                                            </div>
+                                        );
+                                    })
+                                }
+                            </div>
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '4rem', fontWeight: 'bold', letterSpacing: '8px', position: 'relative', display: 'inline-block' }}>
@@ -384,7 +398,21 @@ function MatchContent() {
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>AWAY</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{matchData.awayTeamName}</div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>{matchData.awayTeamName}</div>
+                            {/* Away Team Goals */}
+                            <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
+                                {(matchData.events || [])
+                                    .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.awayTeam?.id)
+                                    .map((e: any, idx: number) => {
+                                        const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
+                                        return (
+                                            <div key={idx}>
+                                                {playerName} {e.minute}'
+                                            </div>
+                                        );
+                                    })
+                                }
+                            </div>
                         </div>
                     </div>
 
@@ -450,7 +478,7 @@ function MatchContent() {
                         )}
 
                         {activeTab === 'events' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {matchData.events.map((e: any, i: number) => {
                                     const getEventIcon = (type: string) => {
                                         switch (type) {
@@ -466,19 +494,111 @@ function MatchContent() {
                                         }
                                     };
 
+                                    const isHomeTeam = e.teamId === matchData.homeTeamId;
+                                    
+                                    // Calculate score at the time of this goal
+                                    let scoreAtTime = '';
+                                    if (e.type === 'GOAL') {
+                                        let homeScore = 0;
+                                        let awayScore = 0;
+                                        // Count all goals before and including this one
+                                        for (let j = 0; j <= i; j++) {
+                                            if (matchData.events[j].type === 'GOAL') {
+                                                if (matchData.events[j].teamId === matchData.homeTeamId) {
+                                                    homeScore++;
+                                                } else {
+                                                    awayScore++;
+                                                }
+                                            }
+                                        }
+                                        scoreAtTime = `${homeScore} - ${awayScore}`;
+                                    }
+                                    
+                                    // Extract player names from substitution text
+                                    let displayText = e.text;
+                                    if (e.type === 'SUB' && e.text) {
+                                        const match = e.text.match(/Substitution:\s*(.+?)\s+off,\s*(.+?)\s+on/i);
+                                        if (match) {
+                                            displayText = (
+                                                <div style={{ lineHeight: '1.6' }}>
+                                                    <div style={{ color: '#059669', fontWeight: '500' }}>{match[2].trim()}</div>
+                                                    <div style={{ color: '#dc2626', fontWeight: '500' }}>{match[1].trim()}</div>
+                                                </div>
+                                            );
+                                        }
+                                    } else if (e.type === 'GOAL') {
+                                        // For goals, show player name with score
+                                        displayText = (
+                                            <div>
+                                                <div style={{ fontWeight: '500' }}>{e.playerName || e.text}</div>
+                                                <div style={{ fontSize: '0.85rem', color: '#059669', fontWeight: 'bold', marginTop: '2px' }}>
+                                                    {scoreAtTime}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
                                     return (
                                         <div key={i} style={{
-                                            padding: '12px 16px',
-                                            background: '#f1f5f9',
-                                            borderRadius: '8px',
-                                            borderLeft: `4px solid ${e.teamId === matchData.homeTeamId ? 'var(--primary)' : 'var(--accent)'}`,
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '12px'
+                                            gap: '16px',
+                                            padding: '8px 0',
+                                            borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none'
                                         }}>
-                                            <div style={{ minWidth: '40px', fontWeight: 'bold' }}>{e.minute}'</div>
-                                            <div style={{ fontSize: '1.2rem' }}>{getEventIcon(e.type)}</div>
-                                            <div style={{ flex: 1 }}>{e.text}</div>
+                                            {/* Left side - Home team events */}
+                                            <div style={{ 
+                                                flex: 1, 
+                                                textAlign: 'right',
+                                                display: 'flex',
+                                                justifyContent: 'flex-end',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                paddingRight: '8px'
+                                            }}>
+                                                {isHomeTeam && (
+                                                    <>
+                                                        <div style={{ fontSize: '0.9rem', color: '#374151' }}>
+                                                            {displayText}
+                                                        </div>
+                                                        <div style={{ fontSize: '1.2rem' }}>{getEventIcon(e.type)}</div>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {/* Center - Time */}
+                                            <div style={{
+                                                minWidth: '60px',
+                                                textAlign: 'center',
+                                                fontWeight: 'bold',
+                                                fontSize: '1rem',
+                                                color: '#6b7280',
+                                                background: '#f3f4f6',
+                                                padding: '6px 12px',
+                                                borderRadius: '20px'
+                                            }}>
+                                                {e.minute}'
+                                            </div>
+
+                                            {/* Right side - Away team events */}
+                                            <div style={{ 
+                                                flex: 1, 
+                                                textAlign: 'left',
+                                                display: 'flex',
+                                                justifyContent: 'flex-start',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                paddingLeft: '8px'
+                                            }}>
+                                                {!isHomeTeam && (
+                                                    <>
+                                                        <div style={{ fontSize: '1.2rem' }}>{getEventIcon(e.type)}</div>
+                                                        <div style={{ fontSize: '0.9rem', color: '#374151' }}>
+                                                            {displayText}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}

@@ -43,6 +43,7 @@ export interface PlayerState {
     attributes: PlayerAttributes;
     condition: number; // 0-100
     morale: number;    // 0-100
+    exp: number;       // Total accumulated EXP (0-1000)
     tacticalPosition: string | null; // e.g. "GK", "FW_L"
     cards: { yellow: number; red: number };
     stats: { goals: number; assists: number; tackles: number; passes: number };
@@ -59,6 +60,32 @@ export interface TeamState {
         tackling: string;
         attacking_focus: string;
         creative_freedom: string;
+    };
+    tacticalPlans?: {
+        normal: {
+            formation: string;
+            mentality: string;
+            passing: string;
+            tackling: string;
+            attacking_focus: string;
+            creative_freedom: string;
+        };
+        behind: {
+            formation: string;
+            mentality: string;
+            passing: string;
+            tackling: string;
+            attacking_focus: string;
+            creative_freedom: string;
+        };
+        leading: {
+            formation: string;
+            mentality: string;
+            passing: string;
+            tackling: string;
+            attacking_focus: string;
+            creative_freedom: string;
+        };
     };
 }
 

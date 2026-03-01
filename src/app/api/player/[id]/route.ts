@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 export async function GET(
     req: Request,
@@ -107,7 +107,7 @@ export async function GET(
         const careerAvgRating = latestSeasonStats?.avgRating || '0.00';
 
         // Calculate power (same as modal: suitability to natural position)
-        const attrs: PlayerAttributes = {
+        const attrs: PlayerAttributes = toPlayerAttributes({
             handling: player.handling,
             tackling: player.tackling,
             passing: player.passing,
@@ -130,9 +130,14 @@ export async function GET(
             agility: player.agility,
             balance: player.balance,
             crossing: player.crossing
-        };
+        });
         const natPos = player.naturalPosition.split('_')[0];
-        const power = Math.round(calculateSuitability(attrs, natPos));
+        const power = calculatePlayerPower({
+            attributes: attrs,
+            targetPosition: natPos,
+            condition: 100,
+            exp: player.exp || 0
+        }).powerWithExp;
 
         // Calculate market value with multiple factors: power, age, popularity, club reputation, form
         const basePrice = power * power * 1000; // Reduced base multiplier
@@ -160,7 +165,8 @@ export async function GET(
             avgRating: parseFloat(String(careerAvgRating)),
             currentSeason,
             availableSeasons: seasons,
-            seasonStats: seasonStatsArray
+            seasonStats: seasonStatsArray,
+            exp: player.exp || 0
         });
     } catch (e: any) {
         console.error(e);

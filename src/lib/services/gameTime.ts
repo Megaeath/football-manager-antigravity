@@ -310,9 +310,41 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
     }
 
-    // 5. Update Global Settings
+    // 6. Add Young Prospects (5 per team)
+    console.log('[StartNewSeason] Step 6: Adding young prospects to all teams');
+    const POSITIONS = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
+    const allTeams = await prisma.team.findMany();
+    
+    for (const team of allTeams) {
+        // Add 5 random young players to each team
+        for (let i = 0; i < 5; i++) {
+            const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
+            const youthAge = randomInt(16, 20);
+            const youthName = randomName();
+            
+            await prisma.player.create({
+                data: {
+                    teamId: team.id,
+                    name: youthName,
+                    age: youthAge,
+                    naturalPosition: randomPosition,
+                    retirementAge: randomInt(32, 38),
+                    morale: 100,
+                    condition: 100,
+                    isRetired: false,
+                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                    popularity: randomInt(10, 30),
+                    weeklyWage: randomInt(5000, 15000),
+                    ...generateYouthAttributes(randomPosition)
+                }
+            });
+        }
+        console.log(`[StartNewSeason] Added 5 young prospects to ${team.name}`);
+    }
+
+    // 7. Update Global Settings
     const finalDate = nextDate ?? seasonStartDate;
-    console.log('[StartNewSeason] Step 5: Updating global settings');
+    console.log('[StartNewSeason] Step 7: Updating global settings');
     console.log('[StartNewSeason] Final date:', finalDate.toISOString());
     console.log('[StartNewSeason] New season:', nextSeason);
     

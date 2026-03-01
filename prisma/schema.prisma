@@ -59,6 +59,7 @@ model Team {
   ClubFinance       ClubFinance[]
   TeamReputation    TeamReputation[]
   FinancialEvent    FinancialEvent[]
+  tactics           TeamTactics?
 }
 
 model Player {
@@ -89,6 +90,9 @@ model Player {
   leadership  Int
   teamwork    Int
   composure   Int
+
+  // Experience System
+  exp         Int @default(0) // Total accumulated EXP (max 1000)
 
   // Attributes (0-20) - Physical
   pace         Int
@@ -264,6 +268,37 @@ model ClubFinance {
   team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, week])
+}
+
+model TeamTactics {
+  id                String   @id @default(cuid())
+  teamId            String   @unique
+  
+  // Normal Plan (แผนปกติ - ใช้เมื่อเสมอกัน)
+  normalFormation           String   @default("4-4-2")
+  normalMentality           String   @default("NORMAL")
+  normalPassing             String   @default("MIXED")
+  normalTackling            String   @default("NORMAL")
+  normalAttacking_focus     String   @default("MIXED")
+  normalCreative_freedom    String   @default("NORMAL")
+
+  // Behind Plan (แผนตามไป - ใช้เมื่อทีมตามไป)
+  behindFormation           String   @default("4-4-2")
+  behindMentality           String   @default("ALL_OUT_ATTACK")
+  behindPassing             String   @default("DIRECT")
+  behindTackling            String   @default("HARD")
+  behindAttacking_focus     String   @default("WINGS")
+  behindCreative_freedom    String   @default("MAXIMUM")
+
+  // Leading Plan (แผนนำหน้า - ใช้เมื่อทีมนำหน้า)
+  leadingFormation          String   @default("4-4-2")
+  leadingMentality          String   @default("ULTRA_DEFENSIVE")
+  leadingPassing            String   @default("SHORT")
+  leadingTackling           String   @default("HARD")
+  leadingAttacking_focus    String   @default("CENTER")
+  leadingCreative_freedom   String   @default("NORMAL")
+
+  team                      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 model FinancialEvent {
