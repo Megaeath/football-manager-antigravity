@@ -3,6 +3,7 @@ import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts } from '../engine/financial';
 import { applySeasonRewards } from './seasonAwards';
+import { processBiddingRules } from '../engine/market';
 
 const FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -162,6 +163,19 @@ export async function advanceDay() {
         });
     }
 
+    // Process expired bids and transfers
+    try {
+        await processBiddingRules();
+
+        // Trigger AI Market Movements on the 1st of the month
+        if (nextDate.getUTCDate() === 1) {
+            const { processAIMarketMovements } = await import('./aiMarketService');
+            await processAIMarketMovements();
+        }
+    } catch (error) {
+        console.error('Error processing market rules:', error);
+    }
+
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
 
@@ -291,22 +305,22 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                 data: { isRetired: true }
             });
             console.log(`Player Retired: ${player.name} (Age: ${player.age})`);
-            
-                const youthAge = randomInt(18, 22);
-                await prisma.player.create({
-                    data: {
-                        teamId: player.teamId,
-                        name: randomName(),
-                        age: youthAge,
-                        naturalPosition: player.naturalPosition,
-                        retirementAge: randomInt(30, 40),
-                        morale: 100,
-                        condition: 100,
-                        isRetired: false,
-                        birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
-                        ...generateYouthAttributes(player.naturalPosition)
-                    }
-                });
+
+            const youthAge = randomInt(18, 22);
+            await prisma.player.create({
+                data: {
+                    teamId: player.teamId,
+                    name: randomName(),
+                    age: youthAge,
+                    naturalPosition: player.naturalPosition,
+                    retirementAge: randomInt(30, 40),
+                    morale: 100,
+                    condition: 100,
+                    isRetired: false,
+                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                    ...generateYouthAttributes(player.naturalPosition)
+                }
+            });
         }
     }
 
@@ -314,14 +328,14 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     console.log('[StartNewSeason] Step 6: Adding young prospects to all teams');
     const POSITIONS = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
     const allTeams = await prisma.team.findMany();
-    
+
     for (const team of allTeams) {
         // Add 5 random young players to each team
         for (let i = 0; i < 5; i++) {
             const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
             const youthAge = randomInt(16, 20);
             const youthName = randomName();
-            
+
             await prisma.player.create({
                 data: {
                     teamId: team.id,
@@ -347,7 +361,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     console.log('[StartNewSeason] Step 7: Updating global settings');
     console.log('[StartNewSeason] Final date:', finalDate.toISOString());
     console.log('[StartNewSeason] New season:', nextSeason);
-    
+
     const result = await prisma.globalGameSettings.update({
         where: { id: settings.id },
         data: {
@@ -355,7 +369,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
             currentSeason: nextSeason
         }
     });
-    
+
     console.log('[StartNewSeason] *** NEW SEASON STARTED SUCCESSFULLY ***');
     return result;
 }

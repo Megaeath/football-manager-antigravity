@@ -19,8 +19,10 @@ interface FinancialData {
             ticketSales: number;
             jerseySales: number;
             seasonRewards: number;
+            playerSales: number;
             wages: number;
             maintenance: number;
+            playerPurchases: number;
         };
     };
     ffp: {
@@ -82,10 +84,11 @@ export default function FinancesPage() {
         }
     };
 
-    const revenueTotal = data.weeklyData.breakdown.sponsorship + 
-                         data.weeklyData.breakdown.ticketSales + 
-                         data.weeklyData.breakdown.jerseySales +
-                         data.weeklyData.breakdown.seasonRewards;
+    const revenueTotal = data.weeklyData.breakdown.sponsorship +
+        data.weeklyData.breakdown.ticketSales +
+        data.weeklyData.breakdown.jerseySales +
+        data.weeklyData.breakdown.seasonRewards +
+        data.weeklyData.breakdown.playerSales;
 
     return (
         <div className="container" style={{ padding: '2rem' }}>
@@ -391,6 +394,10 @@ export default function FinancesPage() {
                                 <div className="accounting-label">🏅 Season Rewards</div>
                                 <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.seasonRewards)}</div>
                             </div>
+                            <div className="accounting-row">
+                                <div className="accounting-label">💱 Player Transfer Sales</div>
+                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.playerSales)}</div>
+                            </div>
                             <div className="accounting-row" style={{ borderTop: '2px solid var(--primary)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
                                 <div className="accounting-label" style={{ fontWeight: 'bold' }}>📥 Total Income</div>
                                 <div className="accounting-amount income" style={{ fontSize: '1.1rem' }}>{formatCurrency(data.weeklyData.income)}</div>
@@ -405,6 +412,10 @@ export default function FinancesPage() {
                             <div className="accounting-row">
                                 <div className="accounting-label">🏟️ Maintenance</div>
                                 <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.maintenance)}</div>
+                            </div>
+                            <div className="accounting-row">
+                                <div className="accounting-label">🤝 Player Purchases</div>
+                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.playerPurchases)}</div>
                             </div>
                             <div className="accounting-row" style={{ borderTop: '2px solid var(--primary)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
                                 <div className="accounting-label" style={{ fontWeight: 'bold' }}>📤 Total Expenses</div>
@@ -457,7 +468,7 @@ export default function FinancesPage() {
                                 <span style={{ fontWeight: 'bold' }}>{data.ffp.wagePercentage}%</span>
                             </div>
                             <div className="progress-bar">
-                                <div 
+                                <div
                                     className="progress-fill"
                                     style={{
                                         width: `${Math.min(data.ffp.wagePercentage, 100)}%`,

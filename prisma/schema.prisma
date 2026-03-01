@@ -60,6 +60,11 @@ model Team {
   TeamReputation    TeamReputation[]
   FinancialEvent    FinancialEvent[]
   tactics           TeamTactics?
+  bidsMade          Bid[]   @relation("BidsMade")
+  bidsReceived      Bid[]   @relation("BidsReceived")
+  news              News[]
+  transfersFrom     TransferHistory[] @relation("TransferFrom")
+  transfersTo       TransferHistory[] @relation("TransferTo")
 }
 
 model Player {
@@ -137,11 +142,19 @@ model Player {
   contractEndWeek Int    @default(52)  // Weeks until contract expires
   weeklyWage    Int      @default(10000) // Currency units per week
   
+  // Market & Status
+  transferStatus String   @default("NOT_LISTED") // LISTED, NOT_LISTED 
+  askingPrice    Int?
+  squadStatus    String   @default("ROTATION") // KEY_PLAYER, ROTATION, BACKUP, STAR, WORLD_CLASS
+  lastTransferredSeason Int @default(0)
+
   // Relations
   matchStats    PlayerMatchStats[]
   team          Team?              @relation(fields: [teamId], references: [id])
   motmMatches   Match[]            @relation("MatchMotM")
   PlayerReputation PlayerReputation[]
+  bids          Bid[]
+  transferHistory TransferHistory[]
 }
 
 model Match {
@@ -310,4 +323,49 @@ model FinancialEvent {
   description String
 
   team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+// ========== TRANSFER MARKET MODELS ==========
+
+model Bid {
+  id          String   @id @default(cuid())
+  playerId    String
+  fromTeamId  String
+  toTeamId    String
+  amount      Int
+  status      String   @default("PENDING") // PENDING, REJECTED, ACCEPTED
+  isFreeAgent Boolean  @default(false)
+  signOnBonus Int      @default(0)
+  createdAt   DateTime @default(now())
+  windowEnds  DateTime
+
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  fromTeam    Team     @relation("BidsMade", fields: [fromTeamId], references: [id], onDelete: Cascade)
+  toTeam      Team     @relation("BidsReceived", fields: [toTeamId], references: [id], onDelete: Cascade)
+}
+
+model News {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  title     String
+  content   String
+  teamId    String?
+  type      String   @default("GLOBAL") // GLOBAL, TRANSFER, MATCH, etc.
+  isRead    Boolean  @default(false)
+
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+model TransferHistory {
+  id          String   @id @default(cuid())
+  playerId    String
+  fromTeamId  String?  // Null for initial generation or free agents
+  toTeamId    String
+  season      Int
+  date        DateTime
+  fee         Int      @default(0)
+  
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  fromTeam    Team?    @relation("TransferFrom", fields: [fromTeamId], references: [id])
+  toTeam      Team     @relation("TransferTo", fields: [toTeamId], references: [id])
 }

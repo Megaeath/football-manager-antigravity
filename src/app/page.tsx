@@ -6,7 +6,7 @@ import NextProcessButton from '@/components/NextProcessButton';
 export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
-    
+
     const dateStr = gameDate.toLocaleDateString('th-TH', {
         weekday: 'long',
         day: 'numeric',
@@ -138,6 +138,13 @@ export default async function Home() {
         include: { team: true },
         orderBy: { goals: 'desc' },
         take: 5
+    });
+
+    // Get latest news
+    const recentNews = await prisma.news.findMany({
+        where: userTeamId ? { OR: [{ teamId: null }, { teamId: userTeamId }] } : { teamId: null },
+        orderBy: { date: 'desc' },
+        take: 3
     });
 
     return (
@@ -338,6 +345,33 @@ export default async function Home() {
                 </div>
             </div>
 
+            {/* Latest News & Transfers Info */}
+            <div className="card">
+                <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📰 ข่าวล่าสุด</span>
+                    <Link href="/news" style={{ fontSize: '0.85rem', color: 'var(--primary)', textDecoration: 'none' }}>ดูทั้งหมด →</Link>
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {recentNews.length === 0 ? (
+                        <div style={{ padding: '1rem', color: 'var(--muted)', textAlign: 'center' }}>ไม่มีข่าวใหม่</div>
+                    ) : (
+                        recentNews.map((news: any) => (
+                            <div key={news.id} style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'bold', minWidth: '70px' }}>
+                                    {new Date(news.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{news.title}</div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: '1.4' }}>
+                                        {news.content.length > 150 ? news.content.substring(0, 150) + '...' : news.content}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
             {/* Recent Matches */}
             <div className="card">
                 <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -423,6 +457,20 @@ export default async function Home() {
                 }}>
                     <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👕</div>
                     <div style={{ fontWeight: 'bold' }}>ทีม</div>
+                </Link>
+
+                <Link href="/market" className="card" style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '2rem',
+                    textAlign: 'center',
+                    textDecoration: 'none',
+                    color: 'inherit'
+                }}>
+                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💱</div>
+                    <div style={{ fontWeight: 'bold' }}>ตลาดนักเตะ</div>
                 </Link>
 
                 <Link href="/finances" className="card" style={{

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
         // Calculate attendance: 60% base + up to 35% from reputation
         const attendanceRate = 0.60 + (reputation / 100) * 0.35;
-        
+
         const settings = await prisma.globalGameSettings.findFirst();
         const currentDate = settings?.currentDate || new Date();
         const weekStart = new Date(currentDate);
@@ -61,16 +61,28 @@ export async function GET(request: NextRequest) {
         });
         const seasonRewards = seasonRewardAgg._sum.amount || 0;
 
+        const transferIncomeAgg = await prisma.financialEvent.aggregate({
+            where: { teamId, type: 'PLAYER_SOLD', date: { gte: weekStart, lte: currentDate } },
+            _sum: { amount: true }
+        });
+        const playerSales = transferIncomeAgg._sum.amount || 0;
+
+        const transferExpenseAgg = await prisma.financialEvent.aggregate({
+            where: { teamId, type: 'PLAYER_BOUGHT', date: { gte: weekStart, lte: currentDate } },
+            _sum: { amount: true }
+        });
+        const playerPurchases = transferExpenseAgg._sum.amount || 0;
+
         // Revenue calculation
         const sponsorship = 20000 * (1 + reputation / 100);
         const ticketSales = stadiumCapacity * attendanceRate * 10;
-        const averagePopularity = team.players.length > 0 
-            ? team.players.reduce((sum, p) => sum + (p.popularity || 50), 0) / team.players.length 
+        const averagePopularity = team.players.length > 0
+            ? team.players.reduce((sum, p) => sum + (p.popularity || 50), 0) / team.players.length
             : 50;
         const jerseySales = 500 * (averagePopularity / 100) * team.players.length;
 
-        const totalIncome = sponsorship + ticketSales + jerseySales + seasonRewards;
-        const totalExpenses = totalWages + maintenanceCost;
+        const totalIncome = sponsorship + ticketSales + jerseySales + seasonRewards + playerSales;
+        const totalExpenses = totalWages + maintenanceCost + playerPurchases;
         const netBalance = totalIncome - totalExpenses;
 
         // FFP Status
@@ -110,8 +122,10 @@ export async function GET(request: NextRequest) {
                     ticketSales: Math.round(ticketSales),
                     jerseySales: Math.round(jerseySales),
                     seasonRewards: Math.round(seasonRewards),
+                    playerSales: Math.round(playerSales),
                     wages: Math.round(totalWages),
-                    maintenance: Math.round(maintenanceCost)
+                    maintenance: Math.round(maintenanceCost),
+                    playerPurchases: Math.round(playerPurchases)
                 }
             },
             ffp: {

@@ -20,10 +20,14 @@ export async function GET(
             where: { id },
             include: {
                 team: true,
+                transferHistory: {
+                    include: { fromTeam: true, toTeam: true },
+                    orderBy: { date: 'desc' }
+                },
                 matchStats: {
                     include: { match: { include: { homeTeam: true, awayTeam: true } } },
                     orderBy: { match: { date: 'desc' } },
-                    take: 15
+                    take: 100
                 }
             }
         });

@@ -177,20 +177,47 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
             const usedPlayers = new Set<string>();
             const assignments: { playerId: string; position: string }[] = [];
 
+            const posGroupOrder: Record<string, number> = {
+                GK: 0,
+                DF: 1,
+                MF: 2,
+                FW: 3
+            };
+            const getGroup = (pos?: string | null) => {
+                const p = pos || '';
+                if (p.startsWith('GK')) return 'GK';
+                if (p.startsWith('D')) return 'DF';
+                if (p.startsWith('M') || p.startsWith('A')) return 'MF';
+                return 'FW';
+            };
+
             for (const slot of slots) {
                 const slotBase = slot.id.split('_')[0];
+                const slotGroup = getGroup(slotBase);
+
                 const bestPlayer = sortedPlayers
                     .filter(p => !usedPlayers.has(p.id))
-                    .map(p => ({
-                        playerId: p.id,
-                        position: slot.id,
-                        suitability: calculatePlayerPower({
+                    .map(p => {
+                        const playerPower = calculatePlayerPower({
                             attributes: p.rawAttributes,
                             targetPosition: slotBase,
                             condition: p.condition,
                             exp: p.exp
-                        }).powerWithExp
-                    }))
+                        }).powerWithExp;
+
+                        const playerGroup = getGroup(p.naturalPosition);
+
+                        // Apply heavy penalty if position group is different
+                        // e.g. DF playing as FW will get a major penalty to avoid cross-position auto-selection
+                        const groupDiff = Math.abs(posGroupOrder[slotGroup] - posGroupOrder[playerGroup]);
+                        const penalty = groupDiff === 0 ? 0 : 40 * groupDiff; // 40 points penalty per group distance
+
+                        return {
+                            playerId: p.id,
+                            position: slot.id,
+                            suitability: playerPower - penalty
+                        };
+                    })
                     .sort((a, b) => b.suitability - a.suitability)[0];
 
                 if (bestPlayer) {
@@ -306,7 +333,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 exp: p.exp
             }).powerWithExp;
         });
-        
+
         const bestPlayers = playerPowers.sort((a: number, b: number) => b - a).slice(0, 11);
         if (bestPlayers.length === 0) return 0;
         return Math.round(bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length);
@@ -341,7 +368,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                             </p>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button 
+                            <button
                                 onClick={() => {
                                     const opponentId = upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeamId : upcomingMatch.homeTeamId;
                                     router.push(`/team/${opponentId}?tab=tactics`);
@@ -425,273 +452,273 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
             </div>
 
             {activeTab === 'squad' && (
-            <div>
-                <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Squad List</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
-                            Formation
-                        </span>
-                        <select
-                            value={currentTactics.formation}
-                            onChange={(e) => handleFormationChange(e.target.value)}
-                            disabled={loading}
-                            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                        >
-                            <option value="4-4-2">4-4-2</option>
-                            <option value="4-3-3">4-3-3</option>
-                            <option value="4-5-1">4-5-1</option>
-                        </select>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
-                        <button onClick={handleAutoSelect} disabled={loading} className="btn btn-sm">
-                            Auto Select
-                        </button>
-                        <button onClick={handleClearAll} disabled={loading} className="btn btn-sm btn-secondary">
-                            Clear All
-                        </button>
-                    </div>
-                </h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                    <thead>
-                        <tr style={{ textAlign: 'left', borderBottom: '2px solid #333' }}>
-                            <th style={{ padding: '6px' }}>Select</th>
-                            <th style={{ padding: '6px' }}>
-                                <button onClick={() => handleSort('name')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Name</button>
-                            </th>
-                            <th style={{ padding: '6px' }}>
-                                <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Pos</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>App</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('goals')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>G</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('assists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>A</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('rating')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Rtg</button>
-                            </th>
-                            <th style={{ padding: '6px' }}>
-                                <button onClick={() => handleSort('fit')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fit</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('physical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Physical</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('technical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Technical</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('tactical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Tactical</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('mental')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Mental</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('exp')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>EXP</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
-                            </th>
-                            <th style={{ padding: '6px', textAlign: 'center' }}>
-                                <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>💎 Market Value</button>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedPlayers
-                            .map(p => {
-                            const expBonus = getExpBonus(p.exp);
-                            const effectiveAttributes = getEffectiveAttributes(p.rawAttributes, p.exp);
-                            const physical = toHundred([
-                                effectiveAttributes.pace,
-                                effectiveAttributes.acceleration,
-                                effectiveAttributes.stamina,
-                                effectiveAttributes.strength,
-                                effectiveAttributes.agility,
-                                effectiveAttributes.balance
-                            ]);
-                            const technical = toHundred([
-                                effectiveAttributes.handling,
-                                effectiveAttributes.tackling,
-                                effectiveAttributes.passing,
-                                effectiveAttributes.shooting,
-                                effectiveAttributes.heading,
-                                effectiveAttributes.dribbling,
-                                effectiveAttributes.crossing,
-                                effectiveAttributes.setPieces,
-                                effectiveAttributes.throw
-                            ]);
-                            const tactical = toHundred([
-                                effectiveAttributes.aggression,
-                                effectiveAttributes.positioning,
-                                effectiveAttributes.vision,
-                                effectiveAttributes.bravery,
-                                effectiveAttributes.leadership
-                            ]);
-                            const mental = toHundred([
-                                effectiveAttributes.teamwork,
-                                effectiveAttributes.composure
-                            ]);
-                            const breakdown = getPowerBreakdown(p);
-                            return {
-                                p,
-                                physical,
-                                technical,
-                                tactical,
-                                mental,
-                                expBonus,
-                                power: breakdown.power,
-                                basePowerNoFitness: breakdown.basePowerNoFitness,
-                                expBoostedPower: breakdown.expBoostedPower,
-                                noExpPower: breakdown.noExpPower
-                            };
-                        })
-                        .sort((a, b) => {
-                            if (sortKey === 'pos') {
-                                const posA = getGroup(a.p.tacticalPosition || a.p.naturalPosition);
-                                const posB = getGroup(b.p.tacticalPosition || b.p.naturalPosition);
-                                if (posA !== posB) return posGroupOrder[posA] - posGroupOrder[posB];
-                                return (a.p.tacticalPosition || a.p.naturalPosition).localeCompare(b.p.tacticalPosition || b.p.naturalPosition);
-                            }
-                            const dir = sortDir === 'asc' ? 1 : -1;
-                            const num = (val: number) => val || 0;
-                            switch (sortKey) {
-                                case 'apps': return dir * (num(a.p.apps) - num(b.p.apps));
-                                case 'goals': return dir * (num(a.p.goals) - num(b.p.goals));
-                                case 'assists': return dir * (num(a.p.assists) - num(b.p.assists));
-                                case 'rating': return dir * ((a.p.avgRating || 0) - (b.p.avgRating || 0));
-                                case 'fit': return dir * (num(a.p.condition) - num(b.p.condition));
-                                case 'physical': return dir * (a.physical - b.physical);
-                                case 'technical': return dir * (a.technical - b.technical);
-                                case 'tactical': return dir * (a.tactical - b.tactical);
-                                case 'mental': return dir * (a.mental - b.mental);
-                                case 'exp': return dir * (num(a.p.exp) - num(b.p.exp));
-                                case 'power': return dir * (a.power - b.power);
-                                case 'name':
-                                default:
-                                    return dir * a.p.name.localeCompare(b.p.name);
-                            }
-                        })
-                        .map(({ p, physical, technical, tactical, mental, expBonus, power, basePowerNoFitness, expBoostedPower, noExpPower }) => (
-                                <tr key={p.id} style={{ borderBottom: '1px solid #eee', background: p.tacticalPosition ? '#f0f4c3' : 'transparent' }}>
-                                    <td style={{ padding: '6px' }}>
-                                        <select
-                                            value={p.tacticalPosition || ''}
-                                            onChange={(e) => handleAssign(p.id, e.target.value, p.tacticalPosition)}
-                                            disabled={loading}
-                                            style={{ padding: '4px', border: '1px solid #ccc', width: '110px' }}
-                                        >
-                                            <option value="">-</option>
-                                            {slots.map(slot => {
-                                                const assigned = getPlayerInPos(slot.id);
-                                                const suffix = assigned && assigned.id !== p.id ? ` (${assigned.name})` : '';
-                                                return (
-                                                    <option key={slot.id} value={slot.id}>
-                                                        {slot.label}{suffix}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    </td>
-                                    <td style={{ padding: '6px' }}>
-                                        <button
-                                            onClick={() => router.push(`/squad?playerId=${p.id}`)}
-                                            style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
-                                        >
-                                            {p.name}
-                                        </button>
-                                        {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
-                                    </td>
-                                    <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{p.apps}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{p.goals}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{p.assists}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: p.avgRating >= 7.0 ? 'var(--success)' : 'inherit' }}>
-                                        {p.avgRating > 0 ? p.avgRating.toFixed(2) : '-'}
-                                    </td>
-                                    <td style={{ padding: '6px', color: p.condition < 80 ? '#c62828' : '#2e7d32' }}>{Math.round(p.condition)}%</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{physical}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{technical}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{tactical}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>{mental}</td>
-                                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: p.exp >= 500 ? 'var(--success)' : p.exp >= 300 ? 'var(--accent)' : 'inherit' }}>
-                                        {p.exp} <span style={{ fontSize: '0.7rem', color: expBonus >= 0 ? 'var(--success)' : '#c62828' }}>({expBonus >= 0 ? '+' : ''}{expBonus})</span>
-                                    </td>
-                                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                                        {power}
-                                        {expBoostedPower > noExpPower && <span style={{ color: '#2e7d32', fontSize: '0.8rem' }}>⬆️</span>}
-                                        {power < basePowerNoFitness && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
-                                    </td>
-                                    <td style={{ padding: '6px', textAlign: 'center' }}>
-                                        <span style={{ background: '#fbbf24', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                                            ${(getMarketValue(p) / 1000000).toFixed(1)}M
-                                        </span>
-                                    </td>
-                                </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            )}
-
-            {activeTab === 'matches' && (
-            <div className="card">
-                <h3 style={{ marginTop: 0 }}>Match History - Season {selectedSeason}</h3>
-                {seasonMatches.length === 0 ? (
-                    <p style={{ color: 'var(--muted)' }}>No matches played this season</p>
-                ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <div>
+                    <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Squad List</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                                Formation
+                            </span>
+                            <select
+                                value={currentTactics.formation}
+                                onChange={(e) => handleFormationChange(e.target.value)}
+                                disabled={loading}
+                                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            >
+                                <option value="4-4-2">4-4-2</option>
+                                <option value="4-3-3">4-3-3</option>
+                                <option value="4-5-1">4-5-1</option>
+                            </select>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
+                            <button onClick={handleAutoSelect} disabled={loading} className="btn btn-sm">
+                                Auto Select
+                            </button>
+                            <button onClick={handleClearAll} disabled={loading} className="btn btn-sm btn-secondary">
+                                Clear All
+                            </button>
+                        </div>
+                    </h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                         <thead>
-                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                <th style={{ padding: '12px', textAlign: 'left' }}>Date</th>
-                                <th style={{ padding: '12px', textAlign: 'left' }}>Opponent</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>Result</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>Score</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}></th>
+                            <tr style={{ textAlign: 'left', borderBottom: '2px solid #333' }}>
+                                <th style={{ padding: '6px' }}>Select</th>
+                                <th style={{ padding: '6px' }}>
+                                    <button onClick={() => handleSort('name')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Name</button>
+                                </th>
+                                <th style={{ padding: '6px' }}>
+                                    <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Pos</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>App</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('goals')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>G</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('assists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>A</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('rating')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Rtg</button>
+                                </th>
+                                <th style={{ padding: '6px' }}>
+                                    <button onClick={() => handleSort('fit')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fit</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('physical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Physical</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('technical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Technical</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('tactical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Tactical</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('mental')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Mental</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('exp')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>EXP</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>💎 Market Value</button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
-                            {seasonMatches.map((match) => {
-                                const isHome = match.role === 'home';
-                                const yourScore = isHome ? match.homeScore : match.awayScore;
-                                const oppScore = isHome ? match.awayScore : match.homeScore;
-                                const result = yourScore > oppScore ? 'W' : yourScore < oppScore ? 'L' : 'D';
-                                const resultColor = result === 'W' ? '#16a34a' : result === 'L' ? '#dc2626' : '#f59e0b';
-                                return (
-                                    <tr key={match.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <td style={{ padding: '12px' }}>{new Date(match.date).toLocaleDateString('th-TH')}</td>
-                                        <td style={{ padding: '12px' }}>
-                                            {isHome ? '🏠' : '✈️'} {match.opponent.name}
-                                        </td>
-                                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: resultColor, fontSize: '1.1rem' }}>
-                                            {result}
-                                        </td>
-                                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
-                                            {yourScore} - {oppScore}
-                                        </td>
-                                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                                            <button 
-                                                onClick={() => window.location.href = `/match?matchId=${match.id}`}
-                                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer', fontSize: '0.85rem' }}
+                            {sortedPlayers
+                                .map(p => {
+                                    const expBonus = getExpBonus(p.exp);
+                                    const effectiveAttributes = getEffectiveAttributes(p.rawAttributes, p.exp);
+                                    const physical = toHundred([
+                                        effectiveAttributes.pace,
+                                        effectiveAttributes.acceleration,
+                                        effectiveAttributes.stamina,
+                                        effectiveAttributes.strength,
+                                        effectiveAttributes.agility,
+                                        effectiveAttributes.balance
+                                    ]);
+                                    const technical = toHundred([
+                                        effectiveAttributes.handling,
+                                        effectiveAttributes.tackling,
+                                        effectiveAttributes.passing,
+                                        effectiveAttributes.shooting,
+                                        effectiveAttributes.heading,
+                                        effectiveAttributes.dribbling,
+                                        effectiveAttributes.crossing,
+                                        effectiveAttributes.setPieces,
+                                        effectiveAttributes.throw
+                                    ]);
+                                    const tactical = toHundred([
+                                        effectiveAttributes.aggression,
+                                        effectiveAttributes.positioning,
+                                        effectiveAttributes.vision,
+                                        effectiveAttributes.bravery,
+                                        effectiveAttributes.leadership
+                                    ]);
+                                    const mental = toHundred([
+                                        effectiveAttributes.teamwork,
+                                        effectiveAttributes.composure
+                                    ]);
+                                    const breakdown = getPowerBreakdown(p);
+                                    return {
+                                        p,
+                                        physical,
+                                        technical,
+                                        tactical,
+                                        mental,
+                                        expBonus,
+                                        power: breakdown.power,
+                                        basePowerNoFitness: breakdown.basePowerNoFitness,
+                                        expBoostedPower: breakdown.expBoostedPower,
+                                        noExpPower: breakdown.noExpPower
+                                    };
+                                })
+                                .sort((a, b) => {
+                                    if (sortKey === 'pos') {
+                                        const posA = getGroup(a.p.tacticalPosition || a.p.naturalPosition);
+                                        const posB = getGroup(b.p.tacticalPosition || b.p.naturalPosition);
+                                        if (posA !== posB) return posGroupOrder[posA] - posGroupOrder[posB];
+                                        return (a.p.tacticalPosition || a.p.naturalPosition).localeCompare(b.p.tacticalPosition || b.p.naturalPosition);
+                                    }
+                                    const dir = sortDir === 'asc' ? 1 : -1;
+                                    const num = (val: number) => val || 0;
+                                    switch (sortKey) {
+                                        case 'apps': return dir * (num(a.p.apps) - num(b.p.apps));
+                                        case 'goals': return dir * (num(a.p.goals) - num(b.p.goals));
+                                        case 'assists': return dir * (num(a.p.assists) - num(b.p.assists));
+                                        case 'rating': return dir * ((a.p.avgRating || 0) - (b.p.avgRating || 0));
+                                        case 'fit': return dir * (num(a.p.condition) - num(b.p.condition));
+                                        case 'physical': return dir * (a.physical - b.physical);
+                                        case 'technical': return dir * (a.technical - b.technical);
+                                        case 'tactical': return dir * (a.tactical - b.tactical);
+                                        case 'mental': return dir * (a.mental - b.mental);
+                                        case 'exp': return dir * (num(a.p.exp) - num(b.p.exp));
+                                        case 'power': return dir * (a.power - b.power);
+                                        case 'name':
+                                        default:
+                                            return dir * a.p.name.localeCompare(b.p.name);
+                                    }
+                                })
+                                .map(({ p, physical, technical, tactical, mental, expBonus, power, basePowerNoFitness, expBoostedPower, noExpPower }) => (
+                                    <tr key={p.id} style={{ borderBottom: '1px solid #eee', background: p.tacticalPosition ? '#f0f4c3' : 'transparent' }}>
+                                        <td style={{ padding: '6px' }}>
+                                            <select
+                                                value={p.tacticalPosition || ''}
+                                                onChange={(e) => handleAssign(p.id, e.target.value, p.tacticalPosition)}
+                                                disabled={loading}
+                                                style={{ padding: '4px', border: '1px solid #ccc', width: '110px' }}
                                             >
-                                                View
+                                                <option value="">-</option>
+                                                {slots.map(slot => {
+                                                    const assigned = getPlayerInPos(slot.id);
+                                                    const suffix = assigned && assigned.id !== p.id ? ` (${assigned.name})` : '';
+                                                    return (
+                                                        <option key={slot.id} value={slot.id}>
+                                                            {slot.label}{suffix}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </td>
+                                        <td style={{ padding: '6px' }}>
+                                            <button
+                                                onClick={() => router.push(`/squad?playerId=${p.id}`)}
+                                                style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                            >
+                                                {p.name}
                                             </button>
+                                            {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
+                                        </td>
+                                        <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{p.apps}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{p.goals}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{p.assists}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: p.avgRating >= 7.0 ? 'var(--success)' : 'inherit' }}>
+                                            {p.avgRating > 0 ? p.avgRating.toFixed(2) : '-'}
+                                        </td>
+                                        <td style={{ padding: '6px', color: p.condition < 80 ? '#c62828' : '#2e7d32' }}>{Math.round(p.condition)}%</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{physical}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{technical}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{tactical}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{mental}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: p.exp >= 500 ? 'var(--success)' : p.exp >= 300 ? 'var(--accent)' : 'inherit' }}>
+                                            {p.exp} <span style={{ fontSize: '0.7rem', color: expBonus >= 0 ? 'var(--success)' : '#c62828' }}>({expBonus >= 0 ? '+' : ''}{expBonus})</span>
+                                        </td>
+                                        <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold', color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                            {power}
+                                            {expBoostedPower > noExpPower && <span style={{ color: '#2e7d32', fontSize: '0.8rem' }}>⬆️</span>}
+                                            {power < basePowerNoFitness && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
+                                        </td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>
+                                            <span style={{ background: '#fbbf24', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                                ${(getMarketValue(p) / 1000000).toFixed(1)}M
+                                            </span>
                                         </td>
                                     </tr>
-                                );
-                            })}
+                                ))}
                         </tbody>
                     </table>
-                )}
-            </div>
+                </div>
+            )}
+
+            {activeTab === 'matches' && (
+                <div className="card">
+                    <h3 style={{ marginTop: 0 }}>Match History - Season {selectedSeason}</h3>
+                    {seasonMatches.length === 0 ? (
+                        <p style={{ color: 'var(--muted)' }}>No matches played this season</p>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                    <th style={{ padding: '12px', textAlign: 'left' }}>Date</th>
+                                    <th style={{ padding: '12px', textAlign: 'left' }}>Opponent</th>
+                                    <th style={{ padding: '12px', textAlign: 'center' }}>Result</th>
+                                    <th style={{ padding: '12px', textAlign: 'center' }}>Score</th>
+                                    <th style={{ padding: '12px', textAlign: 'center' }}></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {seasonMatches.map((match) => {
+                                    const isHome = match.role === 'home';
+                                    const yourScore = isHome ? match.homeScore : match.awayScore;
+                                    const oppScore = isHome ? match.awayScore : match.homeScore;
+                                    const result = yourScore > oppScore ? 'W' : yourScore < oppScore ? 'L' : 'D';
+                                    const resultColor = result === 'W' ? '#16a34a' : result === 'L' ? '#dc2626' : '#f59e0b';
+                                    return (
+                                        <tr key={match.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                            <td style={{ padding: '12px' }}>{new Date(match.date).toLocaleDateString('th-TH')}</td>
+                                            <td style={{ padding: '12px' }}>
+                                                {isHome ? '🏠' : '✈️'} {match.opponent.name}
+                                            </td>
+                                            <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: resultColor, fontSize: '1.1rem' }}>
+                                                {result}
+                                            </td>
+                                            <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
+                                                {yourScore} - {oppScore}
+                                            </td>
+                                            <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                <button
+                                                    onClick={() => window.location.href = `/match?matchId=${match.id}`}
+                                                    style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer', fontSize: '0.85rem' }}
+                                                >
+                                                    View
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
             )}
 
             {activeTab === 'tactics' && (
-            <div className="card">
-                <TacticsTabs teamId={teamId} />
-            </div>
+                <div className="card">
+                    <TacticsTabs teamId={teamId} />
+                </div>
             )}
 
             <PlayerModal />

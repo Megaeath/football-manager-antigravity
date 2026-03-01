@@ -11,6 +11,8 @@ export default function Sidebar() {
         { name: 'จัดการทีม', href: '/squad', icon: '📋' },
         { name: 'ตารางการแข่งขัน', href: '/fixtures', icon: '📅' },
         { name: 'ระบบลีก', href: '/league', icon: '🏆' },
+        { name: 'ตลาดซื้อขาย', href: '/market', icon: '💱' },
+        { name: 'ข่าวสาร', href: '/news', icon: '📰' },
         { name: 'สรุปฤดูกาล', href: '/season-summary', icon: '🏅' },
         { name: 'อันดับนักเตะ', href: '/rankings', icon: '📊' },
         { name: 'ค้นหานักเตะ', href: '/players', icon: '🔍' },
@@ -37,7 +39,14 @@ export default function Sidebar() {
                 <h1 style={{ fontSize: '1.25rem', margin: 0, color: 'white', letterSpacing: '1px' }}>FM TEXT ⚽</h1>
             </div>
 
-            <nav style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+            <nav style={{
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                flex: 1,
+                overflowY: 'auto'
+            }}>
                 {navItems.map((item) => {
                     const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
                     return (

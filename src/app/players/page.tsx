@@ -79,7 +79,7 @@ export default function PlayersPage() {
 
         // Filter by name
         if (searchName) {
-            result = result.filter(p => 
+            result = result.filter(p =>
                 p.name.toLowerCase().includes(searchName.toLowerCase())
             );
         }
@@ -97,7 +97,7 @@ export default function PlayersPage() {
         if (maxAge) result = result.filter(p => p.age <= parseInt(maxAge));
 
         // Filter by position
-        if (selectedPosition) result = result.filter(p => p.position === selectedPosition);
+        if (selectedPosition) result = result.filter(p => p.position.startsWith(selectedPosition));
 
         // Filter by team
         if (selectedTeam) result = result.filter(p => p.teamId === selectedTeam);
@@ -185,7 +185,7 @@ export default function PlayersPage() {
             {/* Search Section */}
             <div className="card" style={{ padding: '1.5rem' }}>
                 <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>🎯 ค้นหาและกรอง</h3>
-                
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.8rem', marginBottom: '1rem' }}>
                     {/* Name Search */}
                     <div>
@@ -422,7 +422,7 @@ export default function PlayersPage() {
                     </div>
                 ) : (
                     <>
-                        <div style={{ 
+                        <div style={{
                             overflowX: 'auto',
                             marginBottom: '1rem',
                             borderRadius: '8px',
@@ -435,10 +435,10 @@ export default function PlayersPage() {
                             }}>
                                 <thead style={{ background: '#f5f5f5' }}>
                                     <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                        <th 
+                                        <th
                                             onClick={() => handleSortColumnClick('name')}
-                                            style={{ 
-                                                padding: '12px', 
+                                            style={{
+                                                padding: '12px',
                                                 textAlign: 'left',
                                                 cursor: 'pointer',
                                                 userSelect: 'none',
@@ -449,10 +449,10 @@ export default function PlayersPage() {
                                         >
                                             ชื่อ {sortBy === 'name' && (sortOrder === 'desc' ? '↓' : '↑')}
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSortColumnClick('power')}
-                                            style={{ 
-                                                padding: '12px', 
+                                            style={{
+                                                padding: '12px',
                                                 textAlign: 'center',
                                                 cursor: 'pointer',
                                                 userSelect: 'none',
@@ -463,10 +463,10 @@ export default function PlayersPage() {
                                         >
                                             พลัง {sortBy === 'power' && (sortOrder === 'desc' ? '↓' : '↑')}
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSortColumnClick('rating')}
-                                            style={{ 
-                                                padding: '12px', 
+                                            style={{
+                                                padding: '12px',
                                                 textAlign: 'center',
                                                 cursor: 'pointer',
                                                 userSelect: 'none',
@@ -478,10 +478,10 @@ export default function PlayersPage() {
                                             Rating {sortBy === 'rating' && (sortOrder === 'desc' ? '↓' : '↑')}
                                         </th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>ตำแหน่ง</th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSortColumnClick('age')}
-                                            style={{ 
-                                                padding: '12px', 
+                                            style={{
+                                                padding: '12px',
                                                 textAlign: 'center',
                                                 cursor: 'pointer',
                                                 userSelect: 'none',
@@ -493,10 +493,10 @@ export default function PlayersPage() {
                                             อายุ {sortBy === 'age' && (sortOrder === 'desc' ? '↓' : '↑')}
                                         </th>
                                         <th style={{ padding: '12px', textAlign: 'left' }}>ทีม</th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSortColumnClick('price')}
-                                            style={{ 
-                                                padding: '12px', 
+                                            style={{
+                                                padding: '12px',
                                                 textAlign: 'right',
                                                 cursor: 'pointer',
                                                 userSelect: 'none',
@@ -508,6 +508,7 @@ export default function PlayersPage() {
                                             ราคา {sortBy === 'price' && (sortOrder === 'desc' ? '↓' : '↑')}
                                         </th>
                                         <th style={{ padding: '12px', textAlign: 'center' }}>สัญญา</th>
+                                        <th style={{ padding: '12px', textAlign: 'center' }}>ซื้อขาย</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -517,10 +518,10 @@ export default function PlayersPage() {
                                             background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
                                             cursor: 'pointer',
                                             transition: 'background 0.2s'
-                                        }} 
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.08)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)'}
-                                        onClick={() => openPlayerModal(player.id)}>
+                                        }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.08)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)'}
+                                            onClick={() => openPlayerModal(player.id)}>
                                             <td style={{ padding: '12px' }}>
                                                 <span style={{
                                                     color: 'var(--primary)',
@@ -583,6 +584,26 @@ export default function PlayersPage() {
                                                     <span style={{ color: 'var(--muted)' }}>-</span>
                                                 )}
                                             </td>
+                                            <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/players?playerId=${player.id}&tab=transfer`);
+                                                    }}
+                                                    style={{
+                                                        background: 'var(--success)',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        padding: '6px 12px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 'bold',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    ซื้อ
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -615,7 +636,7 @@ export default function PlayersPage() {
                                 >
                                     ← ก่อนหน้า
                                 </button>
-                                
+
                                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                                     if (totalPages <= 5) return i + 1;
                                     if (currentPage <= 3) return i + 1;
@@ -640,7 +661,7 @@ export default function PlayersPage() {
                                         {page}
                                     </button>
                                 ))}
-                                
+
                                 <button
                                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                                     disabled={currentPage === totalPages}

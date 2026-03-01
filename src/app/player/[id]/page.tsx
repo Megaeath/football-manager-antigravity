@@ -8,6 +8,10 @@ async function getPlayer(id: string) {
         where: { id },
         include: {
             team: true,
+            transferHistory: {
+                include: { fromTeam: true, toTeam: true },
+                orderBy: { date: 'desc' }
+            },
             matchStats: {
                 include: { match: { include: { homeTeam: true, awayTeam: true } } },
                 orderBy: { match: { date: 'desc' } }
@@ -57,7 +61,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
     const exp = player.exp || 0;
     const expBonus = getExpBonus(exp);
     const expMultiplier = getExpMultiplier(exp);
-    
+
     const attributeData = {
         technical: [
             {
@@ -107,6 +111,12 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         expMultiplier: expMultiplier,
     };
 
+    // Serialize for Client Component
+    const serializedPlayer = JSON.parse(JSON.stringify({
+        ...player,
+        marketValue
+    }));
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <BreadcrumbRegister segment={id} name={player.name} />
@@ -123,7 +133,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                     <h1 style={{ color: 'white', margin: 0, fontSize: '2rem' }}>{player.name}</h1>
                     <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
                         <span className="badge" style={{ background: 'var(--primary)', color: 'white' }}>{player.naturalPosition}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team.name}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'ศิษย์เก่า/ไร้สังกัด'}</span>
                         <span style={{ color: 'rgba(255,255,255,0.7)' }}>• อายุ {player.age} ปี</span>
                     </div>
                 </div>
@@ -134,7 +144,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
             </div>
 
             {/* Content Tabs */}
-            <PlayerContent player={player} attributeData={attributeData} />
+            <PlayerContent player={serializedPlayer} attributeData={attributeData} />
         </div>
     );
 }

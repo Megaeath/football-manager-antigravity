@@ -6,6 +6,7 @@ import { calculateSuitability } from '@/lib/engine/suitability';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { getPlayerReputation } from '@/lib/reputation';
 import { ContractTab } from '@/components/ContractTab';
+import { TransferTab } from '@/components/TransferTab';
 import { getEffectiveAttributes, toPlayerAttributes } from '@/lib/engine/playerPower';
 import { getExpBonus } from '@/lib/engine/experience';
 
@@ -24,31 +25,11 @@ interface PlayerData {
     contractEndWeek?: number;
     weeklyWage?: number;
     exp?: number;
-    handling: number;
-    tackling: number;
-    passing: number;
-    shooting: number;
-    heading: number;
-    dribbling: number;
-    setPieces: number;
-    throw: number;
-    aggression: number;
-    positioning: number;
-    vision: number;
-    bravery: number;
-    leadership: number;
-    teamwork: number;
-    composure: number;
-    concentration: number;
-    decision: number;
-    crossing: number;
-    balance: number;
-    pace: number;
-    acceleration: number;
-    stamina: number;
-    strength: number;
-    agility: number;
-    matchStats: Array<{
+    transferStatus?: string;
+    askingPrice?: number;
+    squadStatus?: string;
+    transferHistory?: Array<{ id: string; fromTeamId: string | null; toTeamId: string; season: number; date: string; fee: number; fromTeam?: { name: string } | null; toTeam: { name: string } }>;
+    matchStats?: Array<{ id: string; teamId: string; goals: number; assists: number; rating: number; match: { season: number; homeTeamId: string; homeTeam: { name: string }; awayTeam: { name: string } } }> & Array<{
         rating: number;
         minutes: number;
         goals?: number;
@@ -98,10 +79,10 @@ export default function PlayerModal() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const playerId = searchParams.get('playerId');
-    
+
     const [player, setPlayer] = useState<PlayerData | null>(null);
     const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState<'attributes' | 'season' | 'matches' | 'contract'>('attributes');
+    const [activeTab, setActiveTab] = useState<'attributes' | 'season' | 'matches' | 'contract' | 'transfer' | 'history'>('attributes');
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
     const [userTeamId, setUserTeamId] = useState<string>('');
     const [loadingTeam, setLoadingTeam] = useState(true);
@@ -124,7 +105,14 @@ export default function PlayerModal() {
     useEffect(() => {
         if (!playerId) return;
         fetchPlayer();
-    }, [playerId, fetchPlayer]);
+
+        const tab = searchParams.get('tab');
+        if (tab === 'transfer') {
+            setActiveTab('transfer');
+        } else {
+            setActiveTab('attributes');
+        }
+    }, [playerId, fetchPlayer, searchParams]);
 
     useEffect(() => {
         const fetchUserTeam = async () => {
@@ -182,7 +170,7 @@ export default function PlayerModal() {
     return (
         <>
             {/* Modal Backdrop */}
-            <div 
+            <div
                 style={{
                     position: 'fixed',
                     top: 0,
@@ -198,7 +186,7 @@ export default function PlayerModal() {
                 onClick={closeModal}
             >
                 {/* Modal Content */}
-                <div 
+                <div
                     style={{
                         background: 'white',
                         borderRadius: '12px',
@@ -217,7 +205,7 @@ export default function PlayerModal() {
                         <div>
                             {/* Close Button */}
                             <div style={{ position: 'sticky', top: 0, display: 'flex', justifyContent: 'flex-end', padding: '1rem', background: 'var(--sidebar-bg)', borderRadius: '12px 12px 0 0', zIndex: 10 }}>
-                                <button 
+                                <button
                                     onClick={closeModal}
                                     style={{
                                         background: 'none',
@@ -297,11 +285,11 @@ export default function PlayerModal() {
                             </div>
 
                             {/* Tabs */}
-                            <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)', padding: '0', margin: 0 }}>
-                                {['attributes', 'season', 'matches', 'contract'].map((tab: string) => (
+                            <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)', padding: '0', margin: 0, overflowX: 'auto' }}>
+                                {['attributes', 'season', 'matches', 'contract', 'transfer', 'history'].map((tab: string) => (
                                     <button
                                         key={tab}
-                                        onClick={() => setActiveTab(tab as 'attributes' | 'season' | 'matches' | 'contract')}
+                                        onClick={() => setActiveTab(tab as any)}
                                         style={{
                                             flex: 1, padding: '16px', border: 'none',
                                             background: activeTab === tab ? '#fff' : 'transparent',
@@ -314,10 +302,14 @@ export default function PlayerModal() {
                                         {tab === 'attributes'
                                             ? '💪 ทักษะ'
                                             : tab === 'season'
-                                            ? '📊 ฤดูกาล'
-                                            : tab === 'matches'
-                                            ? '📅 ประวัติ'
-                                            : '📄 สัญญา'}
+                                                ? '📊 ฤดูกาล'
+                                                : tab === 'matches'
+                                                    ? '📅 ประวัติ'
+                                                    : tab === 'history'
+                                                        ? '🔄 การย้ายทีม'
+                                                    : tab === 'contract'
+                                                        ? '📄 สัญญา'
+                                                        : '💱 ซื้อขาย'}
                                     </button>
                                 ))}
                             </div>
@@ -454,64 +446,64 @@ export default function PlayerModal() {
                                                 {player.matchStats
                                                     .filter(stat => stat.match.season === selectedSeason)
                                                     .map((stat, i) => (
-                                                    <div key={i} style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                                                        {/* Match Header */}
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-                                                            <div style={{ flex: 1 }}>
-                                                                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '0.95rem' }}>
-                                                                    {stat.match.homeTeam.name} vs {stat.match.awayTeam.name}
+                                                        <div key={i} style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                                            {/* Match Header */}
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '0.95rem' }}>
+                                                                        {stat.match.homeTeam.name} vs {stat.match.awayTeam.name}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                                                        {new Date(stat.match.date).toLocaleDateString('th-TH')}
+                                                                    </div>
                                                                 </div>
-                                                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                                                                    {new Date(stat.match.date).toLocaleDateString('th-TH')}
+                                                                <div style={{ textAlign: 'right' }}>
+                                                                    <div style={{ fontWeight: '600', color: stat.rating > 7 ? 'var(--success)' : stat.rating > 6 ? 'var(--accent)' : 'inherit', fontSize: '1.2rem' }}>
+                                                                        {stat.rating.toFixed(2)} ⭐
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                                                        {stat.minutes}&apos; เล่น
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div style={{ textAlign: 'right' }}>
-                                                                <div style={{ fontWeight: '600', color: stat.rating > 7 ? 'var(--success)' : stat.rating > 6 ? 'var(--accent)' : 'inherit', fontSize: '1.2rem' }}>
-                                                                    {stat.rating.toFixed(2)} ⭐
-                                                                </div>
-                                                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                                                                    {stat.minutes}&apos; เล่น
-                                                                </div>
-                                                            </div>
-                                                        </div>
 
-                                                        {/* Player Stats Grid */}
-                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.goals || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>⚽ ประตู</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.assists || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🅰️ แอสซิสต์</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.shots || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🔫 ยิง</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.shotsOnTarget || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🎯 เข้า</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.passesCompleted || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>📍 พาส</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.tacklesWon || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🛡️ สกัด</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.dribblesWon || 0}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🏃 เลี้ยง</div>
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{(stat.yellowCards ?? 0) > 0 ? '🟨' : '-'}</div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เหลือง</div>
+                                                            {/* Player Stats Grid */}
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.goals || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>⚽ ประตู</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.assists || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🅰️ แอสซิสต์</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.shots || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🔫 ยิง</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.shotsOnTarget || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🎯 เข้า</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.passesCompleted || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>📍 พาส</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.tacklesWon || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🛡️ สกัด</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.dribblesWon || 0}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🏃 เลี้ยง</div>
+                                                                </div>
+                                                                <div style={{ textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{(stat.yellowCards ?? 0) > 0 ? '🟨' : '-'}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เหลือง</div>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    ))}
                                             </div>
                                         ) : (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
@@ -531,6 +523,115 @@ export default function PlayerModal() {
                                         isUserTeam={!loadingTeam && player.teamId === userTeamId}
                                         onRenew={fetchPlayer}
                                     />
+                                )}
+
+                                {activeTab === 'transfer' && player && (
+                                    <TransferTab
+                                        playerId={player.id}
+                                        playerName={player.name}
+                                        playerTeamId={player.teamId}
+                                        askingPrice={player.askingPrice || 0}
+                                        transferStatus={player.transferStatus || 'NOT_LISTED'}
+                                        userTeamId={userTeamId}
+                                        marketValue={player.marketValue || 0}
+                                    />
+                                )}
+
+                                {activeTab === 'history' && player && (
+                                    <div style={{ padding: '1.5rem' }}>
+                                        {/* Transfer History Section */}
+                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>ประวัติการย้ายทีม</h3>
+                                        {player.transferHistory && player.transferHistory.length > 0 ? (
+                                            <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                                                    <thead>
+                                                        <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                                                            <th style={{ padding: '1rem' }}>วันที่/ฤดูกาล</th>
+                                                            <th style={{ padding: '1rem' }}>จาก</th>
+                                                            <th style={{ padding: '1rem' }}>ไป</th>
+                                                            <th style={{ padding: '1rem', textAlign: 'right' }}>ค่าตัว</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {player.transferHistory.map((history) => (
+                                                            <tr key={history.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                                <td style={{ padding: '1rem' }}>
+                                                                    <div>{new Date(history.date).toLocaleDateString()}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Season {history.season}</div>
+                                                                </td>
+                                                                <td style={{ padding: '1rem' }}>{history.fromTeam?.name || 'Free Agent'}</td>
+                                                                <td style={{ padding: '1rem', fontWeight: 'bold' }}>{history.toTeam.name}</td>
+                                                                <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--success)', fontWeight: 'bold' }}>
+                                                                    {history.fee === 0 ? 'ฟรี' : `$${history.fee.toLocaleString()}`}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>ไม่มีประวัติการย้ายทีม</div>
+                                        )}
+
+                                        {/* Seasonal Statistics Section */}
+                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>สถิติตามฤดูกาล</h3>
+                                        {player.matchStats && player.matchStats.length > 0 ? (() => {
+                                            const statsGrouped: Record<string, any> = {};
+                                            (player.matchStats as any[]).forEach(stat => {
+                                                const key = `${stat.match.season}-${stat.teamId}`;
+                                                if (!statsGrouped[key]) {
+                                                    statsGrouped[key] = {
+                                                        season: stat.match.season,
+                                                        teamId: stat.teamId,
+                                                        teamName: stat.teamId === stat.match.homeTeamId ? stat.match.homeTeam.name : stat.match.awayTeam.name,
+                                                        goals: 0,
+                                                        assists: 0,
+                                                        apps: 0,
+                                                        ratingSum: 0
+                                                    };
+                                                }
+                                                statsGrouped[key].goals += stat.goals || 0;
+                                                statsGrouped[key].assists += stat.assists || 0;
+                                                statsGrouped[key].apps += 1;
+                                                statsGrouped[key].ratingSum += stat.rating || 0;
+                                            });
+
+                                            const sorted = Object.values(statsGrouped).sort((a, b) => b.season - a.season);
+
+                                            return (
+                                                <div style={{ overflowX: 'auto' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                                                        <thead>
+                                                            <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                                                                <th style={{ padding: '1rem' }}>ฤดูกาล</th>
+                                                                <th style={{ padding: '1rem' }}>ทีม</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>ลงเล่น</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>⚽ ประตู</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>📞 ลูกหวาน</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'right' }}>คะแนนเฉลี่ย</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {sorted.map((stat, idx) => (
+                                                                <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                                    <td style={{ padding: '1rem', fontWeight: '500' }}>Season {stat.season}</td>
+                                                                    <td style={{ padding: '1rem' }}>{stat.teamName}</td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'center' }}>{stat.apps}</td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--success)', fontWeight: 'bold' }}>{stat.goals}</td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--accent)' }}>{stat.assists}</td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'right', color: stat.ratingSum / stat.apps > 7 ? 'var(--success)' : 'inherit' }}>
+                                                                        {(stat.ratingSum / stat.apps).toFixed(2)}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            );
+                                        })() : (
+                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>ยังไม่มีสถิติการเล่น</div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>
