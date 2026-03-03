@@ -28,12 +28,39 @@ interface PlayerData {
     transferStatus?: string;
     askingPrice?: number;
     squadStatus?: string;
+    // Player attributes
+    handling: number;
+    tackling: number;
+    passing: number;
+    shooting: number;
+    heading: number;
+    dribbling: number;
+    crossing: number;
+    setPieces: number;
+    throw: number;
+    aggression: number;
+    positioning: number;
+    vision: number;
+    bravery: number;
+    leadership: number;
+    teamwork: number;
+    composure: number;
+    pace: number;
+    acceleration: number;
+    stamina: number;
+    strength: number;
+    agility: number;
+    balance: number;
+    concentration: number;
+    decision: number;
     transferHistory?: Array<{ id: string; fromTeamId: string | null; toTeamId: string; season: number; date: string; fee: number; fromTeam?: { name: string } | null; toTeam: { name: string } }>;
-    matchStats?: Array<{ id: string; teamId: string; goals: number; assists: number; rating: number; match: { season: number; homeTeamId: string; homeTeam: { name: string }; awayTeam: { name: string } } }> & Array<{
+    matchStats?: Array<{
+        id: string;
+        teamId: string;
+        goals: number;
+        assists: number;
         rating: number;
         minutes: number;
-        goals?: number;
-        assists?: number;
         shots?: number;
         shotsOnTarget?: number;
         passesCompleted?: number;
@@ -47,6 +74,7 @@ interface PlayerData {
         match: {
             date: string;
             season: number;
+            homeTeamId: string;
             homeTeam: { name: string };
             awayTeam: { name: string };
         };

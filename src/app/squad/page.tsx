@@ -103,7 +103,7 @@ export default async function SquadPage() {
         const baseSuitability = currentPosPower?.baseSuitabilityWithExp || 0;
         const fitnessSuitability = currentPosPower?.powerWithExp || 0;
 
-        // Calculate market value (same formula as API)
+        // Calculate market value (power-based formula)
         const natPos = p.naturalPosition.split('_')[0];
         const power = calculatePlayerPower({
             attributes: attrs,
@@ -112,7 +112,7 @@ export default async function SquadPage() {
             exp: p.exp || 0
         }).powerWithExp;
         
-        // Calculate average rating from match stats (same as API)
+        // Calculate average rating from match stats
         const avgRating = p.matchStats && p.matchStats.length > 0
             ? Number((p.matchStats.reduce((sum, stat) => sum + stat.rating, 0) / p.matchStats.length).toFixed(2))
             : 0;
@@ -123,7 +123,6 @@ export default async function SquadPage() {
         const playerPopularityMultiplier = 0.8 + (p.popularity / 100) * 1.0;
         const clubReputationMultiplier = 0.7 + ((team.reputation || 50) / 100) * 0.8;
         
-        // Use avgRating from match stats (same as API)
         const formMultiplier = 0.5 + (Math.min(avgRating, 10) / 10) * 1.0;
         
         let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);

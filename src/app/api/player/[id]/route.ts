@@ -144,22 +144,15 @@ export async function GET(
         }).powerWithExp;
 
         // Calculate market value with multiple factors: power, age, popularity, club reputation, form
-        const basePrice = power * power * 1000; // Reduced base multiplier
+        const basePrice = power * power * 1000;
         const ageMultiplier = player.age <= 25 ? 1.2 : player.age >= 32 ? 0.6 : 1.0;
         
-        // Player popularity multiplier (0-100 → 0.8-1.8)
         const playerPopularityMultiplier = 0.8 + (player.popularity / 100) * 1.0;
-        
-        // Club reputation multiplier (0-100 → 0.7-1.5)
         const clubReputationMultiplier = 0.7 + ((player.team?.reputation || 50) / 100) * 0.8;
         
-        // Form multiplier based on avgRating (0-10 → 0.5-1.5)
         const formMultiplier = 0.5 + (latestSeasonStats?.avgRating ? Math.min(parseFloat(latestSeasonStats.avgRating), 10) / 10 * 1.0 : 0.5);
         
-        // Calculate final market value with all multipliers
         let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
-        
-        // Cap at 200 million
         marketValue = Math.min(marketValue, 200000000);
 
         return NextResponse.json({

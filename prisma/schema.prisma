@@ -16,11 +16,12 @@ model League {
 }
 
 model GlobalGameSettings {
-  id            Int      @id @default(1)
-  currentDate   DateTime @default(dbgenerated("'2026-01-01'"))
-  currentSeason Int      @default(1)
-  isConfigured  Boolean  @default(false)
-  userTeamId    String?
+  id                   Int      @id @default(1)
+  currentDate          DateTime @default(dbgenerated("'2026-01-01'"))
+  currentSeason        Int      @default(1)
+  isConfigured         Boolean  @default(false)
+  userTeamId           String?
+  lastExpDecayMonth    Int      @default(0)
 }
 
 model SeasonHistory {
@@ -338,6 +339,7 @@ model Bid {
   signOnBonus Int      @default(0)
   createdAt   DateTime @default(now())
   windowEnds  DateTime
+  season      Int      @default(1)
 
   player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   fromTeam    Team     @relation("BidsMade", fields: [fromTeamId], references: [id], onDelete: Cascade)

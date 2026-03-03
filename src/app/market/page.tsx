@@ -12,6 +12,7 @@ type BidItem = {
     isFreeAgent: boolean;
     createdAt: string;
     windowEnds: string;
+    season: number;
     player: { id: string; name: string; naturalPosition: string; transferStatus: string };
     fromTeam: { id: string; name: string };
     toTeam: { id: string; name: string } | null;
@@ -31,18 +32,31 @@ function MarketCenterContent() {
     const [bids, setBids] = useState<BidItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [userTeamId, setUserTeamId] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+    const [availableSeasons, setAvailableSeasons] = useState<number[]>([]);
+    const [currentSeason, setCurrentSeason] = useState(1);
 
     useEffect(() => {
         const fetchMarketData = async () => {
+            setLoading(true);
             try {
                 const userRes = await fetch('/api/game/info');
                 const userData = await userRes.json();
                 setUserTeamId(userData.userTeamId);
+                setCurrentSeason(userData.currentSeason);
 
-                const bidsRes = await fetch(`/api/market/bids`);
+                const seasonParam = selectedSeason !== null ? `&season=${selectedSeason}` : `&season=${userData.currentSeason}`;
+                const bidsRes = await fetch(`/api/market/bids?page=${currentPage}&limit=20${seasonParam}`);
                 if (bidsRes.ok) {
                     const data = await bidsRes.json();
                     setBids(data.bids);
+                    setTotalPages(data.totalPages);
+                    setAvailableSeasons(data.availableSeasons);
+                    if (selectedSeason === null && data.availableSeasons.length > 0) {
+                        setSelectedSeason(data.availableSeasons[0]);
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch market data', error);
@@ -51,7 +65,7 @@ function MarketCenterContent() {
             }
         };
         fetchMarketData();
-    }, []);
+    }, [currentPage, selectedSeason]);
 
     const openPlayerModal = (playerId: string) => {
         router.push(`/market?playerId=${playerId}`);
@@ -67,6 +81,16 @@ function MarketCenterContent() {
         }
     };
 
+    const handleSeasonChange = (season: number) => {
+        setSelectedSeason(season);
+        setCurrentPage(1);
+    };
+
+    const handlePageChange = (page: number) => {
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     return (
         <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -79,7 +103,21 @@ function MarketCenterContent() {
             </div>
 
             <div className="card">
-                <h2 style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }}>Active & Recent Deals</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }}>
+                    <h2 style={{ margin: 0 }}>Active & Recent Deals</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Season:</label>
+                        <select
+                            value={selectedSeason || currentSeason}
+                            onChange={(e) => handleSeasonChange(parseInt(e.target.value))}
+                            style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)' }}
+                        >
+                            {availableSeasons.map(season => (
+                                <option key={season} value={season}>Season {season}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
 
                 {loading ? (
                     <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading market data...</div>
@@ -147,6 +185,38 @@ function MarketCenterContent() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {!loading && bids.length > 0 && totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="btn"
+                            style={{ 
+                                padding: '0.5rem 1rem',
+                                opacity: currentPage === 1 ? 0.5 : 1,
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            ← Previous
+                        </button>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
+                            Page {currentPage} of {totalPages}
+                        </span>
+                        <button
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="btn"
+                            style={{ 
+                                padding: '0.5rem 1rem',
+                                opacity: currentPage === totalPages ? 0.5 : 1,
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            Next →
+                        </button>
                     </div>
                 )}
             </div>

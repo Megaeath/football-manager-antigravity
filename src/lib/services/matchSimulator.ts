@@ -90,17 +90,28 @@ function autoSelectLineup(team: any) {
 
     for (const slot of slots) {
         const slotBase = slot.id.split('_')[0];
-        const bestPlayer = team.players
-            .filter((p: any) => !usedPlayers.has(p.id))
+        
+        // For GK position, prioritize actual goalkeepers
+        let availablePlayers = team.players.filter((p: any) => !usedPlayers.has(p.id));
+        
+        if (slotBase === 'GK') {
+            const goalkeepers = availablePlayers.filter((p: any) => p.naturalPosition === 'GK');
+            // Only use actual GK if available, otherwise fallback to any player
+            if (goalkeepers.length > 0) {
+                availablePlayers = goalkeepers;
+            }
+        }
+        
+        const bestPlayer = availablePlayers
             .map((p: any) => ({
                 playerId: p.id,
                 position: slot.id,
-                        suitability: calculatePlayerPower({
-                            attributes: mapAttributes(p),
-                            targetPosition: slotBase,
-                            condition: p.condition,
-                            exp: p.exp || 0
-                        }).powerWithExp
+                suitability: calculatePlayerPower({
+                    attributes: mapAttributes(p),
+                    targetPosition: slotBase,
+                    condition: p.condition,
+                    exp: p.exp || 0
+                }).powerWithExp
             }))
             .sort((a: any, b: any) => b.suitability - a.suitability)[0];
 
@@ -419,9 +430,10 @@ export async function processMatch(matchId: string) {
                 isMotm: isMotm
             });
             
-                // Calculate safe exp increment (cap at 1000, don't go below 0)
+                // Calculate exp increment - allow negative EXP (for age-based decay penalties)
+                // System supports -1000 to +1000 range for getExpBonus/getExpMultiplier
                 const currentExp = player.exp || 0;
-                const newExp = Math.max(0, Math.min(1000, currentExp + expGain.totalGain));
+                const newExp = currentExp + expGain.totalGain;
             
             // Update player stats including EXP
             await (tx.player as any).update({

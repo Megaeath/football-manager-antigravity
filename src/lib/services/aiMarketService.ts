@@ -30,6 +30,21 @@ export async function processAIMarketMovements(logCollector?: string[]) {
             const topTeams = standings.slice(0, 3).map(s => s.id);
             const aiTeamIds = standings.map(s => s.id).filter(id => id !== settings.userTeamId);
 
+            // 0. Revalue existing listings based on current market conditions
+            const listedPlayers = await prisma.player.findMany({
+                where: { transferStatus: 'LISTED', isRetired: false }
+            });
+            for (const player of listedPlayers) {
+                const currentValue = await evaluateMarketValue(player);
+                if (player.askingPrice !== currentValue) {
+                    await prisma.player.update({
+                        where: { id: player.id },
+                        data: { askingPrice: currentValue }
+                    });
+                    log(`[AI Market] Revalued ${player.name} from $${player.askingPrice?.toLocaleString() || 'N/A'} to $${currentValue.toLocaleString()}`);
+                }
+            }
+
             // 1. AI Teams Selling Logic
             for (const teamId of aiTeamIds) {
                 await processAISellingLogic(teamId, log);
@@ -44,7 +59,12 @@ export async function processAIMarketMovements(logCollector?: string[]) {
 
             const playersWithPower = availablePlayers.map(p => ({
                 player: p,
-                power: calculatePlayerPower({ attributes: toPlayerAttributes(p), targetPosition: p.naturalPosition }).powerWithExp
+                power: calculatePlayerPower({ 
+                    attributes: toPlayerAttributes(p), 
+                    targetPosition: p.naturalPosition.split('_')[0],
+                    condition: 100,
+                    exp: p.exp || 0
+                }).powerWithExp
             }));
 
             log(`[AI Market] ${availablePlayers.length} players available on market`);
@@ -73,7 +93,10 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
 
         const playerPower = calculatePlayerPower({
             attributes: toPlayerAttributes(player),
-            targetPosition: player.naturalPosition,
+            targetPosition: player.naturalPosition.split('_')[0],
+            condition: 100,
+            exp: player.exp || 0
+        }).powerWithExp;
             exp: player.exp
         }).powerWithExp;
 
@@ -85,7 +108,7 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
         }
 
         if (shouldList) {
-            const value = evaluateMarketValue(player);
+            const value = await evaluateMarketValue(player);
             await prisma.player.update({
                 where: { id: player.id },
                 data: { transferStatus: 'LISTED', askingPrice: value }
@@ -122,7 +145,7 @@ async function processAIBuyingLogic(
         const bestTargets = targets.filter(lp => lp.power > 72 && (lp.player.askingPrice || 0) <= maxBudget);
         if (bestTargets.length > 0) {
             const t = bestTargets[Math.floor(Math.random() * bestTargets.length)];
-            const res = await submitBid(t.player.id, teamId, t.player.askingPrice || evaluateMarketValue(t.player));
+            const res = await submitBid(t.player.id, teamId, t.player.askingPrice || await evaluateMarketValue(t.player));
             log(`[AI Market] ${team.name} (Top) bid for ${t.player.name} (P:${t.power}): ${res.success ? 'Success' : res.message}`);
         }
     } else {
@@ -130,13 +153,13 @@ async function processAIBuyingLogic(
         const positions = ['GK', 'DC', 'MC', 'FWC'];
         for (const pos of positions) {
             const posPlayers = team.players.filter(p => p.naturalPosition.startsWith(pos));
-            const bestPower = posPlayers.length > 0 ? Math.max(...posPlayers.map(p => calculatePlayerPower({ attributes: toPlayerAttributes(p), targetPosition: p.naturalPosition }).powerWithExp)) : 0;
+            const bestPower = posPlayers.length > 0 ? Math.max(...posPlayers.map(p => calculatePlayerPower({ attributes: toPlayerAttributes(p), targetPosition: p.naturalPosition.split('_')[0], condition: 100, exp: p.exp || 0 }).powerWithExp)) : 0;
 
             if (bestPower < 70) {
                 const posTargets = targets.filter(lp => lp.player.naturalPosition.startsWith(pos) && lp.power > 65 && (lp.player.askingPrice || 0) <= maxBudget);
                 if (posTargets.length > 0) {
                     const t = posTargets[Math.floor(Math.random() * posTargets.length)];
-                    const res = await submitBid(t.player.id, teamId, t.player.askingPrice || evaluateMarketValue(t.player));
+                    const res = await submitBid(t.player.id, teamId, t.player.askingPrice || await evaluateMarketValue(t.player));
                     log(`[AI Market] ${team.name} bid for ${t.player.name} (${pos}, P:${t.power}): ${res.success ? 'Success' : res.message}`);
                     break;
                 }

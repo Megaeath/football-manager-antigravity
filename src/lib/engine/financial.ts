@@ -1,4 +1,6 @@
 import { PrismaClient, Player, Team } from '@prisma/client';
+import { calculatePlayerPower, toPlayerAttributes } from './playerPower';
+import type { PlayerAttributes } from './types';
 
 const prisma = new PrismaClient();
 
@@ -168,21 +170,72 @@ export async function calculateWeeklyAccounting(teamId: string): Promise<{
 
 /**
  * Evaluate player market value
- * Formula: (overall^2 × popularity) / 1000
- * Age adjustment: Players 32+ lose 10% per year
+ * Formula: power² × 1000 × multipliers (age, popularity, club reputation, form)
+ * Includes age boost for young players and penalty for older players
  */
-export function evaluateMarketValue(player: Player): number {
-    const overall = calculatePlayerOverall(player);
-    const baseValue = (Math.pow(overall, 2) * player.popularity) / 1000;
+export async function evaluateMarketValue(player: Player): Promise<number> {
+    // Calculate power
+    const attrs: PlayerAttributes = toPlayerAttributes({
+        handling: player.handling,
+        tackling: player.tackling,
+        passing: player.passing,
+        shooting: player.shooting,
+        heading: player.heading,
+        dribbling: player.dribbling,
+        setPieces: player.setPieces,
+        throw: player.throw,
+        aggression: player.aggression,
+        positioning: player.positioning,
+        vision: player.vision,
+        bravery: player.bravery,
+        leadership: player.leadership,
+        teamwork: player.teamwork,
+        composure: player.composure,
+        pace: player.pace,
+        acceleration: player.acceleration,
+        stamina: player.stamina,
+        strength: player.strength,
+        agility: player.agility,
+        balance: player.balance,
+        crossing: player.crossing
+    });
+    
+    const natPos = player.naturalPosition.split('_')[0];
+    const power = calculatePlayerPower({
+        attributes: attrs,
+        targetPosition: natPos,
+        condition: 100,
+        exp: player.exp || 0
+    }).powerWithExp;
 
-    // Age adjustment
-    let ageMultiplier = 1;
-    if (player.age >= 32) {
-        const yearsOver32 = player.age - 32;
-        ageMultiplier = Math.pow(0.9, yearsOver32); // 10% decrease per year
-    }
+    // Get team reputation
+    const team = await prisma.team.findUnique({
+        where: { id: player.teamId }
+    });
 
-    return Math.round(baseValue * ageMultiplier * 50000); // Convert to currency units
+    // Calculate average rating from match stats
+    const matchStats = await prisma.matchStats.findMany({
+        where: { playerId: player.id },
+        select: { rating: true }
+    });
+    
+    const avgRating = matchStats.length > 0
+        ? Number((matchStats.reduce((sum, stat) => sum + stat.rating, 0) / matchStats.length).toFixed(2))
+        : 0;
+
+    // Calculate market value with multiple factors
+    const basePrice = power * power * 1000;
+    const ageMultiplier = player.age <= 25 ? 1.2 : player.age >= 32 ? 0.6 : 1.0;
+    
+    const playerPopularityMultiplier = 0.8 + (player.popularity / 100) * 1.0;
+    const clubReputationMultiplier = 0.7 + ((team?.reputation || 50) / 100) * 0.8;
+    
+    const formMultiplier = 0.5 + (avgRating / 10) * 1.0;
+    
+    let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
+    marketValue = Math.min(marketValue, 200000000);
+
+    return marketValue;
 }
 
 /**
@@ -317,6 +370,126 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
 }
 
 /**
+ * Monthly EXP decay for aging players
+ * Rule:
+ * - Players aged 31+ start losing experience
+ * - Loss increases with age: -10 at 31, -15 at 32, -20 at 33, etc.
+ * - Formula: -(10 + (age - 31) * 5)
+ * - EXP can go negative (reducing power)
+ * - Prevents multiple decays in the same month using lastExpDecayMonth
+ */
+export async function processAgeBasedExpDecay(): Promise<void> {
+    const settings = await prisma.globalGameSettings.findUnique({
+        where: { id: 1 },
+        select: { currentDate: true, lastExpDecayMonth: true }
+    });
+
+    if (!settings?.currentDate) return;
+
+    const currentMonth = settings.currentDate.getUTCMonth();
+    
+    // Skip if already processed this month
+    if (settings.lastExpDecayMonth === currentMonth) {
+        return;
+    }
+
+    const playersToDecay = await prisma.player.findMany({
+        where: {
+            isRetired: false,
+            age: { gte: 31 }
+        },
+        select: { id: true, name: true, age: true, exp: true }
+    });
+
+    for (const player of playersToDecay) {
+        // Progressive decay: -10 at 31, -15 at 32, -20 at 33, etc.
+        // Formula: -(10 + (age - 31) * 5)
+        const decayAmount = -(10 + (player.age - 31) * 5);
+        const newExp = (player.exp || 0) + decayAmount;
+        await prisma.player.update({
+            where: { id: player.id },
+            data: { exp: newExp }
+        });
+    }
+
+    // Update the last decay month
+    await prisma.globalGameSettings.update({
+        where: { id: 1 },
+        data: { lastExpDecayMonth: currentMonth }
+    });
+}
+
+/**
+ * Weekly popularity decay for inactive players
+ * Rule:
+ * - If a player misses 4+ consecutive team matches, lose 2 popularity per week
+ * - If player appears in a match, streak resets automatically
+ */
+export async function processInactivePlayerPopularityDecay(teamId: string): Promise<void> {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { players: { where: { isRetired: false } } }
+    });
+
+    if (!team || team.players.length === 0) return;
+
+    const recentMatches = await prisma.match.findMany({
+        where: {
+            isPlayed: true,
+            OR: [
+                { homeTeamId: teamId },
+                { awayTeamId: teamId }
+            ]
+        },
+        orderBy: { date: 'desc' },
+        take: 20,
+        select: { id: true }
+    });
+
+    if (recentMatches.length === 0) return;
+
+    const recentMatchIds = recentMatches.map(m => m.id);
+    const stats = await prisma.playerMatchStats.findMany({
+        where: {
+            matchId: { in: recentMatchIds },
+            playerId: { in: team.players.map(p => p.id) }
+        },
+        select: {
+            playerId: true,
+            matchId: true,
+            minutes: true
+        }
+    });
+
+    const statMap = new Map<string, number>();
+    for (const s of stats) {
+        statMap.set(`${s.playerId}:${s.matchId}`, s.minutes);
+    }
+
+    for (const player of team.players) {
+        let missedStreak = 0;
+
+        for (const match of recentMatches) {
+            const minutes = statMap.get(`${player.id}:${match.id}`) ?? 0;
+            if (minutes > 0) {
+                break;
+            }
+            missedStreak++;
+        }
+
+        if (missedStreak >= 4) {
+            const newPopularity = Math.max(0, player.popularity - 2);
+            if (newPopularity !== player.popularity) {
+                await prisma.player.update({
+                    where: { id: player.id },
+                    data: { popularity: newPopularity }
+                });
+            }
+        }
+    }
+}
+
+/**
  * Check if player contract is expiring soon
  */
 export async function getExpiringContracts(teamId: string): Promise<Player[]> {
@@ -414,6 +587,8 @@ export default {
     evaluateMarketValue,
     checkFFPCompliance,
     processWeeklyFinances,
+    processInactivePlayerPopularityDecay,
+    processAgeBasedExpDecay,
     getExpiringContracts,
     handleContractRenewal
 };

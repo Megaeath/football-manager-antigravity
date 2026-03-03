@@ -75,7 +75,8 @@ export async function submitBid(
                 isFreeAgent: true,
                 status: 'PENDING',
                 createdAt: currentDate,
-                windowEnds
+                windowEnds,
+                season: currentSeason
             }
         });
 
@@ -124,7 +125,7 @@ export async function submitBid(
     if (acceptRoll > acceptanceChance) {
         // Log rejected bid
         await prisma.bid.create({
-            data: { playerId, fromTeamId, toTeamId, amount, signOnBonus, status: 'REJECTED', createdAt: currentDate, windowEnds: currentDate }
+            data: { playerId, fromTeamId, toTeamId, amount, signOnBonus, status: 'REJECTED', createdAt: currentDate, windowEnds: currentDate, season: currentSeason }
         });
         return { success: false, message: `Bid of $${amount.toLocaleString()} was rejected.` };
     }
@@ -139,7 +140,8 @@ export async function submitBid(
             signOnBonus,
             status: 'PENDING',
             createdAt: currentDate,
-            windowEnds
+            windowEnds,
+            season: currentSeason
         }
     });
 
@@ -184,6 +186,7 @@ async function triggerBiddingWar(player: any, originalTeam: any, currentAmount: 
         // If team has fewer than 3 players in this position, they will bid
         if (teamPlayersInPos < 3) {
             // They join the bidding war
+            const settings = await getGameTime();
             await prisma.bid.create({
                 data: {
                     playerId: player.id,
@@ -192,7 +195,8 @@ async function triggerBiddingWar(player: any, originalTeam: any, currentAmount: 
                     amount: requiredAmount, // counter-bid 20% higher
                     status: 'PENDING',
                     createdAt: currentDate,
-                    windowEnds: new Date(windowEnds.getTime() + (30 * 24 * 60 * 60 * 1000)) // delay by 1 month approx
+                    windowEnds: new Date(windowEnds.getTime() + (30 * 24 * 60 * 60 * 1000)), // delay by 1 month approx
+                    season: settings.currentSeason
                 }
             });
             hijackCount++;

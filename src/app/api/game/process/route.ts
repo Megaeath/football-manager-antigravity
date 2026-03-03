@@ -87,12 +87,14 @@ export async function POST(req: Request) {
             }
 
             const result = await processMatch(matchId);
-            
-            // Process financial updates after match
-            try {
-                await processMatchFinancials(matchId);
-            } catch (error) {
-                console.error('Failed to process match financials:', error);
+
+            // Process financial updates only when the match was newly simulated
+            if (result) {
+                try {
+                    await processMatchFinancials(matchId);
+                } catch (error) {
+                    console.error('Failed to process match financials:', error);
+                }
             }
             
             return NextResponse.json(result);
@@ -106,12 +108,14 @@ export async function POST(req: Request) {
             }
 
             const result = await processMatch(matchId);
-            
-            // Process financial updates after match
-            try {
-                await processMatchFinancials(matchId);
-            } catch (error) {
-                console.error('Failed to process match financials:', error);
+
+            // Process financial updates only when the match was newly simulated
+            if (result) {
+                try {
+                    await processMatchFinancials(matchId);
+                } catch (error) {
+                    console.error('Failed to process match financials:', error);
+                }
             }
             
             return NextResponse.json(result);
@@ -154,13 +158,15 @@ export async function POST(req: Request) {
                 for (const match of matchesToSimulate) {
                     // Auto-select tactics for AI teams
                     await autoSelectTacticsForAITeams(match, userTeamId);
-                    await processMatch(match.id);
-                    
-                    // Process financial updates after match
-                    try {
-                        await processMatchFinancials(match.id);
-                    } catch (error) {
-                        console.error('Failed to process match financials:', error);
+                    const result = await processMatch(match.id);
+
+                    // Process financial updates only when the match was newly simulated
+                    if (result) {
+                        try {
+                            await processMatchFinancials(match.id);
+                        } catch (error) {
+                            console.error('Failed to process match financials:', error);
+                        }
                     }
                 }
                 const updatedSettings = await advanceDay();
@@ -178,13 +184,15 @@ export async function POST(req: Request) {
             for (const match of otherMatches) {
                 // Auto-select tactics for AI teams
                 await autoSelectTacticsForAITeams(match, userTeamId);
-                await processMatch(match.id);
-                
-                // Process financial updates after match
-                try {
-                    await processMatchFinancials(match.id);
-                } catch (error) {
-                    console.error('Failed to process match financials:', error);
+                const result = await processMatch(match.id);
+
+                // Process financial updates only when the match was newly simulated
+                if (result) {
+                    try {
+                        await processMatchFinancials(match.id);
+                    } catch (error) {
+                        console.error('Failed to process match financials:', error);
+                    }
                 }
             }
 

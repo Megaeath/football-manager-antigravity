@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma';
 import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
-import { processWeeklyFinances, autoRenewContracts } from '../engine/financial';
+import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
 import { applySeasonRewards } from './seasonAwards';
 import { processBiddingRules } from '../engine/market';
 
@@ -35,7 +35,7 @@ type YouthAttributes = {
     balance: number;
 };
 
-function generateYouthAttributes(naturalPosition: string): YouthAttributes {
+function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 'talented' = 'normal'): YouthAttributes {
     const base: YouthAttributes = {
         handling: randomInt(1, 3),
         tackling: randomInt(6, 13),
@@ -59,6 +59,16 @@ function generateYouthAttributes(naturalPosition: string): YouthAttributes {
         agility: randomInt(6, 13),
         balance: randomInt(6, 13)
     };
+
+    // If talented: boost all attributes by ~30%
+    if (quality === 'talented') {
+        const keys = Object.keys(base) as Array<keyof YouthAttributes>;
+        for (const key of keys) {
+            const val = base[key];
+            const boost = Math.ceil((20 - val) * 0.5);
+            base[key] = Math.min(20, val + boost);
+        }
+    }
 
     base.handling = naturalPosition === 'GK' ? randomInt(12, 18) : randomInt(1, 3);
 
@@ -167,6 +177,9 @@ export async function advanceDay() {
     try {
         await processBiddingRules();
 
+        // Process age-based EXP decay for players 31+ (monthly trigger, prevents multiple per month)
+        await processAgeBasedExpDecay();
+
         // Trigger AI Market Movements on the 1st of the month
         if (nextDate.getUTCDate() === 1) {
             const { processAIMarketMovements } = await import('./aiMarketService');
@@ -193,6 +206,7 @@ export async function advanceDay() {
         for (const team of allTeams) {
             try {
                 await processWeeklyFinances(team.id, Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7)));
+                await processInactivePlayerPopularityDecay(team.id);
                 // Auto-renew contracts for AI teams (if not user team)
                 const settings = await getGameTime();
                 if (team.id !== settings.userTeamId) {
@@ -324,14 +338,60 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
     }
 
-    // 6. Add Young Prospects (5 per team)
-    console.log('[StartNewSeason] Step 6: Adding young prospects to all teams');
+    // 6. Add Young Prospects (based on ranking)
+    console.log('[StartNewSeason] Step 6: Adding young prospects based on league ranking');
     const POSITIONS = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
     const allTeams = await prisma.team.findMany();
 
+    // Get standings from last season
+    const lastSeason = currentSeason - 1;
+    type StandingEntry = { teamId: string; ranking: number; points: number };
+    let standings: StandingEntry[] = [];
+
+    if (lastSeason > 0) {
+        const matches = await prisma.match.findMany({
+            where: { season: lastSeason, isPlayed: true }
+        });
+
+        // Calculate standings (points per team)
+        const pointsMap: Record<string, number> = {};
+
+        for (const match of matches) {
+            if (!pointsMap[match.homeTeamId]) pointsMap[match.homeTeamId] = 0;
+            if (!pointsMap[match.awayTeamId]) pointsMap[match.awayTeamId] = 0;
+
+            if (match.homeScore! > match.awayScore!) {
+                pointsMap[match.homeTeamId] += 3;
+            } else if (match.homeScore! < match.awayScore!) {
+                pointsMap[match.awayTeamId] += 3;
+            } else {
+                pointsMap[match.homeTeamId] += 1;
+                pointsMap[match.awayTeamId] += 1;
+            }
+        }
+
+        // Sort by points (descending) and assign rankings
+        const sorted = Object.entries(pointsMap)
+            .sort(([, a], [, b]) => b - a)
+            .map(([teamId, points], idx) => ({ teamId, points, ranking: idx + 1 }));
+
+        standings = sorted;
+    }
+
+    // Determine youth count based on ranking
+    const getYouthCount = (ranking: number): number => {
+        if (ranking <= 5) return 1;
+        if (ranking <= 10) return 2;
+        if (ranking <= 15) return 3;
+        return 4;
+    };
+
     for (const team of allTeams) {
-        // Add 5 random young players to each team
-        for (let i = 0; i < 5; i++) {
+        const teamStanding = standings.find(s => s.teamId === team.id);
+        const ranking = teamStanding?.ranking || allTeams.indexOf(team) + 1;
+        const youthCount = getYouthCount(ranking);
+
+        for (let i = 0; i < youthCount; i++) {
             const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
             const youthAge = randomInt(16, 20);
             const youthName = randomName();
@@ -349,11 +409,11 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                     birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
                     popularity: randomInt(10, 30),
                     weeklyWage: randomInt(5000, 15000),
-                    ...generateYouthAttributes(randomPosition)
+                    ...generateYouthAttributes(randomPosition, 'talented')
                 }
             });
         }
-        console.log(`[StartNewSeason] Added 5 young prospects to ${team.name}`);
+        console.log(`[StartNewSeason] Added ${youthCount} talented young prospects to ${team.name} (Ranking: ${ranking})`);
     }
 
     // 7. Update Global Settings
