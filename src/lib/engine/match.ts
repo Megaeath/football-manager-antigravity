@@ -1,5 +1,6 @@
 import { TeamState, MatchState, PlayerState, EnginePlayerMatchStats, TeamMatchStats } from './types';
 import { calculateActionScore } from './formulas';
+import { getRoleEffects, getRoleConditionDrain } from './playerRoles';
 
 type ActionType = 'PASS_SHORT' | 'PASS_LONG' | 'DRIBBLE' | 'SHOOT';
 type Intensity = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -23,20 +24,24 @@ function calculateActionWeights(
     const passingBuff = teamTactics ? getPassingStyleBuff(teamTactics.passing) : { shortPass: 1.0, longPass: 1.0 };
     const creativeBuff = teamTactics ? getCreativeFreedomBuff(teamTactics.creative_freedom) : { shooting: 1.0, dribble: 1.0, riskTaking: 1.0 };
 
+    // Get player role effects
+    const roleEffects = player.playerRole ? getRoleEffects(player.playerRole) : null;
+    const roleModifiers = roleEffects?.actionModifiers || {};
+
     const weights = {
-        PASS_SHORT: player.attributes.passing * 0.5 * passingBuff.shortPass,
-        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3 * passingBuff.longPass,
-        DRIBBLE: player.attributes.dribbling * 0.4 * creativeBuff.dribble,
+        PASS_SHORT: player.attributes.passing * 0.5 * passingBuff.shortPass * (roleModifiers.PASS_SHORT || 1.0),
+        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3 * passingBuff.longPass * (roleModifiers.PASS_LONG || 1.0),
+        DRIBBLE: player.attributes.dribbling * 0.4 * creativeBuff.dribble * (roleModifiers.DRIBBLE || 1.0),
         SHOOT: 0
     };
 
     // Shooting zones: 0-10 = penalty area (tightened), 10-25 = long shots (reduced), >25 = no shooting
     if (distanceToGoal <= 10) {
         // Penalty area only - full shooting weight
-        weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting;
+        weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting * (roleModifiers.SHOOT || 1.0);
     } else if (distanceToGoal <= 25) {
         // Long shot zone - much reduced weight
-        weights.SHOOT = player.attributes.shooting * 0.2 * creativeBuff.shooting;
+        weights.SHOOT = player.attributes.shooting * 0.2 * creativeBuff.shooting * (roleModifiers.SHOOT || 1.0);
     }
     // Beyond 25 yards: SHOOT weight stays at 0 (no shooting)
 
@@ -936,7 +941,8 @@ function updateFitness(team: TeamState) {
         if (p.tacticalPosition !== null) {
             const baseDrain = 0.4;
             const staminaFactor = Math.max(0.7, 1 - (p.attributes.stamina - 10) * 0.02);
-            const drain = baseDrain * staminaFactor * getMentalityBuff(team.tactics.mentality).fatigue;
+            const roleDrain = p.playerRole ? getRoleConditionDrain(p.playerRole) : 1.0;
+            const drain = baseDrain * staminaFactor * getMentalityBuff(team.tactics.mentality).fatigue * roleDrain;
             p.condition = Math.max(0, p.condition - drain);
         }
     });

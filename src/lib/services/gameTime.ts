@@ -5,11 +5,19 @@ import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopular
 import { applySeasonRewards } from './seasonAwards';
 import { processBiddingRules } from '../engine/market';
 
-const FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
-const LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
+const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
+const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
+const INTL_FIRST_NAMES = ['Luca', 'Mateo', 'Noah', 'Ethan', 'Hugo', 'Leo', 'Milan', 'Oscar', 'Rafael', 'Adrian'];
+const INTL_LAST_NAMES = ['Silva', 'Fernandez', 'Martinez', 'Kovacic', 'Rossi', 'Novak', 'Almeida', 'Costa', 'Muller', 'Nielsen'];
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const randomName = () => `${FIRST_NAMES[randomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[randomInt(0, LAST_NAMES.length - 1)]}`;
+const randomName = () => {
+    // Keep local flavor but avoid 100% Thai names every season
+    const useThaiPool = Math.random() < 0.1;
+    const firstNames = useThaiPool ? TH_FIRST_NAMES : INTL_FIRST_NAMES;
+    const lastNames = useThaiPool ? TH_LAST_NAMES : INTL_LAST_NAMES;
+    return `${firstNames[randomInt(0, firstNames.length - 1)]} ${lastNames[randomInt(0, lastNames.length - 1)]}`;
+};
 
 type YouthAttributes = {
     handling: number;
@@ -20,6 +28,7 @@ type YouthAttributes = {
     dribbling: number;
     crossing: number;
     setPieces: number;
+    throw: number;
     aggression: number;
     positioning: number;
     vision: number;
@@ -37,69 +46,76 @@ type YouthAttributes = {
 
 function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 'talented' = 'normal'): YouthAttributes {
     const base: YouthAttributes = {
-        handling: randomInt(1, 3),
-        tackling: randomInt(6, 13),
-        passing: randomInt(6, 13),
-        shooting: randomInt(6, 13),
-        heading: randomInt(6, 13),
-        dribbling: randomInt(6, 13),
-        crossing: randomInt(6, 12),
-        setPieces: randomInt(6, 13),
-        aggression: randomInt(6, 13),
-        positioning: randomInt(6, 13),
-        vision: randomInt(6, 13),
-        bravery: randomInt(6, 13),
-        leadership: randomInt(6, 13),
-        teamwork: randomInt(6, 13),
-        composure: randomInt(6, 13),
-        pace: randomInt(6, 13),
-        acceleration: randomInt(6, 13),
-        stamina: randomInt(11, 17),
-        strength: randomInt(6, 13),
-        agility: randomInt(6, 13),
-        balance: randomInt(6, 13)
+        handling: randomInt(5, 11),
+        tackling: randomInt(5, 11),
+        passing: randomInt(5, 11),
+        shooting: randomInt(5, 11),
+        heading: randomInt(5, 11),
+        dribbling: randomInt(5, 11),
+        crossing: randomInt(5, 11),
+        setPieces: randomInt(5, 11),
+        throw: randomInt(5, 11),
+        aggression: randomInt(5, 11),
+        positioning: randomInt(5, 11),
+        vision: randomInt(5, 11),
+        bravery: randomInt(5, 11),
+        leadership: randomInt(5, 11),
+        teamwork: randomInt(5, 11),
+        composure: randomInt(5, 11),
+        pace: randomInt(5, 11),
+        acceleration: randomInt(5, 11),
+        stamina: randomInt(7, 13),
+        strength: randomInt(5, 11),
+        agility: randomInt(5, 11),
+        balance: randomInt(5, 11)
     };
 
-    // If talented: boost all attributes by ~30%
+    // Position-focused profiles: allow good prospects but keep strengths relevant to role
+    const applyRange = (stats: Array<keyof YouthAttributes>, min: number, max: number) => {
+        for (const stat of stats) base[stat] = randomInt(min, max);
+    };
+
+    if (naturalPosition === 'GK') {
+        applyRange(['handling', 'positioning', 'agility', 'composure', 'throw'], 12, 18);
+        applyRange(['tackling', 'crossing', 'dribbling', 'shooting', 'heading'], 1, 6);
+        applyRange(['passing', 'vision', 'leadership', 'bravery', 'strength', 'balance'], 6, 12);
+        applyRange(['pace', 'acceleration', 'stamina'], 4, 10);
+    } else if (naturalPosition === 'DC') {
+        applyRange(['tackling', 'heading', 'strength', 'positioning', 'bravery'], 12, 18);
+        applyRange(['passing', 'composure', 'leadership', 'aggression'], 8, 14);
+        applyRange(['shooting', 'dribbling', 'crossing', 'handling'], 2, 8);
+        applyRange(['pace', 'acceleration', 'stamina', 'agility', 'balance'], 7, 13);
+    } else if (['DR', 'DL'].includes(naturalPosition)) {
+        applyRange(['tackling', 'pace', 'acceleration', 'stamina', 'crossing'], 11, 17);
+        applyRange(['passing', 'positioning', 'teamwork', 'agility', 'balance'], 8, 14);
+        applyRange(['shooting', 'handling', 'heading'], 3, 9);
+    } else if (['DMC'].includes(naturalPosition)) {
+        applyRange(['tackling', 'positioning', 'stamina', 'passing', 'strength'], 11, 17);
+        applyRange(['vision', 'teamwork', 'composure', 'aggression'], 8, 14);
+        applyRange(['shooting', 'crossing', 'handling'], 3, 9);
+    } else if (['MC', 'AMC'].includes(naturalPosition)) {
+        applyRange(['passing', 'vision', 'teamwork', 'composure'], 12, 18);
+        applyRange(['dribbling', 'stamina', 'positioning', 'setPieces'], 9, 15);
+        applyRange(['tackling', 'heading', 'handling'], 3, 9);
+    } else if (['MR', 'ML', 'AMR', 'AML'].includes(naturalPosition)) {
+        applyRange(['dribbling', 'crossing', 'pace', 'acceleration'], 12, 18);
+        applyRange(['passing', 'agility', 'balance', 'stamina'], 9, 15);
+        applyRange(['handling', 'heading', 'strength'], 3, 9);
+    } else if (['FWC', 'FWR', 'FWL', 'FW'].includes(naturalPosition)) {
+        applyRange(['shooting', 'composure', 'positioning', 'pace', 'acceleration'], 12, 18);
+        applyRange(['heading', 'dribbling', 'agility', 'balance'], 8, 14);
+        applyRange(['tackling', 'handling', 'crossing'], 2, 8);
+    }
+
+    // Talented prospects: boost mainly relevant profile stats (not every stat)
     if (quality === 'talented') {
-        const keys = Object.keys(base) as Array<keyof YouthAttributes>;
-        for (const key of keys) {
-            const val = base[key];
-            const boost = Math.ceil((20 - val) * 0.5);
-            base[key] = Math.min(20, val + boost);
+        const boostKeys: Array<keyof YouthAttributes> = naturalPosition === 'GK'
+            ? ['handling', 'positioning', 'agility', 'composure', 'throw', 'vision']
+            : ['passing', 'vision', 'composure', 'pace', 'acceleration', 'stamina', 'positioning', 'agility'];
+
+        for (const key of boostKeys) {
+            base[key] = Math.min(20, base[key] + randomInt(1, 3));
         }
-    }
-
-    base.handling = naturalPosition === 'GK' ? randomInt(12, 18) : randomInt(1, 3);
-
-    if (naturalPosition === 'DC') {
-        base.tackling = randomInt(12, 18);
-        base.heading = randomInt(12, 18);
-        base.strength = randomInt(12, 18);
-        base.positioning = randomInt(11, 17);
-    }
-    if (naturalPosition === 'MC') {
-        base.passing = randomInt(12, 18);
-        base.vision = randomInt(11, 17);
-        base.teamwork = randomInt(11, 17);
-    }
-    if (['FWC', 'FWR', 'FWL', 'FW'].includes(naturalPosition)) {
-        base.shooting = randomInt(12, 18);
-        base.pace = randomInt(11, 17);
-        base.acceleration = randomInt(11, 17);
-        base.composure = randomInt(10, 16);
-    }
-    if (['MR', 'ML', 'AMR', 'AML'].includes(naturalPosition)) {
-        base.dribbling = randomInt(12, 18);
-        base.crossing = randomInt(12, 18);
-        base.pace = randomInt(12, 18);
-        base.acceleration = randomInt(12, 18);
-    }
-    if (['DR', 'DL'].includes(naturalPosition)) {
-        base.tackling = randomInt(11, 17);
-        base.pace = randomInt(11, 17);
-        base.stamina = randomInt(12, 18);
-        base.crossing = randomInt(10, 16);
     }
 
     return base;
@@ -416,9 +432,30 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         console.log(`[StartNewSeason] Added ${youthCount} talented young prospects to ${team.name} (Ranking: ${ranking})`);
     }
 
-    // 7. Update Global Settings
+    // 7. AI Role & Tactical Position Auto-Assignment
     const finalDate = nextDate ?? seasonStartDate;
-    console.log('[StartNewSeason] Step 7: Updating global settings');
+    console.log('[StartNewSeason] Step 7: AI Role Auto-Assignment');
+    
+    // Auto-assign player roles for all AI teams
+    try {
+        const { autoAssignRolesForAllAITeams } = await import('./aiRoleSelector');
+        const teamsProcessed = await autoAssignRolesForAllAITeams(settings.userTeamId || undefined);
+        console.log(`[StartNewSeason] Auto-assigned roles for ${teamsProcessed} AI teams`);
+    } catch (error) {
+        console.error('[StartNewSeason] Failed to auto-assign AI roles:', error);
+    }
+
+    // Auto-assign tactical positions for all AI teams
+    console.log('[StartNewSeason] Step 7b: AI Tactical Position Auto-Assignment');
+    try {
+        const { autoAssignTacticalPositionsForAllAITeams } = await import('./autoTacticalPositionSelector');
+        const teamsProcessed = await autoAssignTacticalPositionsForAllAITeams(settings.userTeamId || undefined);
+        console.log(`[StartNewSeason] Auto-assigned tactical positions for ${teamsProcessed} AI teams`);
+    } catch (error) {
+        console.error('[StartNewSeason] Failed to auto-assign tactical positions:', error);
+    }
+    
+    console.log('[StartNewSeason] Step 8: Updating global settings');
     console.log('[StartNewSeason] Final date:', finalDate.toISOString());
     console.log('[StartNewSeason] New season:', nextSeason);
 

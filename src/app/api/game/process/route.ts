@@ -53,6 +53,51 @@ export async function POST(req: Request) {
         const settings = await getGameTime();
         const userTeamId = settings.userTeamId || '';
 
+        // Initialize AI team assignments on first access (if missing)
+        try {
+            const { autoAssignRolesForAllAITeams } = await import('@/lib/services/aiRoleSelector');
+            const { autoAssignTacticalPositionsForAllAITeams } = await import('@/lib/services/autoTacticalPositionSelector');
+            
+            // Check if we need to initialize
+            const aiTeams = await prisma.team.findMany({
+                where: { id: { not: userTeamId || undefined } },
+                select: { id: true }
+            });
+
+            if (aiTeams.length > 0) {
+                // Check if any team is missing role assignments
+                const teamWithoutRoles = await prisma.player.findFirst({
+                    where: {
+                        teamId: { in: aiTeams.map(t => t.id) },
+                        playerRole: null,
+                        isRetired: false
+                    }
+                });
+
+                if (teamWithoutRoles) {
+                    console.log('[Process API] Initializing AI team roles...');
+                    await autoAssignRolesForAllAITeams(userTeamId || undefined);
+                }
+
+                // Check if any team is missing tactical position assignments
+                const teamWithoutPositions = await prisma.player.findFirst({
+                    where: {
+                        teamId: { in: aiTeams.map(t => t.id) },
+                        tacticalPosition: null,
+                        isRetired: false
+                    }
+                });
+
+                if (teamWithoutPositions) {
+                    console.log('[Process API] Initializing AI team tactical positions...');
+                    await autoAssignTacticalPositionsForAllAITeams(userTeamId || undefined);
+                }
+            }
+        } catch (error) {
+            console.error('[Process API] Failed to initialize AI teams:', error);
+            // Don't fail the whole request, just log the error
+        }
+
         if (action === 'update_match_tactics') {
             // Save match-specific tactics before simulation (for user team)
             const updates: any = {};

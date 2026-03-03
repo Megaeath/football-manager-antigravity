@@ -138,6 +138,7 @@ function mapPlayer(p: any): PlayerState {
         morale: p.morale,
         exp: exp,
         tacticalPosition: p.tacticalPosition,
+        playerRole: p.playerRole || null,
         cards: { yellow: 0, red: 0 },
         stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }
     };
@@ -488,12 +489,21 @@ export async function processMatchFinancials(matchId: string) {
 
     // Update player popularity for all players in the match
     for (const stat of match.playerStats) {
+        const player = await prisma.player.findUnique({
+            where: { id: stat.playerId },
+            select: { naturalPosition: true }
+        });
+
         await updatePlayerPopularity(stat.playerId, {
             goals: stat.goals,
+            assists: stat.assists,
             isMotm: stat.id === match.motmPlayerId,
             played: stat.minutes > 0,
             rating: stat.rating,
             redCards: stat.redCards,
+            tackles: stat.tacklesWon,
+            saves: stat.saves,
+            naturalPosition: player?.naturalPosition,
             isImportantMatch: false // Can be enhanced to detect derby matches, cup finals, etc.
         });
     }

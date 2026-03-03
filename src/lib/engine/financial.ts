@@ -20,34 +20,83 @@ export function calculatePlayerOverall(player: Player): number {
 
 /**
  * Update player popularity after match
- * Add: Goal (+1), MOTM (+2), Appearance (+0.5), Win important match (+2)
- * Subtract: Long injury (-1/week), Bad form (-1.5), Red card (-3)
+ * Position-balanced system:
+ * - Forwards: Goals (+0.5), Assists (+0.5), MOTM (+1.5)
+ * - Defenders: Clean sheet contribution (+0.5), Tackles/Interceptions (+0.3), MOTM (+1.5)
+ * - Goalkeepers: Saves/Clean sheet (+0.5), MOTM (+1.5)
+ * - All: Appearance (+0.2), Rating bonus (8+: +0.5)
+ * - Diminishing returns: gains reduced by 50% when popularity > 80
+ * 
+ * Negative: Bad form (rating < 4: -1), Red card (-2)
  */
 export async function updatePlayerPopularity(
     playerId: string,
     matchStats: {
-        goals: number;
+        goals?: number;
+        assists?: number;
         isMotm: boolean;
         played: boolean;
         rating: number;
         redCards: number;
         isImportantMatch?: boolean;
+        tackles?: number;
+        saves?: number;
+        naturalPosition?: string; // For position-specific bonuses
     }
 ): Promise<number> {
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) return 0;
 
+    const position = matchStats.naturalPosition || player.naturalPosition;
+    const isGK = position === 'GK';
+    const isDefender = ['DC', 'DR', 'DL'].includes(position);
+    const isMidfield = ['MC', 'AMC', 'DMC', 'MR', 'ML'].includes(position);
+    const isForward = position.startsWith('FW');
+
     let popularityChange = 0;
 
-    // Positive changes
-    if (matchStats.goals > 0) popularityChange += matchStats.goals * 1;
-    if (matchStats.isMotm) popularityChange += 2;
-    if (matchStats.played) popularityChange += 0.5;
-    if (matchStats.isImportantMatch) popularityChange += 2;
+    // Base: Appearance + Rating bonus (equal for all positions)
+    if (matchStats.played) popularityChange += 0.2;
+    if (matchStats.rating >= 8) popularityChange += 0.5;
+    else if (matchStats.rating >= 7) popularityChange += 0.3;
+
+    // Position-specific bonuses
+    if (isGK) {
+        // GK: Clean sheet contribution (0.5), Saves (0.2 per 3 saves)
+        if (matchStats.saves) {
+            const saveBonuses = Math.floor((matchStats.saves || 0) / 3) * 0.2;
+            popularityChange += Math.min(0.5, saveBonuses);
+        }
+    } else if (isDefender) {
+        // Defenders: Tackles (+0.3 per 2), Interceptions/Clean sheet (+0.3)
+        if (matchStats.tackles) {
+            const tackleBonuses = Math.floor((matchStats.tackles || 0) / 2) * 0.3;
+            popularityChange += Math.min(0.5, tackleBonuses);
+        }
+    } else if (isForward || isMidfield) {
+        // Forwards & Midfielders: Goals (+0.5), Assists (+0.5)
+        if (matchStats.goals && matchStats.goals > 0) {
+            popularityChange += Math.min(1.0, matchStats.goals * 0.5); // Max +1.0 per match
+        }
+        if (matchStats.assists && matchStats.assists > 0) {
+            popularityChange += Math.min(0.5, matchStats.assists * 0.5);
+        }
+    }
+
+    // MOTM (all positions)
+    if (matchStats.isMotm) popularityChange += 1.5;
+
+    // Important match bonus (all positions)
+    if (matchStats.isImportantMatch) popularityChange += 0.8;
 
     // Negative changes
-    if (matchStats.rating < 4) popularityChange -= 1.5; // Bad form
-    if (matchStats.redCards > 0) popularityChange -= 3;
+    if (matchStats.rating < 4) popularityChange -= 1.0; // Bad form (reduced from 1.5)
+    if (matchStats.redCards > 0) popularityChange -= 2; // Red card (reduced from 3)
+
+    // Diminishing returns: gains reduced by 50% when popularity > 80
+    if (player.popularity > 80) {
+        popularityChange *= 0.5;
+    }
 
     // Update player popularity (clamp 0-100)
     const newPopularity = Math.max(0, Math.min(100, player.popularity + popularityChange));
@@ -208,13 +257,13 @@ export async function evaluateMarketValue(player: Player): Promise<number> {
         exp: player.exp || 0
     }).powerWithExp;
 
-    // Get team reputation
-    const team = await prisma.team.findUnique({
+    // Get team reputation (if player has a team)
+    const team = player.teamId ? await prisma.team.findUnique({
         where: { id: player.teamId }
-    });
+    }) : null;
 
     // Calculate average rating from match stats
-    const matchStats = await prisma.matchStats.findMany({
+    const matchStats = await prisma.playerMatchStats.findMany({
         where: { playerId: player.id },
         select: { rating: true }
     });
@@ -292,6 +341,22 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
     const team = await prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new Error(`Team ${teamId} not found`);
 
+    // 1. Handle contract expiration (release free agents)
+    const expiredContracts = await handleContractExpiration(teamId);
+    if (expiredContracts.releasedCount > 0) {
+        console.log(`[Weekly Finance] Week ${week}: Released ${expiredContracts.releasedCount} players to free agency`, expiredContracts.releasedPlayers);
+    }
+
+    // 2. Decrement contract weeks for remaining players
+    await prisma.player.updateMany({
+        where: { teamId },
+        data: {
+            contractEndWeek: {
+                decrement: 1
+            }
+        }
+    });
+
     const accounting = await calculateWeeklyAccounting(teamId);
 
     // Update team balance
@@ -367,6 +432,45 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
             }
         });
     }
+}
+
+/**
+ * Handle contract expiration: Release players when contract ends (week <= 0)
+ * Players become free agents (teamId set to null)
+ */
+export async function handleContractExpiration(teamId: string): Promise<{
+    releasedCount: number;
+    releasedPlayers: string[];
+}> {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { players: true }
+    });
+
+    if (!team) return { releasedCount: 0, releasedPlayers: [] };
+
+    const releasedPlayers: string[] = [];
+
+    // Find players whose contract has expired (contractEndWeek <= 0)
+    for (const player of team.players) {
+        if (player.contractEndWeek <= 0) {
+            // Release player to free agency
+            await prisma.player.update({
+                where: { id: player.id },
+                data: {
+                    teamId: null, // Remove from team
+                    playerRole: null, // Clear role assignment
+                    tacticalPosition: null, // Clear tactical position
+                    transferStatus: 'NOT_LISTED'
+                }
+            });
+
+            releasedPlayers.push(`${player.name} (${player.naturalPosition})`);
+            console.log(`[Contract] Player released to free agency: ${player.name}`);
+        }
+    }
+
+    return { releasedCount: releasedPlayers.length, releasedPlayers };
 }
 
 /**

@@ -8,12 +8,14 @@ import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
 import PlayerModal from '@/components/PlayerModal';
 import { getClubReputation } from '@/lib/reputation';
 import TacticsTabs from '@/components/TacticsTabs';
+import PlayerRolesReadOnlyTab from '@/components/PlayerRolesReadOnlyTab';
 
 interface Player {
     id: string;
     name: string;
     naturalPosition: string;
     tacticalPosition: string | null;
+    playerRole?: string | null;
     apps: number;
     goals: number;
     assists: number;
@@ -103,14 +105,18 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
     const searchParams = useSearchParams();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
+
+    const openPlayerModal = (playerId: string) => {
+        router.push(`/team/${team.id}?playerId=${playerId}`);
+    };
 
     // Check for tab query parameter
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'tactics' || tab === 'matches' || tab === 'squad') {
-            setActiveTab(tab);
+        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles') {
+            setActiveTab(tab as any);
         }
     }, [searchParams]);
 
@@ -309,6 +315,21 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                 >
                     Team Tactics
                 </button>
+                <button
+                    onClick={() => setActiveTab('roles')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'roles' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'roles' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    👔 Player Roles
+                </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
                         <>
@@ -455,7 +476,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                     </td>
                                     <td style={{ padding: '12px' }}>
                                         <button 
-                                            onClick={() => router.push(`/team/${team.id}?playerId=${p.id}`)}
+                                            onClick={() => openPlayerModal(p.id)}
                                             style={{ fontWeight: '600', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                         >
                                             {p.name}
@@ -570,7 +591,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                                             <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
                                                 #{idx + 1}{' '}
                                                 <button
-                                                    onClick={() => router.push(`/team/${team.id}?playerId=${p.id}`)}
+                                                    onClick={() => openPlayerModal(p.id)}
                                                     style={{ fontWeight: 'bold', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                                 >
                                                     {p.name}
@@ -594,6 +615,10 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                     </div>
                 </div>
             </div>
+            )}
+
+            {activeTab === 'roles' && (
+                <PlayerRolesReadOnlyTab players={team.players} teamName={team.name} onViewPlayer={openPlayerModal} />
             )}
 
             <PlayerModal />

@@ -45,6 +45,7 @@ export interface PlayerState {
     morale: number;    // 0-100
     exp: number;       // Total accumulated EXP (0-1000)
     tacticalPosition: string | null; // e.g. "GK", "FW_L"
+    playerRole?: string | null; // e.g. "PLAYMAKER", "TARGET_MAN"
     cards: { yellow: number; red: number };
     stats: { goals: number; assists: number; tackles: number; passes: number };
 }

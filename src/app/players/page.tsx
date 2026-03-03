@@ -14,7 +14,7 @@ interface Player {
     avgRating: number;
     marketValue: number;
     contractEndWeek: number | null;
-    teamId: string;
+    teamId: string | null;
     teamName: string;
 }
 
@@ -41,10 +41,11 @@ export default function PlayersPage() {
     const [selectedTeam, setSelectedTeam] = useState('');
     const [selectedPosition, setSelectedPosition] = useState('');
     const [contractEndingSoon, setContractEndingSoon] = useState(false);
+    const [showFreeAgentsOnly, setShowFreeAgentsOnly] = useState(false);
     const [sortBy, setSortBy] = useState<SortField>('power');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-    const positions = ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'];
+    const positions = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
 
     const handleSortColumnClick = (field: SortField) => {
         if (sortBy === field) {
@@ -107,6 +108,11 @@ export default function PlayersPage() {
             result = result.filter(p => p.contractEndWeek && p.contractEndWeek <= 10);
         }
 
+        // Filter by free agents
+        if (showFreeAgentsOnly) {
+            result = result.filter(p => !p.teamId);
+        }
+
         // Sort
         result.sort((a, b) => {
             let compareValue = 0;
@@ -132,10 +138,10 @@ export default function PlayersPage() {
 
         setFiltered(result);
         setCurrentPage(1);
-    }, [players, searchName, minPower, maxPower, minPrice, maxPrice, minAge, maxAge, selectedTeam, selectedPosition, contractEndingSoon, sortBy, sortOrder]);
+    }, [players, searchName, minPower, maxPower, minPrice, maxPrice, minAge, maxAge, selectedTeam, selectedPosition, contractEndingSoon, showFreeAgentsOnly, sortBy, sortOrder]);
 
-    // Get unique teams
-    const uniqueTeams = Array.from(new Set(players.map(p => p.teamId)))
+    // Get unique teams (excluding free agents)
+    const uniqueTeams = Array.from(new Set(players.filter(p => p.teamId).map(p => p.teamId as string)))
         .map(id => {
             const player = players.find(p => p.teamId === id);
             return { id, name: player?.teamName || 'Unknown' };
@@ -377,6 +383,27 @@ export default function PlayersPage() {
                             {contractEndingSoon ? '✓ ใกล้หมด (≤10 อ.)' : 'สัญญาใกล้หมด'}
                         </button>
                     </div>
+
+                    {/* Free Agents Only */}
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>นักเตะอิสระ</label>
+                        <button
+                            onClick={() => setShowFreeAgentsOnly(!showFreeAgentsOnly)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                background: showFreeAgentsOnly ? '#ff9800' : 'var(--border)',
+                                color: showFreeAgentsOnly ? 'white' : 'var(--text)',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.95rem',
+                                fontWeight: '500'
+                            }}
+                        >
+                            {showFreeAgentsOnly ? '⭐ นักเตะอิสระเท่านั้น' : '🆓 นักเตะอิสระ'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Clear Filters */}
@@ -392,6 +419,7 @@ export default function PlayersPage() {
                         setSelectedTeam('');
                         setSelectedPosition('');
                         setContractEndingSoon(false);
+                        setShowFreeAgentsOnly(false);
                         setSortBy('power');
                         setSortOrder('desc');
                     }}
@@ -562,7 +590,9 @@ export default function PlayersPage() {
                                             </td>
                                             <td style={{ padding: '12px' }}>
                                                 <span style={{ whiteSpace: 'nowrap' }}>
-                                                    {player.teamName}
+                                                    {player.teamId ? player.teamName : (
+                                                        <span style={{ color: '#ff9800', fontWeight: 'bold' }}>🆓 นักเตะอิสระ</span>
+                                                    )}
                                                 </span>
                                             </td>
                                             <td style={{ padding: '12px', textAlign: 'right', fontWeight: '500' }}>

@@ -8,6 +8,7 @@ import { calculatePlayerPower, getFitnessFactor, getEffectiveAttributes } from '
 import { getExpBonus } from '@/lib/engine/experience';
 import PlayerModal from '@/components/PlayerModal';
 import TacticsTabs from '@/components/TacticsTabs';
+import PlayerRolesTab from '@/components/PlayerRolesTab';
 
 type PlayerProps = {
     id: string;
@@ -17,6 +18,7 @@ type PlayerProps = {
     condition: number;
     morale: number;
     tacticalPosition: string | null;
+    playerRole?: string | null;
     suitability: number;
     fitnessSuitability: number;
     rawAttributes: PlayerAttributes;
@@ -114,12 +116,16 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
     const router = useRouter();
     const searchParams = useSearchParams();
     const fromMatch = searchParams.get('from') === 'match';
     const matchId = searchParams.get('matchId');
+
+    const openPlayerModal = (playerId: string) => {
+        router.push(`/squad?playerId=${playerId}`);
+    };
 
     const handleStartMatch = async () => {
         if (!matchId) return;
@@ -433,6 +439,21 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 >
                     ⚙️ แผนการเล่น
                 </button>
+                <button
+                    onClick={() => setActiveTab('roles')}
+                    style={{
+                        padding: '12px 24px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'roles' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'roles' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    👔 Player Roles
+                </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
                         <>
@@ -624,7 +645,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                         </td>
                                         <td style={{ padding: '6px' }}>
                                             <button
-                                                onClick={() => router.push(`/squad?playerId=${p.id}`)}
+                                                onClick={() => openPlayerModal(p.id)}
                                                 style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                             >
                                                 {p.name}
@@ -719,6 +740,10 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 <div className="card">
                     <TacticsTabs teamId={teamId} />
                 </div>
+            )}
+
+            {activeTab === 'roles' && (
+                <PlayerRolesTab players={players} teamId={teamId} onViewPlayer={openPlayerModal} />
             )}
 
             <PlayerModal />

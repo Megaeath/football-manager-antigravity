@@ -136,6 +136,7 @@ export default async function SquadPage() {
             condition: p.condition,
             morale: p.morale,
             tacticalPosition: p.tacticalPosition,
+            playerRole: p.playerRole,
             suitability: baseSuitability,
             fitnessSuitability,
             rawAttributes: attrs,

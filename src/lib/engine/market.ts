@@ -350,6 +350,17 @@ export async function processBiddingRules() {
                 });
             });
 
+            // Auto-assign player role after transfer (for AI teams only)
+            const settings = await getGameTime();
+            if (winningBid.fromTeamId !== settings.userTeamId) {
+                try {
+                    const { reassignRoleAfterTransfer } = await import('../services/aiRoleSelector');
+                    await reassignRoleAfterTransfer(playerId);
+                } catch (error) {
+                    console.error(`[Market] Failed to reassign role for player ${playerId}:`, error);
+                }
+            }
+
             await createNewsEvent(
                 `Transfer Completed: ${player.name} has joined ${winningBid.fromTeam.name} ${winningBid.isFreeAgent ? 'on a free transfer' : `for $${winningBid.amount.toLocaleString()}`}.`,
                 winningBid.fromTeam.id

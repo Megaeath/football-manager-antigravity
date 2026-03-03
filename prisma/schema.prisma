@@ -72,7 +72,7 @@ model Player {
   id        String   @id @default(cuid())
   name      String
   age       Int
-  teamId    String
+  teamId    String?  // Nullable for free agents
   
   // Primary Position (Natural)
   naturalPosition String // Stored as string, e.g. "GK", "FWR"
@@ -112,6 +112,9 @@ model Player {
   morale    Int  @default(100)
   condition Int  @default(100) // Match Fitness (0-100)
   tacticalPosition String? // E.g. "GK", "DR", "DC_L", "DC_R", "FW_L", "FW_R" - if null, not starting
+  
+  // Player Role System
+  playerRole String? // NULL = no role assigned | Values: "PLAYMAKER", "TARGET_MAN", etc.
   
   // Stats (Season Aggregate)
   goals     Int @default(0)

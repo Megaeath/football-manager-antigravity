@@ -97,8 +97,6 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
             condition: 100,
             exp: player.exp || 0
         }).powerWithExp;
-            exp: player.exp
-        }).powerWithExp;
 
         let shouldList = false;
         if (player.age > 30) shouldList = true;
@@ -131,10 +129,28 @@ async function processAIBuyingLogic(
     });
     if (!team || team.balance < 1000000) return;
 
+    // Include free agents in the pool
+    const freeAgents = await prisma.player.findMany({
+        where: { teamId: null, isRetired: false },
+        include: { team: true }
+    });
+
+    const freeAgentsWithPower = freeAgents.map(p => ({
+        player: p,
+        power: calculatePlayerPower({ 
+            attributes: toPlayerAttributes(p), 
+            targetPosition: p.naturalPosition.split('_')[0],
+            condition: 100,
+            exp: p.exp || 0
+        }).powerWithExp
+    }));
+
+    const allAvailable = [...listedPlayers, ...freeAgentsWithPower];
+
     const maxBudget = isTopTier ? team.balance * 0.8 : team.balance * 0.5;
 
     // Fixed filter with safe season check
-    const targets = listedPlayers.filter(lp =>
+    const targets = allAvailable.filter(lp =>
         lp.player.teamId !== teamId &&
         (lp.player.lastTransferredSeason ?? -1) < currentSeason
     );
@@ -145,8 +161,10 @@ async function processAIBuyingLogic(
         const bestTargets = targets.filter(lp => lp.power > 72 && (lp.player.askingPrice || 0) <= maxBudget);
         if (bestTargets.length > 0) {
             const t = bestTargets[Math.floor(Math.random() * bestTargets.length)];
-            const res = await submitBid(t.player.id, teamId, t.player.askingPrice || await evaluateMarketValue(t.player));
-            log(`[AI Market] ${team.name} (Top) bid for ${t.player.name} (P:${t.power}): ${res.success ? 'Success' : res.message}`);
+            const isFreeAgent = !t.player.teamId;
+            const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
+            const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
+            log(`[AI Market] ${team.name} (Top) bid for ${t.player.name} (${source}, P:${t.power}): ${res.success ? 'Success' : res.message}`);
         }
     } else {
         // Fill weak positions
@@ -159,8 +177,10 @@ async function processAIBuyingLogic(
                 const posTargets = targets.filter(lp => lp.player.naturalPosition.startsWith(pos) && lp.power > 65 && (lp.player.askingPrice || 0) <= maxBudget);
                 if (posTargets.length > 0) {
                     const t = posTargets[Math.floor(Math.random() * posTargets.length)];
-                    const res = await submitBid(t.player.id, teamId, t.player.askingPrice || await evaluateMarketValue(t.player));
-                    log(`[AI Market] ${team.name} bid for ${t.player.name} (${pos}, P:${t.power}): ${res.success ? 'Success' : res.message}`);
+                    const isFreeAgent = !t.player.teamId;
+                    const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
+                    const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
+                    log(`[AI Market] ${team.name} bid for ${t.player.name} (${pos}, ${source}, P:${t.power}): ${res.success ? 'Success' : res.message}`);
                     break;
                 }
             }
