@@ -25,7 +25,7 @@ export async function GET(
                     orderBy: { date: 'desc' }
                 },
                 matchStats: {
-                    include: { match: { include: { homeTeam: true, awayTeam: true } } },
+                    include: { match: { select: { id: true, date: true, season: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, homeTeam: { select: { name: true } }, awayTeam: { select: { name: true } } } } },
                     orderBy: { match: { date: 'desc' } },
                     take: 100
                 }

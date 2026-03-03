@@ -46,28 +46,28 @@ type YouthAttributes = {
 
 function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 'talented' = 'normal'): YouthAttributes {
     const base: YouthAttributes = {
-        handling: randomInt(5, 11),
-        tackling: randomInt(5, 11),
-        passing: randomInt(5, 11),
-        shooting: randomInt(5, 11),
-        heading: randomInt(5, 11),
-        dribbling: randomInt(5, 11),
-        crossing: randomInt(5, 11),
-        setPieces: randomInt(5, 11),
-        throw: randomInt(5, 11),
-        aggression: randomInt(5, 11),
-        positioning: randomInt(5, 11),
-        vision: randomInt(5, 11),
-        bravery: randomInt(5, 11),
-        leadership: randomInt(5, 11),
-        teamwork: randomInt(5, 11),
-        composure: randomInt(5, 11),
-        pace: randomInt(5, 11),
-        acceleration: randomInt(5, 11),
+        handling: randomInt(5, 17),
+        tackling: randomInt(5, 17),
+        passing: randomInt(5, 17),
+        shooting: randomInt(5, 17),
+        heading: randomInt(5, 17),
+        dribbling: randomInt(5, 17),
+        crossing: randomInt(5, 17),
+        setPieces: randomInt(5, 17),
+        throw: randomInt(5, 17),
+        aggression: randomInt(5, 17),
+        positioning: randomInt(5, 17),
+        vision: randomInt(5, 17),
+        bravery: randomInt(5, 17),
+        leadership: randomInt(5, 17),
+        teamwork: randomInt(5, 17),
+        composure: randomInt(5, 17),
+        pace: randomInt(5, 17),
+        acceleration: randomInt(5, 17),
         stamina: randomInt(7, 13),
-        strength: randomInt(5, 11),
-        agility: randomInt(5, 11),
-        balance: randomInt(5, 11)
+        strength: randomInt(5, 17),
+        agility: randomInt(5, 17),
+        balance: randomInt(5, 17)
     };
 
     // Position-focused profiles: allow good prospects but keep strengths relevant to role
@@ -114,7 +114,7 @@ function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 't
             : ['passing', 'vision', 'composure', 'pace', 'acceleration', 'stamina', 'positioning', 'agility'];
 
         for (const key of boostKeys) {
-            base[key] = Math.min(20, base[key] + randomInt(1, 3));
+            base[key] = Math.min(20, base[key] + randomInt(1, 5));
         }
     }
 
@@ -189,18 +189,12 @@ export async function advanceDay() {
         });
     }
 
-    // Process expired bids and transfers
+    // Process expired bids and transfers (daily)
     try {
         await processBiddingRules();
 
         // Process age-based EXP decay for players 31+ (monthly trigger, prevents multiple per month)
         await processAgeBasedExpDecay();
-
-        // Trigger AI Market Movements on the 1st of the month
-        if (nextDate.getUTCDate() === 1) {
-            const { processAIMarketMovements } = await import('./aiMarketService');
-            await processAIMarketMovements();
-        }
     } catch (error) {
         console.error('Error processing market rules:', error);
     }
@@ -231,6 +225,19 @@ export async function advanceDay() {
             } catch (error) {
                 console.error(`Failed to process financials for team ${team.id}:`, error);
             }
+        }
+
+    }
+
+    // Trigger AI Market Movements monthly on day 1
+    const isFirstDayOfMonth = nextDate.getUTCDate() === 1;
+    if (isFirstDayOfMonth) {
+        try {
+            console.log('[GameTime] Triggering monthly AI Market movements (day 1)...');
+            const { processAIMarketMovements } = await import('./aiMarketService');
+            await processAIMarketMovements();
+        } catch (error) {
+            console.error('[GameTime] Error processing AI Market:', error);
         }
     }
 

@@ -394,6 +394,9 @@ export async function processMatch(matchId: string) {
             dribblesWon: stat.dribblesWon,
             saves: stat.saves,
             fitnessEnd: stat.fitnessEnd,
+            defensiveThirdTouches: stat.defensiveThirdTouches || 0,
+            middleThirdTouches: stat.middleThirdTouches || 0,
+            attackingThirdTouches: stat.attackingThirdTouches || 0,
             yellowCards: stat.yellowCards,
             redCards: stat.redCards,
             freeKicks: stat.freeKicks || 0,
@@ -402,7 +405,50 @@ export async function processMatch(matchId: string) {
         }));
 
         if (statsToCreate.length > 0) {
-            await tx.playerMatchStats.createMany({ data: statsToCreate });
+            try {
+                await (tx.playerMatchStats as any).createMany({ data: statsToCreate });
+            } catch (err: any) {
+                const msg = String(err?.message || '');
+                // Backward compatibility: schema/client not migrated yet
+                if (msg.includes('defensiveThirdTouches') || msg.includes('middleThirdTouches') || msg.includes('attackingThirdTouches')) {
+                    const legacyStatsToCreate = statsToCreate.map((s) => {
+                        const { defensiveThirdTouches, middleThirdTouches, attackingThirdTouches, ...legacy } = s as any;
+                        return legacy;
+                    });
+                    await (tx.playerMatchStats as any).createMany({ data: legacyStatsToCreate });
+                } else {
+                    throw err;
+                }
+            }
+        }
+
+        const actionLogsToCreate = (result.actionLogs || []).map((log: any) => ({
+            matchId: matchId,
+            playerId: log.playerId,
+            teamId: log.teamId,
+            minute: log.minute,
+            ballPosition: log.ballPosition,
+            zone: log.zone,
+            actionType: log.actionType,
+            result: log.result,
+            isSuccessful: log.isSuccessful,
+            expectedSuccessRate: typeof log.expectedSuccessRate === 'number' ? log.expectedSuccessRate : null,
+            targetPlayerId: log.targetPlayerId || null,
+            metadata: log.metadata || null
+        }));
+
+        if (actionLogsToCreate.length > 0) {
+            try {
+                await ((tx as any).playerActionLog).createMany({ data: actionLogsToCreate });
+            } catch (err: any) {
+                const msg = String(err?.message || '');
+                // Backward compatibility: action log table/model not available yet
+                if (msg.includes('playerActionLog') || msg.includes('PlayerActionLog') || msg.includes('Unknown argument')) {
+                    console.warn('[MatchSimulator] Skipping PlayerActionLog persistence (migration/client not ready yet).');
+                } else {
+                    throw err;
+                }
+            }
         }
 
         for (const stat of playerStats) {

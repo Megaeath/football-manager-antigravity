@@ -113,6 +113,9 @@ export interface EnginePlayerMatchStats {
     dribblesAttempted: number;
     dribblesWon: number;
     fitnessEnd: number; // 0-100 end-of-match fitness
+    defensiveThirdTouches: number;
+    middleThirdTouches: number;
+    attackingThirdTouches: number;
     fouls: number;
     yellowCards: number;
     redCards: number;
@@ -121,6 +124,20 @@ export interface EnginePlayerMatchStats {
     throws: number;
     offsides: number;
 
+}
+
+export interface PlayerActionLog {
+    playerId: string;
+    teamId: string;
+    minute: number;
+    ballPosition: number;
+    zone: 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING';
+    actionType: 'PASS_SHORT' | 'PASS_LONG' | 'DRIBBLE' | 'SHOOT' | 'TACKLE' | 'SAVE' | 'INTERCEPTION' | 'FOUL';
+    result: 'SUCCESS' | 'FAIL' | 'GOAL' | 'SAVED' | 'BLOCKED' | 'OFF_TARGET';
+    isSuccessful: boolean;
+    expectedSuccessRate?: number;
+    targetPlayerId?: string;
+    metadata?: string;
 }
 
 export interface TeamMatchStats {
@@ -149,6 +166,7 @@ export interface MatchState {
     awayTeamId: string;
     teamStats: { home: TeamMatchStats; away: TeamMatchStats };
     events: MatchEventLog[];
+    actionLogs: PlayerActionLog[];
     isFinished: boolean;
     playerStats: Record<string, EnginePlayerMatchStats>;
 }

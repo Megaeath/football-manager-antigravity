@@ -154,6 +154,7 @@ model Player {
 
   // Relations
   matchStats    PlayerMatchStats[]
+  actionLogs    PlayerActionLog[]
   team          Team?              @relation(fields: [teamId], references: [id])
   motmMatches   Match[]            @relation("MatchMotM")
   PlayerReputation PlayerReputation[]
@@ -196,6 +197,7 @@ model Match {
   
   events      MatchEvent[]
   playerStats PlayerMatchStats[]
+  actionLogs  PlayerActionLog[]
 }
 
 model MatchEvent {
@@ -240,9 +242,38 @@ model PlayerMatchStats {
   throws            Int @default(0)
   fitnessEnd        Int @default(100) // End-of-match fitness (0-100)
 
+  // Field usage tracking by thirds
+  defensiveThirdTouches Int @default(0) // 1-30
+  middleThirdTouches    Int @default(0) // 31-70
+  attackingThirdTouches Int @default(0) // 71-100
+
   
   match     Match    @relation(fields: [matchId], references: [id])
   player    Player   @relation(fields: [playerId], references: [id])
+}
+
+model PlayerActionLog {
+  id                  String   @id @default(cuid())
+  matchId             String
+  playerId            String
+  teamId              String
+  minute              Int
+  ballPosition        Int      // 0-100 field position
+  zone                String   // DEFENSIVE | MIDDLE | ATTACKING
+  actionType          String   // PASS_SHORT | PASS_LONG | DRIBBLE | SHOOT | TACKLE | SAVE | INTERCEPTION | FOUL
+  result              String   // SUCCESS | FAIL | GOAL | SAVED | BLOCKED | OFF_TARGET
+  isSuccessful        Boolean
+  expectedSuccessRate Float?   // 0-1 expected probability for this action
+  targetPlayerId      String?
+  metadata            String?  // JSON string for extensible raw context
+  createdAt           DateTime @default(now())
+
+  match               Match    @relation(fields: [matchId], references: [id])
+  player              Player   @relation(fields: [playerId], references: [id])
+
+  @@index([matchId, playerId])
+  @@index([playerId, actionType])
+  @@index([teamId, zone])
 }
 
 // ========== FINANCIAL SYSTEM MODELS ==========

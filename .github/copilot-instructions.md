@@ -20,11 +20,57 @@ The match engine is the heart of the system:
 - **Input**: `processMatch(matchId)` queries DB for Match, Teams, Players, Tactics
 - **Execution**: `simulateMatch()` runs 2,700 minute iterations (90 min × 30 actions/min)
 - **Action Selection**: Probabilistic model based on player attributes, position, ball position, team tactics
-- **Output**: Match statistics (goals, assists, possession, passes, cards) aggregated per-player
+- **Output**: Match statistics (goals, assists, possession, passes, cards) aggregated per-player + raw per-action logs
 
 **Critical Pattern**: Attributes are modified BEFORE simulation via `getEffectiveAttributes()` which applies experience multipliers and condition penalties.
 
-### 2. Three-Layer Attribute System
+### 1.1 Raw Action Logging & Field Zones
+
+The match engine now stores **raw action-level logs** (`PlayerActionLog`) for analysis-first workflows.
+
+- Every key action is logged with: minute, ballPosition (0-100), zone, actionType, result, expectedSuccessRate
+- Zones are normalized into 3 thirds:
+    - **DEFENSIVE** = 1-30
+    - **MIDDLE** = 31-70
+    - **ATTACKING** = 71-100
+- Aggregated per-match counters are persisted in `PlayerMatchStats`:
+    - `defensiveThirdTouches`, `middleThirdTouches`, `attackingThirdTouches`
+
+**Design rule**: UI analytics should be calculated from raw logs when possible, not hardcoded summaries.
+
+### 1.2 Player Analysis UI on Match Page
+
+The `/match` page provides deep player performance analysis with interactive visualizations:
+
+**Features** (in expanded player card):
+- **Field Zone Distribution Chart**: Clickable stacked bar showing defensive/middle/attacking zone usage
+  - Click on a zone to highlight it (future: filter actions to that zone)
+  - Displays percentages and absolute touch counts
+  - Hoverable for detailed tooltip
+  - Height: 24px to accommodate numbers display
+
+- **Action Breakdown**: Percentage distribution of action types (PASS_SHORT, PASS_LONG, DRIBBLE, SHOOT)
+  - Always totals to 100% based on `totalAttempts` across 4 action types
+  - Shows: percentage (bold), attempt count, success rate
+  - Grid layout: 4 columns, fixed width for scanning
+
+- **Detailed Action Stats**: Per-action success metrics
+  - Success rate %, success count / attempts
+  - Shows difference between action types (e.g., 88% PASS_SHORT vs 45% DRIBBLE)
+
+**Column Header** (before player cards):
+- Added descriptive header row with abbreviations:
+  - POS, NAME, MIN, RAT, FIT, SHO, PAS, CRS, DRB, TCK
+  - Styled with light background, uppercase, smaller font
+  - Includes tooltips on hover explaining each column
+
+**Implementation** (`src/app/match/page.tsx`):
+- State: `selectedZoneFilter` (future zone filtering)
+- Calculation: Zone percentages use `analytics?.zones` with fallback to `playerMatchStats` thirds
+- Action breakdown: Iterates actions array, calculates `(attempts / totalAttempts) * 100`
+- Visual: Responsive grid, hover effects, border highlights for selected zones
+
+### 3. Three-Layer Attribute System
 
 **Player Attributes** (0-20 scale):
 - **Technical**: handling, tackling, passing, shooting, heading, dribbling, crossing, setPieces, throw
@@ -41,7 +87,24 @@ The match engine is the heart of the system:
 - Decays after matches, recovers with rest
 - Lower condition = lower action selection weights
 
-### 3. Tactical System (6 Dimensions)
+### 3. Three-Layer Attribute System
+
+**Player Attributes** (0-20 scale):
+- **Technical**: handling, tackling, passing, shooting, heading, dribbling, crossing, setPieces, throw
+- **Mental**: aggression, positioning, vision, bravery, leadership, teamwork, composure
+- **Physical**: pace, acceleration, stamina, strength, agility, balance
+
+**Experience Multiplier** (`applyExpToStat`):
+- EXP caps at 1000 total (league-wide across all seasons)
+- Multiplier: `(100 + exp / 5) / 100` → scales attributes up to +20%
+- Applied per-player based on `player.exp` field before each match
+
+**Condition/Fitness**:
+- Range: 0-100% (affects all action weights in match engine)
+- Decays after matches, recovers with rest
+- Lower condition = lower action selection weights
+
+### 4. Tactical System (6 Dimensions)
 
 **Database Fields** (`Team` model):
 - `formation` (4-4-2, 4-3-3, 5-3-2, 4-5-1) → position distribution
@@ -53,7 +116,7 @@ The match engine is the heart of the system:
 
 **Implementation**: Modifiers applied in `calculateActionWeights()` before action selection.
 
-### 4. Data Flow: Financial & Reputation
+### 5. Data Flow: Financial & Reputation
 
 **Weekly Processing** (`processWeeklyFinances`):
 1. Calculate team revenue (stadium capacity × attendance % × ticket price)

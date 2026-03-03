@@ -20,8 +20,11 @@ type MatchStatType = {
     teamId: string;
     goals: number;
     assists: number;
+    yellowCards?: number;
+    redCards?: number;
     rating: number;
     match: {
+        id: string;
         season: number;
         homeTeamId: string;
         homeTeam: { name: string };
@@ -59,6 +62,8 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
     const [contractRefresh, setContractRefresh] = useState(0);
     const [userTeamId, setUserTeamId] = useState<string>('');
     const [loading, setLoading] = useState(true);
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [seasonAnalytics, setSeasonAnalytics] = useState<any>(null);
 
     // Group stats by season and team
     const statsGrouped = useMemo(() => {
@@ -101,6 +106,26 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
         };
         fetchUserTeam();
     }, []);
+
+    useEffect(() => {
+        const fetchAnalytics = async () => {
+            if (!player.matchStats || player.matchStats.length === 0) return;
+            const latestSeason = Math.max(...player.matchStats.map(s => s.match.season || 0));
+            if (!latestSeason) return;
+
+            setAnalyticsLoading(true);
+            try {
+                const res = await fetch(`/api/player/${player.id}/analytics?season=${latestSeason}`);
+                const data = await res.json();
+                setSeasonAnalytics(data);
+            } catch (error) {
+                console.error('Failed to fetch player analytics:', error);
+            } finally {
+                setAnalyticsLoading(false);
+            }
+        };
+        fetchAnalytics();
+    }, [player.id, player.matchStats]);
 
     const AttributeItem = ({ label, value, bonus = 0 }: { label: string; value: number; bonus?: number }) => {
         const displayValue = Math.min(value + bonus, 20);
@@ -219,6 +244,29 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             {activeTab === 'statistics' && (
                 <div className="card">
                     <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>สถิติการเล่นรายฤดูกาล/สโมสร</h3>
+                    {seasonAnalytics?.seasonSummary && (
+                        <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'rgba(var(--primary-rgb), 0.03)' }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>ภาพรวมจาก Raw Actions (Season {seasonAnalytics.season})</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: '0.85rem' }}>🛡️ กองหลัง: <b>{seasonAnalytics.seasonSummary.zones.defensive}</b></div>
+                                <div style={{ fontSize: '0.85rem' }}>⚙️ กลางสนาม: <b>{seasonAnalytics.seasonSummary.zones.middle}</b></div>
+                                <div style={{ fontSize: '0.85rem' }}>⚽ หน้าประตู: <b>{seasonAnalytics.seasonSummary.zones.attacking}</b></div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(100px, 1fr))', gap: '0.5rem' }}>
+                                {['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].map(action => {
+                                    const a = seasonAnalytics.seasonSummary.actions[action];
+                                    return (
+                                        <div key={action} style={{ padding: '0.5rem', borderRadius: '6px', background: 'white', border: '1px solid var(--border)' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{action.replace('_', ' ')}</div>
+                                            <div style={{ fontWeight: 'bold' }}>{a.successRate}%</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{a.success}/{a.attempts}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    {analyticsLoading && <div style={{ color: 'var(--muted)', marginBottom: '1rem' }}>กำลังคำนวณ analytics จาก raw actions...</div>}
                     {statsGrouped.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                             {statsGrouped.map((group: any) => (
@@ -238,23 +286,41 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                         {group.stats.map((stat: MatchStatType) => (
-                                            <div key={stat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}>
-                                                <div style={{ fontSize: '0.85rem' }}>
-                                                    v {stat.teamId === stat.match.homeTeamId ? stat.match.awayTeam.name : stat.match.homeTeam.name}
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-                                                        {stat.goals > 0 && <span>⚽ {stat.goals} </span>}
-                                                        {stat.assists > 0 && <span>🅰️ {stat.assists}</span>}
+                                            <div key={stat.id} style={{ padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div style={{ fontSize: '0.85rem' }}>
+                                                        v {stat.teamId === stat.match.homeTeamId ? stat.match.awayTeam.name : stat.match.homeTeam.name}
                                                     </div>
-                                                    <div style={{
-                                                        width: '32px', height: '32px',
-                                                        background: stat.rating >= 7.5 ? 'var(--success)' : stat.rating >= 6.5 ? 'var(--accent)' : 'var(--muted)',
-                                                        color: 'white', borderRadius: '4px', textAlign: 'center', lineHeight: '32px', fontSize: '0.8rem', fontWeight: 'bold'
-                                                    }}>
-                                                        {stat.rating.toFixed(1)}
+                                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                                                            {stat.goals > 0 && <span>⚽ {stat.goals} </span>}
+                                                            {stat.assists > 0 && <span>🅰️ {stat.assists} </span>}
+                                                            {(stat.yellowCards || 0) > 0 && <span>🟨 {stat.yellowCards} </span>}
+                                                            {(stat.redCards || 0) > 0 && <span>🟥 {stat.redCards}</span>}
+                                                        </div>
+                                                        <div style={{
+                                                            width: '32px', height: '32px',
+                                                            background: stat.rating >= 7.5 ? 'var(--success)' : stat.rating >= 6.5 ? 'var(--accent)' : 'var(--muted)',
+                                                            color: 'white', borderRadius: '4px', textAlign: 'center', lineHeight: '32px', fontSize: '0.8rem', fontWeight: 'bold'
+                                                        }}>
+                                                            {stat.rating.toFixed(1)}
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                {seasonAnalytics?.byMatch?.[stat.match.id] && (
+                                                    <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                        <span>
+                                                            พื้นที่: 🛡️ {seasonAnalytics.byMatch[stat.match.id].zones.defensive} |
+                                                            ⚙️ {seasonAnalytics.byMatch[stat.match.id].zones.middle} |
+                                                            ⚽ {seasonAnalytics.byMatch[stat.match.id].zones.attacking}
+                                                        </span>
+                                                        <span>
+                                                            Pass S/L: {seasonAnalytics.byMatch[stat.match.id].actions.PASS_SHORT.successRate}% / {seasonAnalytics.byMatch[stat.match.id].actions.PASS_LONG.successRate}%
+                                                            {' '}• Dribble: {seasonAnalytics.byMatch[stat.match.id].actions.DRIBBLE.successRate}%
+                                                            {' '}• Shoot: {seasonAnalytics.byMatch[stat.match.id].actions.SHOOT.successRate}%
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

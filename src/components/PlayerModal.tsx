@@ -114,6 +114,8 @@ export default function PlayerModal() {
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
     const [userTeamId, setUserTeamId] = useState<string>('');
     const [loadingTeam, setLoadingTeam] = useState(true);
+    const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(null);
+    const [playerAnalytics, setPlayerAnalytics] = useState<any>(null);
 
     const fetchPlayer = useCallback(async () => {
         if (!playerId) return;
@@ -140,7 +142,19 @@ export default function PlayerModal() {
         } else {
             setActiveTab('attributes');
         }
-    }, [playerId, fetchPlayer, searchParams]);
+
+        // Fetch player analytics
+        const fetchAnalytics = async () => {
+            try {
+                const res = await fetch(`/api/player/${playerId}/analytics?season=${selectedSeason || 1}`);
+                const data = await res.json();
+                setPlayerAnalytics(data);
+            } catch (e) {
+                console.error('Failed to fetch player analytics:', e);
+            }
+        };
+        fetchAnalytics();
+    }, [playerId, fetchPlayer, searchParams, selectedSeason]);
 
     useEffect(() => {
         const fetchUserTeam = async () => {
@@ -435,6 +449,111 @@ export default function PlayerModal() {
                                                     <StatCard icon="🟨" label="การ์ดเหลือง" value={currentSeasonStats.yellowCards} />
                                                     <StatCard icon="🟥" label="การ์ดแดง" value={currentSeasonStats.redCards} />
                                                 </div>
+
+                                                {/* Zone & Action Analytics */}
+                                                {playerAnalytics?.seasonSummary && (
+                                                    <div style={{ marginTop: '2rem' }}>
+                                                        <h4 style={{ marginBottom: '1rem', fontSize: '0.95rem', fontWeight: '600', color: 'var(--muted)' }}>วิเคราะห์เชิงลึก - สาขาบอลและการทำงาน</h4>
+
+                                                        {/* Zone Distribution */}
+                                                        {playerAnalytics.seasonSummary?.zones && (() => {
+                                                            const zones = playerAnalytics.seasonSummary.zones;
+                                                            const totalZones = (zones.defensive ?? 0) + (zones.middle ?? 0) + (zones.attacking ?? 0);
+                                                            const defensivePct = totalZones > 0 ? Math.round((zones.defensive / totalZones) * 100) : 0;
+                                                            const middlePct = totalZones > 0 ? Math.round((zones.middle / totalZones) * 100) : 0;
+                                                            const attackingPct = totalZones > 0 ? Math.round((zones.attacking / totalZones) * 100) : 0;
+                                                            
+                                                            return (
+                                                                <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                                                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>พื้นที่การเล่น (คลิกเพื่อกรอง)</div>
+                                                                    <div style={{ display: 'flex', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', marginBottom: '8px', gap: '0px' }}>
+                                                                        {[
+                                                                            { key: 'defensive', label: '🛡️ Defensive', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
+                                                                            { key: 'middle', label: '⚙️ Middle', pct: middlePct, value: zones.middle, color: '#10b981' },
+                                                                            { key: 'attacking', label: '⚽ Attacking', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
+                                                                        ].map(zone => {
+                                                                            const zonePct = zone.pct;
+                                                                            return (
+                                                                                <div
+                                                                                    key={zone.key}
+                                                                                    onClick={() => setSelectedZoneFilter(selectedZoneFilter === zone.key ? null : zone.key)}
+                                                                                    title={`${zone.label}: ${zone.value} touches (${zonePct}%)`}
+                                                                                    style={{
+                                                                                        width: `${zonePct}%`,
+                                                                                        background: zone.color,
+                                                                                        cursor: 'pointer',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
+                                                                                        color: 'white',
+                                                                                        fontSize: '0.7rem',
+                                                                                        fontWeight: 'bold',
+                                                                                        opacity: !selectedZoneFilter || selectedZoneFilter === zone.key ? 1 : 0.35,
+                                                                                        transition: 'opacity 0.2s',
+                                                                                        border: selectedZoneFilter === zone.key ? '3px outset rgba(255,255,255,0.8)' : 'none',
+                                                                                        boxSizing: 'border-box',
+                                                                                        minWidth: '50px'
+                                                                                    }}
+                                                                                >
+                                                                                    {zonePct > 10 ? `${zonePct}%` : ''}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                                                                        🛡️ {defensivePct}% ({zones.defensive}) • ⚙️ {middlePct}% ({zones.middle}) • ⚽ {attackingPct}% ({zones.attacking}) 
+                                                                        {selectedZoneFilter && <span style={{ fontWeight: '600', color: 'var(--primary)' }}> — Filtered: {selectedZoneFilter}</span>}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+
+                                                        {/* Action Breakdown */}
+                                                        <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                                            <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '8px', fontWeight: '600' }}>
+                                                                ประเภทการกระทำ {selectedZoneFilter && <span style={{ color: 'var(--primary)' }}>- {selectedZoneFilter === 'defensive' ? '🛡️ Defensive' : selectedZoneFilter === 'middle' ? '⚙️ Middle' : '⚽ Attacking'} Zone</span>}
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                                                                {['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].map((actionType) => {
+                                                                    // Filter logs by zone if selectedZoneFilter is active
+                                                                    let actionAttempts = 0;
+                                                                    let actionSuccess = 0;
+                                                                    let totalAttempts = 0;
+                                                                    
+                                                                    if (selectedZoneFilter && playerAnalytics.rawLogs?.length) {
+                                                                        // Recalculate from raw logs filtered by zone
+                                                                        const zoneName = selectedZoneFilter === 'defensive' ? 'DEFENSIVE' : selectedZoneFilter === 'middle' ? 'MIDDLE' : 'ATTACKING';
+                                                                        const zoneLogs = playerAnalytics.rawLogs.filter((log: any) => log.zone === zoneName && log.actionType === actionType);
+                                                                        actionAttempts = zoneLogs.length;
+                                                                        actionSuccess = zoneLogs.filter((log: any) => log.isSuccessful).length;
+                                                                        
+                                                                        // Calculate total from all actions in this zone for percentage
+                                                                        const allZoneLogs = playerAnalytics.rawLogs.filter((log: any) => log.zone === zoneName && ['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].includes(log.actionType));
+                                                                        totalAttempts = allZoneLogs.length;
+                                                                    } else {
+                                                                        // Use overall stats
+                                                                        const action = playerAnalytics.seasonSummary?.actions?.[actionType];
+                                                                        actionAttempts = action?.attempts ?? 0;
+                                                                        actionSuccess = action?.success ?? 0;
+                                                                        totalAttempts = ['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].reduce((sum, a) => sum + (playerAnalytics.seasonSummary?.actions?.[a]?.attempts ?? 0), 0);
+                                                                    }
+                                                                    
+                                                                    const percentage = totalAttempts > 0 ? Math.round((actionAttempts / totalAttempts) * 100) : 0;
+                                                                    const successRate = actionAttempts > 0 ? Math.round((actionSuccess / actionAttempts) * 100) : 0;
+                                                                    
+                                                                    return (
+                                                                        <div key={actionType} style={{ padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                                                                            <div style={{ fontSize: '0.7rem', color: 'var(--muted)', fontWeight: '600', marginBottom: '4px' }}>{actionType.replace('_', ' ')}</div>
+                                                                            <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--primary)' }}>{percentage}%</div>
+                                                                            <div style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{actionAttempts} ครั้ง</div>
+                                                                            <div style={{ fontSize: '0.65rem', color: '#059669', fontWeight: '500' }}>{successRate}% สำเร็จ</div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
@@ -473,7 +592,12 @@ export default function PlayerModal() {
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                                 {player.matchStats
                                                     .filter(stat => stat.match.season === selectedSeason)
-                                                    .map((stat, i) => (
+                                                    .map((stat, i) => {
+                                                        // Create unique key for byMatch lookup using date and homeTeamId
+                                                        const matchDateKey = stat.match.date ? `${stat.match.date}_${stat.match.homeTeamId}` : `match_${i}`;
+                                                        const matchObj = stat.match as any;
+                                                        const matchId = matchObj.id || matchDateKey;
+                                                        return (
                                                         <div key={i} style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid var(--border)' }}>
                                                             {/* Match Header */}
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
@@ -530,8 +654,55 @@ export default function PlayerModal() {
                                                                     <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>เหลือง</div>
                                                                 </div>
                                                             </div>
+
+                                                            {/* Per-Match Zone Analytics */}
+                                                            {playerAnalytics?.byMatch?.[matchId] && (() => {
+                                                                const matchData = playerAnalytics.byMatch[matchId];
+                                                                const zones = matchData.zones || {};
+                                                                const totalZones = (zones.defensive ?? 0) + (zones.middle ?? 0) + (zones.attacking ?? 0);
+                                                                const defensivePct = totalZones > 0 ? Math.round((zones.defensive / totalZones) * 100) : 0;
+                                                                const middlePct = totalZones > 0 ? Math.round((zones.middle / totalZones) * 100) : 0;
+                                                                const attackingPct = totalZones > 0 ? Math.round((zones.attacking / totalZones) * 100) : 0;
+                                                                
+                                                                return (
+                                                                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>วิเคราะห์พื้นที่</div>
+                                                                        
+                                                                        {/* Match-specific Zone Distribution */}
+                                                                        <div style={{ display: 'flex', height: '18px', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)', marginBottom: '4px', gap: '0px' }}>
+                                                                            {[
+                                                                                { key: 'defensive', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
+                                                                                { key: 'middle', pct: middlePct, value: zones.middle, color: '#10b981' },
+                                                                                { key: 'attacking', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
+                                                                            ].map(zone => (
+                                                                                <div
+                                                                                    key={zone.key}
+                                                                                    style={{
+                                                                                        width: `${Math.max(zone.pct, 1)}%`,
+                                                                                        background: zone.color,
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
+                                                                                        color: 'white',
+                                                                                        fontSize: '0.65rem',
+                                                                                        fontWeight: 'bold',
+                                                                                        boxSizing: 'border-box'
+                                                                                    }}
+                                                                                    title={`${zone.key}: ${zone.value} (${zone.pct}%)`}
+                                                                                >
+                                                                                    {zone.pct > 12 ? `${zone.pct}%` : ''}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                        <div style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                                                                            🛡️ {defensivePct}% • ⚙️ {middlePct}% • ⚽ {attackingPct}%
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
-                                                    ))}
+                                                    );
+                                                    })}
                                             </div>
                                         ) : (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>

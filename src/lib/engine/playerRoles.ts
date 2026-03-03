@@ -156,10 +156,10 @@ export const ROLE_DEFINITIONS: Record<string, RoleDefinition> = {
     positions: ['FWC', 'FC'],
     primaryAttributes: ['shooting', 'composure', 'acceleration'],
     effects: {
-      description: 'Finishing Success +10%',
-      actionModifiers: { SHOOT: 1.1 }
+      description: 'Finishing Success +3%',
+      actionModifiers: { SHOOT: 1.03 }
     },
-    conditionDrainMultiplier: 1.05
+    conditionDrainMultiplier: 1.1
   },
 
   FALSE_9: {
@@ -203,7 +203,9 @@ export function getEligibleRoles(naturalPosition: string): RoleDefinition[] {
 }
 
 /**
- * Calculate role suitability (1-5 stars) based on player attributes
+ * Calculate role suitability (1-5 stars) based on player power
+ * Uses position-specific power calculation to better evaluate role fit
+ * than simple attribute averaging
  */
 export function calculateRoleSuitability(
   player: Player | (Player & { attributes?: PlayerAttributes }),
@@ -212,27 +214,72 @@ export function calculateRoleSuitability(
   const role = ROLE_DEFINITIONS[roleName];
   if (!role) return 0;
 
-  const primaryAttrs = role.primaryAttributes;
-  let totalScore = 0;
-  let count = 0;
+  try {
+    // Lazy import to avoid circular dependencies
+    const { calculatePlayerPower, toPlayerAttributes } = require('./playerPower');
+    
+    // Calculate player power as if they were in this role's primary position
+    const primaryPos = role.positions[0]; // Use first position in role's eligible positions
+    
+    // Build attributes object from player
+    const attrs = toPlayerAttributes({
+      handling: (player as any).handling,
+      tackling: (player as any).tackling,
+      passing: (player as any).passing,
+      shooting: (player as any).shooting,
+      heading: (player as any).heading,
+      dribbling: (player as any).dribbling,
+      crossing: (player as any).crossing,
+      setPieces: (player as any).setPieces,
+      throw: (player as any).throw,
+      aggression: (player as any).aggression,
+      positioning: (player as any).positioning,
+      vision: (player as any).vision,
+      bravery: (player as any).bravery,
+      leadership: (player as any).leadership,
+      teamwork: (player as any).teamwork,
+      composure: (player as any).composure,
+      pace: (player as any).pace,
+      acceleration: (player as any).acceleration,
+      stamina: (player as any).stamina,
+      strength: (player as any).strength,
+      agility: (player as any).agility,
+      balance: (player as any).balance
+    });
 
-  for (const attr of primaryAttrs) {
-    const value = (player as any)[attr];
-    if (typeof value === 'number') {
-      totalScore += value;
-      count++;
+    const power = calculatePlayerPower({
+      attributes: attrs,
+      targetPosition: primaryPos,
+      condition: (player as any).condition || 100,
+      exp: (player as any).exp || 0
+    }).powerWithExp;
+
+    // Convert power (0-100 scale) to 1-5 stars
+    // 0-20 = 1 star, 21-40 = 2 stars, 41-60 = 3 stars, 61-80 = 4 stars, 81-100 = 5 stars
+    const stars = Math.max(1, Math.min(5, Math.ceil(power / 20)));
+    
+    return stars;
+  } catch (error) {
+    // Fallback to attribute-based calculation if power calculation fails
+    const primaryAttrs = role.primaryAttributes;
+    let totalScore = 0;
+    let count = 0;
+
+    for (const attr of primaryAttrs) {
+      const value = (player as any)[attr];
+      if (typeof value === 'number') {
+        totalScore += value;
+        count++;
+      }
     }
+
+    if (count === 0) return 0;
+
+    const averageScore = totalScore / count;
+    const stars = Math.max(1, Math.min(5, Math.ceil(averageScore / 4)));
+    
+    return stars;
   }
-
-  if (count === 0) return 0;
-
-  const averageScore = totalScore / count;
-  
-  // Convert 0-20 scale to 1-5 stars
-  // 0-4 = 1 star, 5-8 = 2 stars, 9-12 = 3 stars, 13-16 = 4 stars, 17-20 = 5 stars
-  const stars = Math.max(1, Math.min(5, Math.ceil(averageScore / 4)));
-  
-  return stars;
 }
 
 /**

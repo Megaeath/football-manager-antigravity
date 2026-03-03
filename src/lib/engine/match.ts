@@ -1,4 +1,4 @@
-import { TeamState, MatchState, PlayerState, EnginePlayerMatchStats, TeamMatchStats } from './types';
+import { TeamState, MatchState, PlayerState, EnginePlayerMatchStats, TeamMatchStats, PlayerActionLog } from './types';
 import { calculateActionScore } from './formulas';
 import { getRoleEffects, getRoleConditionDrain } from './playerRoles';
 
@@ -9,6 +9,27 @@ interface BallState {
     position: number; // 0-100 (0=home goal, 100=away goal)
     possession: 'home' | 'away';
     carrier: PlayerState | null;
+}
+
+function clampRate(rate: number): number {
+    return Math.max(0, Math.min(1, rate));
+}
+
+function getZoneFromPosition(ballPosition: number, isAttacking: boolean): 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING' {
+    const effectivePosition = isAttacking ? ballPosition : (100 - ballPosition);
+    if (effectivePosition <= 30) return 'DEFENSIVE';
+    if (effectivePosition <= 70) return 'MIDDLE';
+    return 'ATTACKING';
+}
+
+function trackFieldTouch(stat: EnginePlayerMatchStats, zone: 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING') {
+    if (zone === 'DEFENSIVE') stat.defensiveThirdTouches++;
+    else if (zone === 'MIDDLE') stat.middleThirdTouches++;
+    else stat.attackingThirdTouches++;
+}
+
+function pushActionLog(matchState: MatchState, log: PlayerActionLog) {
+    matchState.actionLogs.push(log);
 }
 
 function calculateActionWeights(
@@ -181,15 +202,31 @@ function executePassShort(
 ): void {
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
 
     stats.passesAttempted++;
     teamStats.passesAttempted++;
+    trackFieldTouch(stats, zone);
 
     const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
     const defenseScore = Math.random() * 10; // Increased from 8 for more interceptions
 
     const skillBonus = player.attributes.passing > 15 ? 1.15 : 1.0;
     const success = (passScore * skillBonus) > defenseScore;
+    const expectedSuccessRate = clampRate((passScore * skillBonus) / ((passScore * skillBonus) + defenseScore + 0.0001));
+
+    pushActionLog(matchState, {
+        playerId: player.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone,
+        actionType: 'PASS_SHORT',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        expectedSuccessRate,
+        metadata: JSON.stringify({ passScore, defenseScore, skillBonus })
+    });
 
     if (success) {
         stats.passesCompleted++;
@@ -208,8 +245,28 @@ function executePassShort(
         ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
     } else {
         // Failed pass - possession changes
+        const interceptor = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
-        ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
+        ball.carrier = interceptor;
+
+        if (interceptor) {
+            const interceptorStats = matchState.playerStats[interceptor.id];
+            const interceptionZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+            trackFieldTouch(interceptorStats, interceptionZone);
+            pushActionLog(matchState, {
+                playerId: interceptor.id,
+                teamId: defendingTeam.id,
+                minute: matchState.minute,
+                ballPosition: Math.round(ball.position),
+                zone: interceptionZone,
+                actionType: 'INTERCEPTION',
+                result: 'SUCCESS',
+                isSuccessful: true,
+                expectedSuccessRate: undefined,
+                targetPlayerId: player.id,
+                metadata: JSON.stringify({ sourceAction: 'PASS_SHORT' })
+            });
+        }
     }
     console.log(`Short pass executed. Success: ${success}, New Position: ${ball.position.toFixed(1)}`);
 
@@ -235,15 +292,31 @@ function executePassLong(
 ): void {
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
 
     stats.crossesAttempted++;
     teamStats.crossesAttempted++;
+    trackFieldTouch(stats, zone);
 
     const passScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
     const defenseScore = Math.random() * 14; // Increased from 12 for more interceptions
 
     const skillBonus = (player.attributes.passing > 15 && player.attributes.vision > 15) ? 1.2 : 1.0;
     const success = (passScore * skillBonus) > defenseScore;
+    const expectedSuccessRate = clampRate((passScore * skillBonus) / ((passScore * skillBonus) + defenseScore + 0.0001));
+
+    pushActionLog(matchState, {
+        playerId: player.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone,
+        actionType: 'PASS_LONG',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        expectedSuccessRate,
+        metadata: JSON.stringify({ passScore, defenseScore, skillBonus })
+    });
 
     const movement = 2 + Math.random() * 3; // +2 to +5 (further reduced to slow progression)
     const targetPosition = isHomeAttacking
@@ -260,7 +333,26 @@ function executePassLong(
         // Failed long pass - possession changes at target position
         ball.position = targetPosition;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
-        ball.carrier = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'FWC']) || null;
+        const interceptor = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'FWC']) || null;
+        ball.carrier = interceptor;
+
+        if (interceptor) {
+            const interceptorStats = matchState.playerStats[interceptor.id];
+            const interceptionZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+            trackFieldTouch(interceptorStats, interceptionZone);
+            pushActionLog(matchState, {
+                playerId: interceptor.id,
+                teamId: defendingTeam.id,
+                minute: matchState.minute,
+                ballPosition: Math.round(ball.position),
+                zone: interceptionZone,
+                actionType: 'INTERCEPTION',
+                result: 'SUCCESS',
+                isSuccessful: true,
+                targetPlayerId: player.id,
+                metadata: JSON.stringify({ sourceAction: 'PASS_LONG' })
+            });
+        }
     }
     console.log(`Long pass executed. Success: ${success}, Target Position: ${targetPosition.toFixed(1)}`);
     applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
@@ -281,6 +373,9 @@ function executeDribble(
 
     if (!defender) return;
 
+    const dribbleZone = getZoneFromPosition(ball.position, isHomeAttacking);
+    trackFieldTouch(stats, dribbleZone);
+
     stats.dribblesAttempted++;
     matchState.playerStats[defender.id].tacklesAttempted++;
 
@@ -293,6 +388,21 @@ function executeDribble(
 
     const skillBonus = player.attributes.dribbling > 15 ? 1.15 : 1.0;
     const success = (dribbleScore * skillBonus * (0.8 + Math.random() * 0.4)) > (tackleScore * (0.8 + Math.random() * 0.4));
+    const expectedSuccessRate = clampRate((dribbleScore * skillBonus) / ((dribbleScore * skillBonus) + tackleScore + 0.0001));
+
+    pushActionLog(matchState, {
+        playerId: player.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone: dribbleZone,
+        actionType: 'DRIBBLE',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        expectedSuccessRate,
+        targetPlayerId: defender.id,
+        metadata: JSON.stringify({ dribbleScore, tackleScore })
+    });
 
     if (success) {
         stats.dribblesWon++;
@@ -304,6 +414,22 @@ function executeDribble(
         // No reassignment needed
     } else {
         matchState.playerStats[defender.id].tacklesWon++;
+        const defenderStats = matchState.playerStats[defender.id];
+        const tackleZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+        trackFieldTouch(defenderStats, tackleZone);
+        pushActionLog(matchState, {
+            playerId: defender.id,
+            teamId: defendingTeam.id,
+            minute: matchState.minute,
+            ballPosition: Math.round(ball.position),
+            zone: tackleZone,
+            actionType: 'TACKLE',
+            result: 'SUCCESS',
+            isSuccessful: true,
+            expectedSuccessRate: clampRate(tackleScore / (tackleScore + dribbleScore + 0.0001)),
+            targetPlayerId: player.id,
+            metadata: JSON.stringify({ dribbleScore, tackleScore })
+        });
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = defender;
         
@@ -322,6 +448,19 @@ function executeDribble(
         const foulChance = getTacklingBuff(defendingTeam.tactics.tackling).foul;
         if (Math.random() < 0.3 * foulChance) {
             matchState.playerStats[defender.id].fouls++;
+            const foulZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+            pushActionLog(matchState, {
+                playerId: defender.id,
+                teamId: defendingTeam.id,
+                minute: matchState.minute,
+                ballPosition: Math.round(ball.position),
+                zone: foulZone,
+                actionType: 'FOUL',
+                result: 'FAIL',
+                isSuccessful: false,
+                targetPlayerId: player.id,
+                metadata: JSON.stringify({ foulChance })
+            });
             const isHomeFouled = !isHomeAttacking;
             const distanceToGoal = isHomeAttacking ? 100 - ball.position : ball.position;
 
@@ -347,9 +486,11 @@ function executeShoot(
 ): void {
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
+    const shootZone = getZoneFromPosition(ball.position, isHomeAttacking);
 
     stats.shots++;
     teamStats.shots++;
+    trackFieldTouch(stats, shootZone);
 
     // Find goalkeeper
     const gk = defendingTeam.players.find(p => p.position === 'GK' && p.tacticalPosition === 'GK')
@@ -409,6 +550,20 @@ function executeShoot(
             playerId: player.id
         });
 
+        pushActionLog(matchState, {
+            playerId: player.id,
+            teamId: attackingTeam.id,
+            minute,
+            ballPosition: Math.round(ball.position),
+            zone: shootZone,
+            actionType: 'SHOOT',
+            result: 'GOAL',
+            isSuccessful: true,
+            expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
+            targetPlayerId: gk?.id,
+            metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, miracle, blunder })
+        });
+
         // Potential assist
         if (Math.random() > 0.4) {
             const assistPlayer = getRandomPlayer(attackingTeam, ['MC', 'AMC', 'MR', 'ML', 'AMR', 'AML']);
@@ -438,6 +593,37 @@ function executeShoot(
                 teamId: attackingTeam.id,
                 playerId: player.id
             });
+
+            const gkStats = matchState.playerStats[gk.id];
+            const saveZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+            trackFieldTouch(gkStats, saveZone);
+            pushActionLog(matchState, {
+                playerId: gk.id,
+                teamId: defendingTeam.id,
+                minute,
+                ballPosition: Math.round(ball.position),
+                zone: saveZone,
+                actionType: 'SAVE',
+                result: 'SUCCESS',
+                isSuccessful: true,
+                expectedSuccessRate: clampRate(finalSave / (finalShoot + finalSave + 0.0001)),
+                targetPlayerId: player.id,
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave })
+            });
+
+            pushActionLog(matchState, {
+                playerId: player.id,
+                teamId: attackingTeam.id,
+                minute,
+                ballPosition: Math.round(ball.position),
+                zone: shootZone,
+                actionType: 'SHOOT',
+                result: 'SAVED',
+                isSuccessful: false,
+                expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
+                targetPlayerId: gk.id,
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: true })
+            });
         } else {
             matchState.events.push({
                 minute,
@@ -445,6 +631,20 @@ function executeShoot(
                 text: `${player.name} shoots wide from ${distanceToGoal.toFixed(0)}m!`,
                 teamId: attackingTeam.id,
                 playerId: player.id
+            });
+
+            pushActionLog(matchState, {
+                playerId: player.id,
+                teamId: attackingTeam.id,
+                minute,
+                ballPosition: Math.round(ball.position),
+                zone: shootZone,
+                actionType: 'SHOOT',
+                result: 'OFF_TARGET',
+                isSuccessful: false,
+                expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
+                targetPlayerId: gk?.id,
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: false })
             });
         }
 
@@ -499,6 +699,8 @@ function executeFreeKickShort(ball: BallState, matchState: MatchState, homeTeam:
 
     stats.freeKicks++;
     isHomeAttacking ? matchState.teamStats.home.freeKicks++ : matchState.teamStats.away.freeKicks++;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
+    trackFieldTouch(stats, zone);
 
     matchState.events.push({
         minute: matchState.minute,
@@ -524,6 +726,19 @@ function executeFreeKickShort(ball: BallState, matchState: MatchState, homeTeam:
             teamId: attackingTeam.id,
             playerId: taker.id
         });
+        pushActionLog(matchState, {
+            playerId: taker.id,
+            teamId: attackingTeam.id,
+            minute: matchState.minute,
+            ballPosition: Math.round(ball.position),
+            zone,
+            actionType: 'SHOOT',
+            result: 'GOAL',
+            isSuccessful: true,
+            expectedSuccessRate: clampRate(shootScore / ((shootScore + saveScore) + 0.0001)),
+            targetPlayerId: gk.id,
+            metadata: JSON.stringify({ setPiece: 'SHORT_FK', shootScore, saveScore })
+        });
         ball.position = 50;
         ball.possession = isHomeAttacking ? 'away' : 'home';
         ball.carrier = getCarrierByPosition(isHomeAttacking ? awayTeam : homeTeam, 50, !isHomeAttacking);
@@ -534,6 +749,35 @@ function executeFreeKickShort(ball: BallState, matchState: MatchState, homeTeam:
             text: `${taker.name}'s free kick is saved by ${gk.name}!`,
             teamId: attackingTeam.id,
             playerId: taker.id
+        });
+        const gkStats = matchState.playerStats[gk.id];
+        const saveZone = getZoneFromPosition(ball.position, !isHomeAttacking);
+        trackFieldTouch(gkStats, saveZone);
+        pushActionLog(matchState, {
+            playerId: taker.id,
+            teamId: attackingTeam.id,
+            minute: matchState.minute,
+            ballPosition: Math.round(ball.position),
+            zone,
+            actionType: 'SHOOT',
+            result: 'SAVED',
+            isSuccessful: false,
+            expectedSuccessRate: clampRate(shootScore / ((shootScore + saveScore) + 0.0001)),
+            targetPlayerId: gk.id,
+            metadata: JSON.stringify({ setPiece: 'SHORT_FK', shootScore, saveScore })
+        });
+        pushActionLog(matchState, {
+            playerId: gk.id,
+            teamId: defendingTeam.id,
+            minute: matchState.minute,
+            ballPosition: Math.round(ball.position),
+            zone: saveZone,
+            actionType: 'SAVE',
+            result: 'SUCCESS',
+            isSuccessful: true,
+            expectedSuccessRate: clampRate(saveScore / ((shootScore + saveScore) + 0.0001)),
+            targetPlayerId: taker.id,
+            metadata: JSON.stringify({ setPiece: 'SHORT_FK', shootScore, saveScore })
         });
         ball.possession = isHomeAttacking ? 'away' : 'home';
         ball.carrier = gk;
@@ -549,9 +793,22 @@ function executeFreeKickLong(ball: BallState, matchState: MatchState, homeTeam: 
 
     stats.freeKicks++;
     isHomeAttacking ? matchState.teamStats.home.freeKicks++ : matchState.teamStats.away.freeKicks++;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
+    trackFieldTouch(stats, zone);
 
     const passScore = calculateActionScore('free_kick_long', taker.attributes, 'attacker', taker.condition);
     const success = passScore > Math.random() * 15;
+    pushActionLog(matchState, {
+        playerId: taker.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone,
+        actionType: 'PASS_LONG',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        metadata: JSON.stringify({ setPiece: 'LONG_FK', passScore })
+    });
 
     if (success) {
         ball.position = isHomeAttacking ? Math.min(95, ball.position + 20) : Math.max(5, ball.position - 20);
@@ -570,6 +827,8 @@ function executeCornerKick(ball: BallState, matchState: MatchState, homeTeam: Te
 
     stats.corners++;
     isHomeAttacking ? matchState.teamStats.home.corners++ : matchState.teamStats.away.corners++;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
+    trackFieldTouch(stats, zone);
 
     matchState.events.push({
         minute: matchState.minute,
@@ -581,6 +840,17 @@ function executeCornerKick(ball: BallState, matchState: MatchState, homeTeam: Te
 
     const cornerScore = calculateActionScore('corner', taker.attributes, 'attacker', taker.condition);
     const success = cornerScore > Math.random() * 18;
+    pushActionLog(matchState, {
+        playerId: taker.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone,
+        actionType: 'PASS_LONG',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        metadata: JSON.stringify({ setPiece: 'CORNER', cornerScore })
+    });
 
     if (success) {
         ball.position = isHomeAttacking ? 92 : 8;
@@ -618,9 +888,22 @@ function executeThrowIn(ball: BallState, matchState: MatchState, homeTeam: TeamS
 
     stats.throws++;
     isHomeAttacking ? matchState.teamStats.home.throws++ : matchState.teamStats.away.throws++;
+    const zone = getZoneFromPosition(ball.position, isHomeAttacking);
+    trackFieldTouch(stats, zone);
 
     const throwScore = calculateActionScore('throw_in', taker.attributes, 'attacker', taker.condition);
     const success = throwScore > Math.random() * 10;
+    pushActionLog(matchState, {
+        playerId: taker.id,
+        teamId: attackingTeam.id,
+        minute: matchState.minute,
+        ballPosition: Math.round(ball.position),
+        zone,
+        actionType: 'PASS_SHORT',
+        result: success ? 'SUCCESS' : 'FAIL',
+        isSuccessful: success,
+        metadata: JSON.stringify({ setPiece: 'THROW_IN', throwScore })
+    });
 
     if (success) {
         ball.carrier = getRandomPlayer(attackingTeam, ['MC', 'MR', 'ML', 'FWC']) || null;
@@ -632,7 +915,10 @@ function executeThrowIn(ball: BallState, matchState: MatchState, homeTeam: TeamS
 
 function checkDefensiveInterruption(
     ball: BallState,
-    defendingTeam: TeamState
+    defendingTeam: TeamState,
+    matchState: MatchState,
+    defendingTeamId: string,
+    isDefendingFromHomePerspective: boolean
 ): boolean {
     const defenderPool = defendingTeam.players.filter(p => p.tacticalPosition !== null);
     if (defenderPool.length === 0) return false;
@@ -647,6 +933,20 @@ function checkDefensiveInterruption(
     if (Math.random() < interruptChance) {
         // Interception! Pick a random defender
         const interceptor = defenderPool[Math.floor(Math.random() * defenderPool.length)];
+        const interceptorStats = matchState.playerStats[interceptor.id];
+        const interceptionZone = getZoneFromPosition(ball.position, isDefendingFromHomePerspective);
+        trackFieldTouch(interceptorStats, interceptionZone);
+        pushActionLog(matchState, {
+            playerId: interceptor.id,
+            teamId: defendingTeamId,
+            minute: matchState.minute,
+            ballPosition: Math.round(ball.position),
+            zone: interceptionZone,
+            actionType: 'INTERCEPTION',
+            result: 'SUCCESS',
+            isSuccessful: true,
+            metadata: JSON.stringify({ interruptChance, avgTackling, avgPositioning })
+        });
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = interceptor;
         return true;
@@ -679,6 +979,9 @@ function initializePlayerStats(team: TeamState): Record<string, EnginePlayerMatc
             dribblesAttempted: 0,
             dribblesWon: 0,
             fitnessEnd: 100,
+            defensiveThirdTouches: 0,
+            middleThirdTouches: 0,
+            attackingThirdTouches: 0,
             fouls: 0,
             yellowCards: 0,
             redCards: 0,
@@ -719,6 +1022,7 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
         awayTeamId: awayTeam.id,
         teamStats: { home: initTeamStats(), away: initTeamStats() },
         events: [],
+        actionLogs: [],
         isFinished: false,
         playerStats: {
             ...initializePlayerStats(homeTeam),
@@ -770,7 +1074,7 @@ export function simulateMatch(homeTeam: TeamState, awayTeam: TeamState): MatchSt
             }
 
             // Check for defensive interruption (interception)
-            if (checkDefensiveInterruption(ball, defendingTeam)) {
+            if (checkDefensiveInterruption(ball, defendingTeam, matchState, defendingTeam.id, !isHomeAttacking)) {
                 continue; // Possession changed, skip this tick
             }
 

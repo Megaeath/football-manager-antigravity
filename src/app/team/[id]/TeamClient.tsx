@@ -9,6 +9,7 @@ import PlayerModal from '@/components/PlayerModal';
 import { getClubReputation } from '@/lib/reputation';
 import TacticsTabs from '@/components/TacticsTabs';
 import PlayerRolesReadOnlyTab from '@/components/PlayerRolesReadOnlyTab';
+import TeamFinanceTab from '@/components/TeamFinanceTab';
 
 interface Player {
     id: string;
@@ -105,7 +106,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
     const searchParams = useSearchParams();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
 
     const openPlayerModal = (playerId: string) => {
@@ -115,7 +116,7 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
     // Check for tab query parameter
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles') {
+        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles' || tab === 'finance') {
             setActiveTab(tab as any);
         }
     }, [searchParams]);
@@ -329,6 +330,21 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                     }}
                 >
                     👔 Player Roles
+                </button>
+                <button
+                    onClick={() => setActiveTab('finance')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'finance' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'finance' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'finance' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    💰 Finance
                 </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
@@ -619,6 +635,10 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
 
             {activeTab === 'roles' && (
                 <PlayerRolesReadOnlyTab players={team.players} teamName={team.name} onViewPlayer={openPlayerModal} />
+            )}
+
+            {activeTab === 'finance' && (
+                <TeamFinanceTab teamId={team.id} />
             )}
 
             <PlayerModal />

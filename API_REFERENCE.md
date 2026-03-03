@@ -31,7 +31,10 @@
       "assists": 0,
       "passesCompleted": 45,
       "tacklesWon": 3,
-      "shotsonTarget": 2
+      "shotsonTarget": 2,
+      "defensiveThirdTouches": 12,
+      "middleThirdTouches": 34,
+      "attackingThirdTouches": 9
     }
   ],
   "events": [
@@ -42,6 +45,79 @@
 
 **Calls**: 
 - `prisma.match.findUnique()` - ดึงข้อมูลแข่งขันพร้อม statistics
+
+---
+
+### 20. `GET /api/match/[id]/actions`
+**ตัวอักษร**: Raw Action Logs per Match
+
+**สิ่งที่ทำ**: ดึง action logs แบบละเอียดทุก action ของนัด (per tick/per action)
+
+**Input Query**:
+- `playerId` (optional) - filter เฉพาะนักเตะ
+
+**Output**:
+```json
+{
+  "matchId": "...",
+  "totalLogs": 1200,
+  "teamZones": {
+    "team_home": { "defensive": 210, "middle": 430, "attacking": 180, "total": 820 }
+  },
+  "byPlayer": {
+    "player_1": {
+      "zones": { "defensive": 5, "middle": 33, "attacking": 21, "total": 59 },
+      "actions": {
+        "PASS_SHORT": { "attempts": 28, "success": 24, "fail": 4, "successRate": 86 }
+      }
+    }
+  },
+  "rawLogs": [
+    {
+      "minute": 37,
+      "ballPosition": 64,
+      "zone": "MIDDLE",
+      "actionType": "PASS_SHORT",
+      "result": "SUCCESS",
+      "isSuccessful": true,
+      "expectedSuccessRate": 0.78
+    }
+  ]
+}
+```
+
+**Calls**:
+- `playerActionLog.findMany()`
+
+---
+
+### 21. `GET /api/player/[id]/analytics`
+**ตัวอักษร**: Player Raw-Action Analytics
+
+**สิ่งที่ทำ**: คำนวณ summary จาก raw action logs ของนักเตะ (ไม่เก็บ summary ตายตัว)
+
+**Input Query**:
+- `season` (optional) - สรุปทั้งฤดูกาล
+- `matchId` (optional) - สรุปเฉพาะนัด
+
+**Output**:
+```json
+{
+  "playerId": "...",
+  "seasonSummary": {
+    "zones": { "defensive": 120, "middle": 560, "attacking": 210 },
+    "actions": {
+      "PASS_SHORT": { "attempts": 300, "success": 260, "fail": 40, "successRate": 87 },
+      "DRIBBLE": { "attempts": 80, "success": 45, "fail": 35, "successRate": 56 }
+    }
+  },
+  "byMatch": { "match_1": { "zones": {}, "actions": {} } },
+  "rawLogs": []
+}
+```
+
+**Calls**:
+- `playerActionLog.findMany()`
 
 ---
 

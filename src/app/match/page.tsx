@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 // Types
 type TeamMatchStats = {
@@ -41,6 +42,18 @@ type MatchData = {
     teamStats?: any;
 };
 
+type MatchActionAnalytics = {
+    teamZones: Record<string, { defensive: number; middle: number; attacking: number; total: number }>;
+    byPlayer: Record<string, {
+        playerId: string;
+        name: string;
+        position: string;
+        zones: { defensive: number; middle: number; attacking: number; total: number };
+        actions: Record<string, { attempts: number; success: number; fail: number; successRate: number }>;
+    }>;
+    rawLogs: any[];
+};
+
 export default function MatchPage() {
     return (
         <Suspense fallback={<div className="card">กำลังโหลดสนามแข่ง...</div>}>
@@ -59,21 +72,32 @@ function MatchContent() {
     const [matchData, setMatchData] = useState<any | null>(null); // For the current simulation display
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'stats' | 'events' | 'home' | 'away'>('stats');
+    const [teamStandings, setTeamStandings] = useState<Record<string, { position: number; power: number }>>({});
+    const [matchActionAnalytics, setMatchActionAnalytics] = useState<MatchActionAnalytics | null>(null);
+    const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
+    const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(null);
 
     const fetchData = async () => {
         setLoading(true);
         try {
+            console.log('[MATCH] Starting fetchData...');
             const infoRes = await fetch('/api/game/info');
             const info = await infoRes.json();
+            console.log('[MATCH] Got game info:', info);
             setGameInfo(info);
 
             // Fetch fixtures for this date
             const date = new Date(info.currentDate).toISOString().split('T')[0];
-            console.log('[Match Page] Fetching fixtures for date:', date, 'Season:', info.currentSeason);
+            console.log('[MATCH] Fetching fixtures for date:', date, 'Season:', info.currentSeason);
             const fixturesRes = await fetch(`/api/league/fixtures?date=${date}`);
             const fixtures = await fixturesRes.json();
-            console.log('[Match Page] Found', fixtures.length, 'matches for', date);
+            console.log('[MATCH] Found', fixtures.length, 'matches for', date);
             setTodaysMatches(fixtures);
+
+            // Calculate team standings and power
+            console.log('[MATCH] About to calculate standings for season', info.currentSeason);
+            await calculateTeamStandings(info.currentSeason);
+            console.log('[MATCH] Standings calculation complete');
 
             // If matchId in URL, fetch that specific match
             if (queryMatchId) {
@@ -84,11 +108,119 @@ function MatchContent() {
                 }
             }
         } catch (e) {
-            console.error('Failed to fetch match day data', e);
+            console.error('[MATCH] Error in fetchData:', e);
         } finally {
             setLoading(false);
         }
     };
+
+    const calculateTeamStandings = useCallback(async (currentSeason: number) => {
+        try {
+            console.log('[STANDINGS] ===== STARTING =====');
+            
+            // Simple approach: calculate standings from matches directly
+            const matchesRes = await fetch('/api/league/fixtures');
+            const allMatches = await matchesRes.json();
+            console.log('[STANDINGS] Got', allMatches.length, 'matches');
+
+            // Calculate standings from match results
+            const standingsMap: Record<string, { position: number; power: number }> = {};
+            const teamStatsMap: Record<string, { points: number; gf: number; ga: number }> = {};
+
+            // Initialize all teams first
+            const teamIds = new Set<string>();
+            allMatches.forEach((m: any) => {
+                if (m.homeTeam?.id) teamIds.add(m.homeTeam.id);
+                if (m.awayTeam?.id) teamIds.add(m.awayTeam.id);
+            });
+
+            teamIds.forEach(id => {
+                teamStatsMap[id] = { points: 0, gf: 0, ga: 0 };
+            });
+
+            // Process match results
+            allMatches.forEach((match: any) => {
+                if (!match.isPlayed) return;
+                
+                const homeId = match.homeTeam?.id;
+                const awayId = match.awayTeam?.id;
+                const homeScore = match.homeScore || 0;
+                const awayScore = match.awayScore || 0;
+
+                if (homeId && teamStatsMap[homeId]) {
+                    teamStatsMap[homeId].gf += homeScore;
+                    teamStatsMap[homeId].ga += awayScore;
+                    if (homeScore > awayScore) teamStatsMap[homeId].points += 3;
+                    else if (homeScore === awayScore) teamStatsMap[homeId].points += 1;
+                }
+
+                if (awayId && teamStatsMap[awayId]) {
+                    teamStatsMap[awayId].gf += awayScore;
+                    teamStatsMap[awayId].ga += homeScore;
+                    if (awayScore > homeScore) teamStatsMap[awayId].points += 3;
+                    else if (awayScore === homeScore) teamStatsMap[awayId].points += 1;
+                }
+            });
+
+            // Create standings
+            const standings = Object.entries(teamStatsMap).map(([teamId, stats]) => ({
+                teamId,
+                points: stats.points,
+                gd: stats.gf - stats.ga,
+                gf: stats.gf
+            }));
+
+            standings.sort((a, b) => {
+                if (b.points !== a.points) return b.points - a.points;
+                if (b.gd !== a.gd) return b.gd - a.gd;
+                return b.gf - a.gf;
+            });
+
+            console.log('[STANDINGS] Sorted', standings.length, 'teams');
+
+            // Fetch players to calculate team power
+            const playersRes = await fetch('/api/players/search');
+            const allPlayers = await playersRes.json();
+            console.log('[STANDINGS] Got', allPlayers.length, 'players');
+
+            // Create position map with power (use placeholder for now)
+            standings.forEach((team, index) => {
+                // Try to calculate power from players
+                let teamPower = 50; // Default placeholder
+                
+                // Find players that belong to this team (if they have team info)
+                const teamPlayers = allPlayers.filter((p: any) => {
+                    return p.team?.id === team.teamId || p.teamId === team.teamId;
+                });
+
+                if (teamPlayers.length > 0) {
+                    const bestPlayers = teamPlayers
+                        .map((p: any) => p.power || 0)
+                        .sort((a: number, b: number) => b - a)
+                        .slice(0, 11);
+                    if (bestPlayers.length > 0) {
+                        const avgPower = bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length;
+                        teamPower = Math.round(avgPower);
+                    }
+                }
+
+                standingsMap[team.teamId] = {
+                    position: index + 1,
+                    power: teamPower
+                };
+
+                if (index < 5) {
+                    console.log(`[STANDINGS] #${index + 1}: ${team.points} pts, power ${teamPower}`);
+                }
+            });
+
+            console.log('[STANDINGS] Set', Object.keys(standingsMap).length, 'teams');
+            setTeamStandings(standingsMap);
+            console.log('[STANDINGS] ===== DONE =====');
+        } catch (error) {
+            console.error('[STANDINGS] ERROR:', error);
+        }
+    }, []);
 
     useEffect(() => {
         fetchData();
@@ -96,8 +228,28 @@ function MatchContent() {
     
     // Also fetch on mount to ensure initial data load
     useEffect(() => {
-        fetchData();
+        console.log('[MOUNT] Match page mounted, calling fetchData');
+        fetchData().catch(err => console.error('[MOUNT] Error in fetchData:', err));
     }, []);
+
+    useEffect(() => {
+        const fetchActionAnalytics = async () => {
+            if (!matchData?.id) {
+                setMatchActionAnalytics(null);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/match/${matchData.id}/actions`);
+                const data = await res.json();
+                setMatchActionAnalytics(data);
+            } catch (error) {
+                console.error('[MATCH] Failed to load action analytics:', error);
+                setMatchActionAnalytics(null);
+            }
+        };
+
+        fetchActionAnalytics();
+    }, [matchData?.id]);
 
     const runSimulation = async (matchId: string) => {
         setLoading(true);
@@ -246,6 +398,56 @@ function MatchContent() {
         );
     };
 
+    const FieldZoneStackedBar = ({ teamId, side }: { teamId: string; side: 'home' | 'away' }) => {
+        const zones = matchActionAnalytics?.teamZones?.[teamId] || { defensive: 0, middle: 0, attacking: 0, total: 0 };
+        const total = zones.total || 1;
+        const defensivePct = Math.round((zones.defensive / total) * 100);
+        const middlePct = Math.round((zones.middle / total) * 100);
+        const attackingPct = Math.round((zones.attacking / total) * 100);
+        const align = side === 'home' ? 'flex-start' : 'flex-end';
+
+        const segments = side === 'away'
+            ? [
+                { key: 'attacking', label: 'หน้าประตู', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' },
+                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
+                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' }
+            ]
+            : [
+                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
+                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
+                { key: 'attacking', label: 'หน้าประตู', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
+            ];
+
+        return (
+            <div style={{ width: '100%', display: 'flex', justifyContent: align }}>
+                <div style={{ width: '320px' }}>
+                    <div style={{ display: 'flex', height: '16px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        {segments.map((seg) => (
+                            <div
+                                key={seg.key}
+                                title={`${seg.label}: ${seg.value} (${seg.pct}%)`}
+                                style={{
+                                    width: `${seg.pct}%`,
+                                    background: seg.color,
+                                    color: 'white',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden'
+                                }}
+                            >
+                                {seg.pct >= 12 ? `${seg.short} ${seg.pct}%` : ''}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     if (!gameInfo) return <div className="card">กำลังโหลดข้อมูล...</div>;
 
     const userTeamId = gameInfo.userTeamId;
@@ -281,6 +483,43 @@ function MatchContent() {
         );
 
         return { subInIds, subOutNames };
+    };
+
+    const getTeamInfo = (teamId: string) => {
+        if (!teamId) {
+            console.log('[TEAMINFO] No teamId provided');
+            return null;
+        }
+        const standing = teamStandings[teamId];
+        if (!standing) {
+            console.log('[TEAMINFO] No standing data for team:', teamId, 'Available teams:', Object.keys(teamStandings).slice(0, 5));
+            return null;
+        }
+        console.log('[TEAMINFO] Found data for team', teamId, ':', standing);
+        return {
+            position: standing.position,
+            power: standing.power
+        };
+    };
+
+    const formatTeamName = (teamName: string, teamId: string) => {
+        const info = getTeamInfo(teamId);
+        if (!info) {
+            console.log('[Match Page] No info for team:', teamName, teamId);
+            return (
+                <div style={{ fontWeight: 'bold', fontSize: '1.4rem' }}>{teamName}</div>
+            );
+        }
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '1.4rem' }}>{teamName}</div>
+                <div style={{ fontSize: '0.85rem', opacity: 0.8, display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <span>อันดับ {info.position}</span>
+                    <span>•</span>
+                    <span>พลัง {info.power}</span>
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -325,9 +564,9 @@ function MatchContent() {
                                 <span>⭐ นัดสำคัญของคุณ</span>
                             </h3>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', border: '1px solid var(--border)', borderRadius: '12px', background: 'white' }}>
-                                <div style={{ flex: 1, textAlign: 'right', fontWeight: 'bold', fontSize: '1.4rem' }}>{userMatch?.homeTeam.name}</div>
+                                <div style={{ flex: 1, textAlign: 'right' }}>{formatTeamName(userMatch?.homeTeam.name || '', userMatch?.homeTeam.id || '')}</div>
                                 <div style={{ margin: '0 2rem', background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.1rem' }}>VS</div>
-                                <div style={{ flex: 1, textAlign: 'left', fontWeight: 'bold', fontSize: '1.4rem' }}>{userMatch?.awayTeam.name}</div>
+                                <div style={{ flex: 1, textAlign: 'left' }}>{formatTeamName(userMatch?.awayTeam.name || '', userMatch?.awayTeam.id || '')}</div>
                                 <div style={{ marginLeft: '2rem' }}>
                                     <button
                                         onClick={() => router.push(`/squad?from=match&matchId=${userMatch!.id}`)}
@@ -349,16 +588,34 @@ function MatchContent() {
                                 โปรแกรมคู่อื่นๆ ({unplayedMatches.filter(m => m.id !== userMatch?.id).length} คู่)
                             </h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {unplayedMatches.filter(m => m.id !== userMatch?.id).map(m => (
-                                    <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', opacity: isUserPlayingToday && !userMatchPlayed ? 0.7 : 1 }}>
-                                        <div style={{ flex: 1, textAlign: 'right', fontWeight: '500' }}>{m.homeTeam.name}</div>
-                                        <div style={{ margin: '0 1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>vs</div>
-                                        <div style={{ flex: 1, textAlign: 'left', fontWeight: '500' }}>{m.awayTeam.name}</div>
-                                        <div style={{ marginLeft: '1rem' }}>
-                                            <button onClick={() => runSimulation(m.id)} disabled={loading} className="btn btn-sm">จำลอง</button>
+                                {unplayedMatches.filter(m => m.id !== userMatch?.id).map(m => {
+                                    const homeInfo = getTeamInfo(m.homeTeam.id);
+                                    const awayInfo = getTeamInfo(m.awayTeam.id);
+                                    return (
+                                        <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', opacity: isUserPlayingToday && !userMatchPlayed ? 0.7 : 1 }}>
+                                            <div style={{ flex: 1, textAlign: 'right' }}>
+                                                <div style={{ fontWeight: '500', fontSize: '1.1rem' }}>{m.homeTeam.name}</div>
+                                                {homeInfo && (
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '2px' }}>
+                                                        #{homeInfo.position} • พลัง {homeInfo.power}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ margin: '0 1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>vs</div>
+                                            <div style={{ flex: 1, textAlign: 'left' }}>
+                                                <div style={{ fontWeight: '500', fontSize: '1.1rem' }}>{m.awayTeam.name}</div>
+                                                {awayInfo && (
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '2px' }}>
+                                                        #{awayInfo.position} • พลัง {awayInfo.power}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ marginLeft: '1rem' }}>
+                                                <button onClick={() => runSimulation(m.id)} disabled={loading} className="btn btn-sm">จำลอง</button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -371,7 +628,15 @@ function MatchContent() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '2.5rem', textAlign: 'center' }}>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>HOME</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>{matchData.homeTeamName}</div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{matchData.homeTeamName}</div>
+                            {(() => {
+                                const homeInfo = getTeamInfo(matchData.homeTeam?.id);
+                                return homeInfo && (
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '1rem' }}>
+                                        อันดับ {homeInfo.position} • พลัง {homeInfo.power}
+                                    </div>
+                                );
+                            })()}
                             {/* Home Team Goals */}
                             <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
                                 {(matchData.events || [])
@@ -398,7 +663,15 @@ function MatchContent() {
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>AWAY</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>{matchData.awayTeamName}</div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{matchData.awayTeamName}</div>
+                            {(() => {
+                                const awayInfo = getTeamInfo(matchData.awayTeam?.id);
+                                return awayInfo && (
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '1rem' }}>
+                                        อันดับ {awayInfo.position} • พลัง {awayInfo.power}
+                                    </div>
+                                );
+                            })()}
                             {/* Away Team Goals */}
                             <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
                                 {(matchData.events || [])
@@ -474,6 +747,18 @@ function MatchContent() {
                                 <StatRowWithChart label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
                                 <StatRowWithChart label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
                                 <StatRowWithChart label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
+                                {/* Field Zone Usage */}
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" />
+                                    </div>
+                                    <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>
+                                        Field Zone
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <FieldZoneStackedBar teamId={matchData.awayTeamId} side="away" />
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -606,35 +891,45 @@ function MatchContent() {
                         )}
 
                         {(activeTab === 'home' || activeTab === 'away') && (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead>
-                                    <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                                        <th style={{ padding: '12px' }} title="Position">POS</th>
-                                        <th style={{ padding: '12px' }} title="Player Name">NAME</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Minutes Played">MIN</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Match Rating">RAT</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Fitness Level">FIT</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Shots On Target/Total">SHO</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Passes Completed/Attempted">PAS</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Crosses Completed/Attempted">CRS</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Dribbles Won/Attempted">DRB</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Tackles Won/Attempted">TCK</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Free Kicks">FK</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Corners">C</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }} title="Throw-Ins">T</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {(() => {
-                                        const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
-                                        const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
-                                        const subInOrder = new Map<string, number>();
-                                        (matchData?.events || [])
-                                            .filter((e: any) => e.type === 'SUB' && e.teamId === teamId && e.playerId)
-                                            .forEach((e: any, idx: number) => subInOrder.set(e.playerId, idx));
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {/* Column Header */}
+                                <div style={{ 
+                                    display: 'grid', 
+                                    gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', 
+                                    gap: '8px', 
+                                    alignItems: 'center', 
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    color: 'var(--muted)',
+                                    padding: '12px',
+                                    background: '#f8fafc',
+                                    borderRadius: '6px',
+                                    borderBottom: '2px solid var(--border)',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    <div>POS</div>
+                                    <div>NAME</div>
+                                    <div style={{ textAlign: 'center' }} title="Minutes played">MIN</div>
+                                    <div style={{ textAlign: 'center' }} title="Player Rating">RAT</div>
+                                    <div style={{ textAlign: 'center' }} title="Fitness/Condition">FIT</div>
+                                    <div style={{ textAlign: 'center' }} title="Shots on Target">SHO</div>
+                                    <div style={{ textAlign: 'center' }} title="Passes completed">PAS</div>
+                                    <div style={{ textAlign: 'center' }} title="Crosses completed">CRS</div>
+                                    <div style={{ textAlign: 'center' }} title="Dribbles won">DRB</div>
+                                    <div style={{ textAlign: 'center' }} title="Tackles won">TCK</div>
+                                    <div></div>
+                                </div>
 
-                                        return Object.values(matchData.playerStats)
-                                        .filter((p: any) => p.teamId === (activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId))
+                                {(() => {
+                                    const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
+                                    const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
+                                    const subInOrder = new Map<string, number>();
+                                    (matchData?.events || [])
+                                        .filter((e: any) => e.type === 'SUB' && e.teamId === teamId && e.playerId)
+                                        .forEach((e: any, idx: number) => subInOrder.set(e.playerId, idx));
+
+                                    return Object.values(matchData.playerStats)
+                                        .filter((p: any) => p.teamId === teamId)
                                         .sort((a: any, b: any) => {
                                             const aIsSubIn = subInIds.has(a.playerId);
                                             const bIsSubIn = subInIds.has(b.playerId);
@@ -654,7 +949,6 @@ function MatchContent() {
                                                 const aSubOrder = subInOrder.get(a.playerId) ?? 99;
                                                 const bSubOrder = subInOrder.get(b.playerId) ?? 99;
                                                 if (aSubOrder !== bSubOrder) return aSubOrder - bSubOrder;
-                                                return a.name.localeCompare(b.name);
                                             }
 
                                             const aOrder = getPosOrder(a.position);
@@ -666,17 +960,97 @@ function MatchContent() {
                                             const isSubIn = subInIds.has(p.playerId);
                                             const isSubOut = subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
+                                            const isExpanded = expandedPlayerId === p.playerId;
+                                            const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];
+                                            const totalZoneTouches = (analytics?.zones?.total || (p.defensiveThirdTouches + p.middleThirdTouches + p.attackingThirdTouches) || 1);
+                                            const defPct = Math.round(((analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0) / totalZoneTouches) * 100);
+                                            const midPct = Math.round(((analytics?.zones?.middle ?? p.middleThirdTouches ?? 0) / totalZoneTouches) * 100);
+                                            const attPct = Math.round(((analytics?.zones?.attacking ?? p.attackingThirdTouches ?? 0) / totalZoneTouches) * 100);
+
+                                            // Calculate action breakdown percentages with zone filtering
+                                            const actions = ['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'];
+                                            
+                                            // If a zone is selected, filter raw logs by that zone
+                                            let filteredLogs = matchActionAnalytics?.rawLogs || [];
+                                            if (selectedZoneFilter && filteredLogs.length > 0) {
+                                                filteredLogs = filteredLogs.filter(log => 
+                                                    log.playerId === p.playerId && 
+                                                    ((selectedZoneFilter === 'defensive' && log.zone === 'DEFENSIVE') ||
+                                                     (selectedZoneFilter === 'middle' && log.zone === 'MIDDLE') ||
+                                                     (selectedZoneFilter === 'attacking' && log.zone === 'ATTACKING'))
+                                                );
+                                            }
+
+                                            // Calculate breakdown from filtered logs or use overall stats
+                                            let actionBreakdown;
+                                            if (selectedZoneFilter && filteredLogs.length > 0) {
+                                                // Calculate from filtered logs
+                                                const zoneActionCounts = {
+                                                    'PASS_SHORT': 0,
+                                                    'PASS_LONG': 0,
+                                                    'DRIBBLE': 0,
+                                                    'SHOOT': 0
+                                                };
+                                                const zoneActionSuccess = {
+                                                    'PASS_SHORT': 0,
+                                                    'PASS_LONG': 0,
+                                                    'DRIBBLE': 0,
+                                                    'SHOOT': 0
+                                                };
+                                                
+                                                filteredLogs.forEach(log => {
+                                                    const actionType = log.actionType as keyof typeof zoneActionCounts;
+                                                    if (actionType in zoneActionCounts) {
+                                                        zoneActionCounts[actionType]++;
+                                                        if (log.isSuccessful) {
+                                                            zoneActionSuccess[actionType]++;
+                                                        }
+                                                    }
+                                                });
+
+                                                const zoneTotal = Object.values(zoneActionCounts).reduce((a, b) => a + b, 0);
+                                                actionBreakdown = actions.map(a => ({
+                                                    type: a,
+                                                    attempts: zoneActionCounts[a as keyof typeof zoneActionCounts],
+                                                    percentage: zoneTotal > 0 ? Math.round((zoneActionCounts[a as keyof typeof zoneActionCounts] / zoneTotal) * 100) : 0,
+                                                    success: zoneActionSuccess[a as keyof typeof zoneActionSuccess],
+                                                    successRate: zoneActionCounts[a as keyof typeof zoneActionCounts] > 0 
+                                                        ? Math.round((zoneActionSuccess[a as keyof typeof zoneActionSuccess] / zoneActionCounts[a as keyof typeof zoneActionCounts]) * 100)
+                                                        : 0
+                                                }));
+                                            } else {
+                                                // Use overall stats
+                                                const totalAttempts = actions.reduce((sum, a) => sum + (analytics?.actions?.[a]?.attempts ?? 0), 0);
+                                                actionBreakdown = actions.map(a => ({
+                                                    type: a,
+                                                    attempts: analytics?.actions?.[a]?.attempts ?? 0,
+                                                    percentage: totalAttempts > 0 ? Math.round(((analytics?.actions?.[a]?.attempts ?? 0) / totalAttempts) * 100) : 0,
+                                                    success: analytics?.actions?.[a]?.success ?? 0,
+                                                    successRate: analytics?.actions?.[a]?.successRate ?? 0
+                                                }));
+                                            }
+
                                             return (
-                                                <tr key={p.playerId} style={{
-                                                    borderBottom: '1px solid var(--border)',
-                                                    opacity: (p.minutes === 0 || isSubOut) ? 0.5 : 1,
-                                                    background: isMotM ? 'rgba(var(--primary-rgb), 0.05)' : 'transparent'
-                                                }}>
-                                                    <td style={{ padding: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>{p.position}</td>
-                                                    <td style={{ padding: '12px' }}>
+                                                <div
+                                                    key={p.playerId}
+                                                    style={{
+                                                        border: '1px solid var(--border)',
+                                                        borderRadius: '10px',
+                                                        padding: '12px',
+                                                        opacity: (p.minutes === 0 || isSubOut) ? 0.5 : 1,
+                                                        background: isMotM ? 'rgba(var(--primary-rgb), 0.05)' : '#fff',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                    onClick={() => setExpandedPlayerId(isExpanded ? null : p.playerId)}
+                                                >
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }}>
+                                                        <div style={{ fontWeight: 'bold' }}>{p.position}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            <button 
-                                                                onClick={() => router.push(`/match?matchId=${queryMatchId}&playerId=${p.playerId}`)}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    router.push(`/match?matchId=${queryMatchId}&playerId=${p.playerId}`);
+                                                                }}
                                                                 style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                                             >
                                                                 {p.name}
@@ -684,49 +1058,105 @@ function MatchContent() {
                                                             {isSubIn && <span title="Subbed On">🔼</span>}
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
-                                                            {p.goals > 0 && <span title="Goals">{'⚽'.repeat(p.goals)}</span>}
-                                                            {p.assists > 0 && <span title="Assists">{'🅰️'.repeat(p.assists)}</span>}
-                                                            {p.yellowCards > 0 && <span title="Yellow Card">🟨</span>}
-                                                            {p.redCards > 0 && <span title="Red Card">🟥</span>}
                                                         </div>
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center' }}>{p.minutes}'</td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: isMotM ? 'var(--accent)' : (p.minutes > 0 ? 'var(--primary)' : 'var(--muted)') }}>
-                                                        {p.rating.toFixed(1)}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.fitnessEnd ?? 0}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.shotsOnTarget}/${p.shots}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.passesCompleted}/${p.passesAttempted}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.crossesCompleted}/${p.crossesAttempted}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.dribblesWon}/${p.dribblesAttempted}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? `${p.tacklesWon}/${p.tacklesAttempted}` : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? p.freeKicks || 0 : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? p.corners || 0 : '-'}
-                                                    </td>
-                                                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                        {p.minutes > 0 ? p.throws || 0 : '-'}
-                                                    </td>
-                                                </tr>
+                                                        <div style={{ textAlign: 'center' }}>{p.minutes}'</div>
+                                                        <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{p.rating.toFixed(1)}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.fitnessEnd ?? 0}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.shotsOnTarget}/{p.shots}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.passesCompleted}/{p.passesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{isExpanded ? '▲' : '▼'}</div>
+                                                    </div>
+
+                                                    {isExpanded && (
+                                                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--border)' }}>
+                                                            {/* Zone Filter Chart */}
+                                                            <div style={{ marginBottom: '12px' }}>
+                                                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>Field Zone Distribution (Click to filter)</div>
+                                                                <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', marginBottom: '8px', gap: '2px' }}>
+                                                                    {[
+                                                                        { key: 'defensive', label: '🛡️ Defensive', pct: defPct, value: analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0, color: '#3b82f6' },
+                                                                        { key: 'middle', label: '⚙️ Middle', pct: midPct, value: analytics?.zones?.middle ?? p.middleThirdTouches ?? 0, color: '#10b981' },
+                                                                        { key: 'attacking', label: '⚽ Attacking', pct: attPct, value: analytics?.zones?.attacking ?? p.attackingThirdTouches ?? 0, color: '#f59e0b' }
+                                                                    ].map(zone => (
+                                                                        <div
+                                                                            key={zone.key}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setSelectedZoneFilter(selectedZoneFilter === zone.key ? null : zone.key);
+                                                                            }}
+                                                                            title={`${zone.label}: ${zone.value} touches (${zone.pct}%) - Click to filter`}
+                                                                            style={{
+                                                                                width: `${Math.max(zone.pct, 5)}%`,
+                                                                                background: zone.color,
+                                                                                cursor: 'pointer',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center',
+                                                                                color: 'white',
+                                                                                fontSize: '0.7rem',
+                                                                                fontWeight: 'bold',
+                                                                                opacity: selectedZoneFilter === null || selectedZoneFilter === zone.key ? 1 : 0.4,
+                                                                                transition: 'opacity 0.2s',
+                                                                                border: selectedZoneFilter === zone.key ? '2px solid white' : 'none'
+                                                                            }}
+                                                                        >
+                                                                            {zone.pct >= 15 ? `${zone.pct}%` : ''}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                                                                    🛡️ {defPct}% • ⚙️ {midPct}% • ⚽ {attPct}%
+                                                                    {selectedZoneFilter && ` (Filtered: ${selectedZoneFilter})`}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Action Breakdown */}
+                                                            <div style={{ marginBottom: '8px' }}>
+                                                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>Action Breakdown (Total: {actionBreakdown.reduce((sum, ab) => sum + ab.attempts, 0)} attempts = 100%){selectedZoneFilter && ` - ${selectedZoneFilter.charAt(0).toUpperCase() + selectedZoneFilter.slice(1)} Zone`}</div>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(80px, 1fr))', gap: '8px' }}>
+                                                                    {actionBreakdown.map((ab) => (
+                                                                        <div key={ab.type} style={{ 
+                                                                            border: '1px solid var(--border)', 
+                                                                            borderRadius: '6px', 
+                                                                            padding: '8px', 
+                                                                            background: '#fafafa',
+                                                                            opacity: selectedZoneFilter ? 0.7 : 1
+                                                                        }}>
+                                                                            <div style={{ fontSize: '0.7rem', color: 'var(--muted)', fontWeight: '600' }}>{ab.type.replace('_', ' ')}</div>
+                                                                            <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '2px' }}>{ab.percentage}%</div>
+                                                                            <div style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{ab.attempts} attempts</div>
+                                                                            <div style={{ fontSize: '0.65rem', color: '#059669' }}>{ab.successRate}% success</div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Action Details by Type */}
+                                                            <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                                                <div style={{ fontWeight: '600', marginBottom: '4px' }}>Detailed Action Stats</div>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(80px, 1fr))', gap: '8px' }}>
+                                                                    {['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].map((a) => {
+                                                                        const st = analytics?.actions?.[a] || { attempts: 0, success: 0, fail: 0, successRate: 0 };
+                                                                        return (
+                                                                            <div key={a} style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '6px', background: '#f8fafc' }}>
+                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontWeight: '600' }}>{a.replace('_', ' ')}</div>
+                                                                                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '2px' }}>{st.successRate}%</div>
+                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{st.success}/{st.attempts}</div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             );
                                         });
-                                    })()}
-                                </tbody>
-                            </table>
+                                })()}
+                            </div>
                         )}
                     </div>
 
