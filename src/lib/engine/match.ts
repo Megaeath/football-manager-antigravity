@@ -1295,9 +1295,19 @@ function attemptSubstitutions(
     if (subsUsed >= maxSubs) return subsUsed;
     if (minute < 55) return subsUsed;
 
-    const starters = team.players.filter(p => p.tacticalPosition !== null && p.position !== 'GK');
+    // Players that already came on should never be substituted out again
+    const subbedInIds = new Set(
+        (matchState.events || [])
+            .filter((e: any) => e.type === 'SUB' && e.teamId === team.id && e.playerId)
+            .map((e: any) => e.playerId as string)
+    );
+
+    const starters = team.players.filter(
+        p => p.tacticalPosition !== null && p.position !== 'GK' && !subbedInIds.has(p.id)
+    );
     const availableBench = team.players.filter(p => p.tacticalPosition === null && p.position !== 'GK');
-    if (availableBench.length === 0) return subsUsed;
+    const availableBenchGK = team.players.filter(p => p.tacticalPosition === null && p.position === 'GK');
+    if (availableBench.length === 0 && availableBenchGK.length === 0) return subsUsed;
 
     const tiredStarters = starters
         .filter(p => p.condition < 70)
@@ -1335,6 +1345,25 @@ function attemptSubstitutions(
         const removeIdx = availableBench.findIndex(p => p.id === bestBench.id);
         if (removeIdx >= 0) {
             availableBench.splice(removeIdx, 1);
+        }
+    }
+
+    // Emergency GK substitution only (late game + very low condition)
+    // Goalkeeper should be last option and typically not changed.
+    if (subsUsed < maxSubs && minute >= 70 && availableBenchGK.length > 0) {
+        const currentGK = team.players.find(
+            p => p.tacticalPosition !== null && p.position === 'GK' && !subbedInIds.has(p.id)
+        );
+
+        if (currentGK) {
+            const gkEmergencyThreshold = 22; // only very low condition
+            if (currentGK.condition <= gkEmergencyThreshold) {
+                const bestBenchGK = [...availableBenchGK].sort((a, b) => b.condition - a.condition)[0];
+                if (bestBenchGK && bestBenchGK.condition >= currentGK.condition + 5) {
+                    performSubstitution(team, matchState, minute, ball, currentGK, bestBenchGK);
+                    subsUsed += 1;
+                }
+            }
         }
     }
 

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
 import NextProcessButton from '@/components/NextProcessButton';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 export default async function Home() {
     const gameInfo = await getGameTime();
@@ -24,6 +25,7 @@ export default async function Home() {
     let teamFinance = null;
     let leagueTable: any[] = [];
     let userTeamPosition = 0;
+    let teamPowerMap: Record<string, number> = {};
 
     if (userTeamId) {
         userTeam = await prisma.team.findUnique({
@@ -117,6 +119,63 @@ export default async function Home() {
         });
 
         userTeamPosition = leagueTable.findIndex(t => t.isUserTeam) + 1;
+
+        // Calculate team power map (same concept as /match page: average top 11 players)
+        const teamIds = allTeams.map(t => t.id);
+        const playersForPower = await prisma.player.findMany({
+            where: { teamId: { in: teamIds } },
+            select: {
+                teamId: true,
+                naturalPosition: true,
+                condition: true,
+                exp: true,
+                handling: true,
+                tackling: true,
+                passing: true,
+                shooting: true,
+                heading: true,
+                dribbling: true,
+                crossing: true,
+                setPieces: true,
+                throw: true,
+                aggression: true,
+                positioning: true,
+                vision: true,
+                bravery: true,
+                leadership: true,
+                teamwork: true,
+                composure: true,
+                pace: true,
+                acceleration: true,
+                stamina: true,
+                strength: true,
+                agility: true,
+                balance: true
+            }
+        });
+
+        const powerBuckets: Record<string, number[]> = {};
+        for (const p of playersForPower) {
+            if (!p.teamId) continue;
+            const attrs = toPlayerAttributes(p);
+            const targetPosition = (p.naturalPosition || 'MC').split('_')[0];
+            const power = calculatePlayerPower({
+                attributes: attrs,
+                targetPosition,
+                condition: p.condition ?? 100,
+                exp: p.exp ?? 0
+            }).powerWithExp;
+
+            if (!powerBuckets[p.teamId]) powerBuckets[p.teamId] = [];
+            powerBuckets[p.teamId].push(power);
+        }
+
+        for (const id of teamIds) {
+            const values = (powerBuckets[id] || []).sort((a, b) => b - a).slice(0, 11);
+            teamPowerMap[id] = values.length > 0
+                ? Math.round(values.reduce((sum, v) => sum + v, 0) / values.length)
+                : 50;
+        }
     }
 
     // Get recent matches
@@ -228,8 +287,26 @@ export default async function Home() {
                     {upcomingMatch && (
                         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%)', borderLeft: '4px solid #ff9800' }}>
                             <h4 style={{ margin: '0 0 1rem 0', color: '#ff9800' }}>🎯 แมตช์ถัดไป</h4>
-                            <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                                {upcomingMatch.homeTeamId === userTeamId ? upcomingMatch.awayTeam.name : upcomingMatch.homeTeam.name}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '0.5rem' }}>
+                                {(() => {
+                                    const isHomeUser = upcomingMatch.homeTeamId === userTeamId;
+                                    const opponentTeam = isHomeUser ? upcomingMatch.awayTeam : upcomingMatch.homeTeam;
+                                    const opponentRank = leagueTable.findIndex(t => t.id === opponentTeam.id) + 1;
+                                    const opponentPower = teamPowerMap[opponentTeam.id] ?? 50;
+
+                                    return (
+                                        <div style={{
+                                            fontSize: '1rem',
+                                            fontWeight: '700',
+                                            color: 'inherit'
+                                        }}>
+                                            {opponentTeam.name}
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginLeft: '8px', fontWeight: '500' }}>
+                                                #{opponentRank || '-'} • พลัง {opponentPower}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                                 {new Date(upcomingMatch.date).toLocaleDateString('th-TH')}

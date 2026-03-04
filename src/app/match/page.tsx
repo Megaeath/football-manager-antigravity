@@ -643,9 +643,20 @@ function MatchContent() {
                                     .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.homeTeam?.id)
                                     .map((e: any, idx: number) => {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
+                                        const assistMatch = e.text?.match(/assisted by ([^.!]+)/i);
+                                        const assistName = assistMatch?.[1]?.trim();
+                                        const isEventMotM = !!matchData.motmPlayerId && e.playerId === matchData.motmPlayerId;
                                         return (
-                                            <div key={idx}>
-                                                {playerName} {e.minute}'
+                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                <span title="Scorer">⚽</span>
+                                                <span>{playerName}</span>
+                                                {assistName && (
+                                                    <span title={`Assist: ${assistName}`} style={{ opacity: 0.95 }}>
+                                                        🅰️ {assistName}
+                                                    </span>
+                                                )}
+                                                {isEventMotM && <span title="Man of the Match">🌟</span>}
+                                                <span>{e.minute}'</span>
                                             </div>
                                         );
                                     })
@@ -678,9 +689,20 @@ function MatchContent() {
                                     .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.awayTeam?.id)
                                     .map((e: any, idx: number) => {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
+                                        const assistMatch = e.text?.match(/assisted by ([^.!]+)/i);
+                                        const assistName = assistMatch?.[1]?.trim();
+                                        const isEventMotM = !!matchData.motmPlayerId && e.playerId === matchData.motmPlayerId;
                                         return (
-                                            <div key={idx}>
-                                                {playerName} {e.minute}'
+                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                <span title="Scorer">⚽</span>
+                                                <span>{playerName}</span>
+                                                {assistName && (
+                                                    <span title={`Assist: ${assistName}`} style={{ opacity: 0.95 }}>
+                                                        🅰️ {assistName}
+                                                    </span>
+                                                )}
+                                                {isEventMotM && <span title="Man of the Match">🌟</span>}
+                                                <span>{e.minute}'</span>
                                             </div>
                                         );
                                     })
@@ -1055,6 +1077,8 @@ function MatchContent() {
                                                             >
                                                                 {p.name}
                                                             </button>
+                                                            {p.goals > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
+                                                            {p.assists > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
                                                             {isSubIn && <span title="Subbed On">🔼</span>}
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
