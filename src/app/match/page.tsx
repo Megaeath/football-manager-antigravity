@@ -740,7 +740,7 @@ function MatchContent() {
                                 >
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
                                         <span style={{ fontSize: '1rem' }}>{tabIcon}</span>
-                                        <span style={{ display: 'none', fontSize: '0.6rem' }} className="md:inline">{tabLabel}</span>
+                                        <span style={{ fontSize: '0.6rem' }} className="hidden md:inline">{tabLabel}</span>
                                     </div>
                                 </button>
                             );
