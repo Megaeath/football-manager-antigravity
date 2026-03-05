@@ -284,7 +284,7 @@ export default function PlayerModal() {
                                     </div>
                                 </div>
                                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end', flexWrap: 'wrap', flexDirection: 'column' }} className="md:flex-row">
+                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                                         <div>
                                             <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Power</div>
                                             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--success)' }}>
@@ -364,7 +364,7 @@ export default function PlayerModal() {
                             <div style={{ padding: '2rem' }}>
                                 {/* Attributes Tab */}
                                 {activeTab === 'attributes' && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '2rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }} className="md:grid-cols-4">
                                         <AttributeSection label="Physical" items={[
                                             { label: 'Acceleration', value: effectiveAttributes?.acceleration ?? player.acceleration },
                                             { label: 'Agility', value: effectiveAttributes?.agility ?? player.agility },
