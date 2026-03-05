@@ -364,7 +364,7 @@ export default function PlayerModal() {
                             <div style={{ padding: '2rem' }}>
                                 {/* Attributes Tab */}
                                 {activeTab === 'attributes' && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '2rem' }}>
                                         <AttributeSection label="Physical" items={[
                                             { label: 'Acceleration', value: effectiveAttributes?.acceleration ?? player.acceleration },
                                             { label: 'Agility', value: effectiveAttributes?.agility ?? player.agility },
