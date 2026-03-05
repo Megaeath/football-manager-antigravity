@@ -296,13 +296,13 @@ function MatchContent() {
 
         return (
             <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1, textAlign: 'right', fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1.1rem' }}>
+                <div style={{ flex: 1, textAlign: 'right', fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1rem' }} className="md:text-lg">
                     {homeVal}{isPercentage ? '%' : ''}
                 </div>
-                <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
+                <div style={{ width: '100px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.7rem', textTransform: 'uppercase' }} className="md:w-40 md:text-sm">
                     {label}
                 </div>
-                <div style={{ flex: 1, textAlign: 'left', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.1rem' }}>
+                <div style={{ flex: 1, textAlign: 'left', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1rem' }} className="md:text-lg">
                     {awayVal}{isPercentage ? '%' : ''}
                 </div>
             </div>
@@ -320,13 +320,13 @@ function MatchContent() {
             <div>
                 {/* Numbers row */}
                 <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ flex: 1, textAlign: 'left', fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1.2rem' }}>
+                    <div style={{ flex: 1, textAlign: 'left', fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1rem' }} className="md:text-lg">
                         {homeVal}{isPercentage ? '%' : ''}
                     </div>
-                    <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>
+                    <div style={{ width: '100px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '600' }} className="md:w-40 md:text-sm">
                         {label}
                     </div>
-                    <div style={{ flex: 1, textAlign: 'right', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.2rem' }}>
+                    <div style={{ flex: 1, textAlign: 'right', fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1rem' }} className="md:text-lg">
                         {awayVal}{isPercentage ? '%' : ''}
                     </div>
                 </div>
@@ -368,29 +368,29 @@ function MatchContent() {
         return (
             <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)', gap: '12px' }}>
                 <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                    <div style={{ fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1.1rem', minWidth: '40px', textAlign: 'right' }}>
+                    <div style={{ fontWeight: homeWin ? 'bold' : 'normal', fontSize: '1rem', minWidth: '40px', textAlign: 'right' }} className="md:text-lg">
                         {homeVal}{isPercentage ? '%' : ''}
                     </div>
                     <div style={{
-                        width: '80px',
-                        height: '24px',
+                        width: '60px',
+                        height: '20px',
                         background: homeWin ? '#10b981' : '#ef4444',
                         borderRadius: '4px',
                         transition: 'all 0.3s ease'
-                    }} />
+                    }} className="md:w-20" />
                 </div>
-                <div style={{ width: '140px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                <div style={{ width: '90px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 'bold' }} className="md:w-36 md:text-sm">
                     {label}
                 </div>
                 <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px' }}>
                     <div style={{
-                        width: '80px',
-                        height: '24px',
+                        width: '60px',
+                        height: '20px',
                         background: awayWin ? '#10b981' : '#ef4444',
                         borderRadius: '4px',
                         transition: 'all 0.3s ease'
-                    }} />
-                    <div style={{ fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1.1rem', minWidth: '40px', textAlign: 'left' }}>
+                    }} className="md:w-20" />
+                    <div style={{ fontWeight: awayWin ? 'bold' : 'normal', fontSize: '1rem', minWidth: '40px', textAlign: 'left' }} className="md:text-lg">
                         {awayVal}{isPercentage ? '%' : ''}
                     </div>
                 </div>
@@ -625,10 +625,10 @@ function MatchContent() {
             {/* MATCH RESULTS (IF PLAYED) */}
             {matchData && (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '2.5rem', textAlign: 'center' }}>
-                        <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '1.5rem', textAlign: 'center', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:gap-0 md:p-10">
+                        <div style={{ flex: 1 }} className="md:text-left">
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>HOME</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{matchData.homeTeamName}</div>
+                            <div style={{ fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }} className="md:text-2xl">{matchData.homeTeamName}</div>
                             {(() => {
                                 const homeInfo = getTeamInfo(matchData.homeTeam?.id);
                                 return homeInfo && (
@@ -664,17 +664,17 @@ function MatchContent() {
                             </div>
                         </div>
                         <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '4rem', fontWeight: 'bold', letterSpacing: '8px', position: 'relative', display: 'inline-block' }}>
+                            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', letterSpacing: '4px', position: 'relative', display: 'inline-block' }} className="md:text-6xl md:letter-spacing-2">
                                 {matchData.homeScore} - {matchData.awayScore}
                                 {matchData.motmPlayerId && (
-                                    <span title="Man of the Match awarding" style={{ position: 'absolute', top: '-10px', right: '-40px', fontSize: '2rem' }}>🌟</span>
+                                    <span title="Man of the Match awarding" style={{ position: 'absolute', top: '-10px', right: '-40px', fontSize: '1.5rem' }} className="md:text-4xl">🌟</span>
                                 )}
                             </div>
-                            <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.8rem', marginTop: '10px' }}>Full Time Result</div>
+                            <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.75rem', marginTop: '8px' }} className="md:text-sm">Full Time Result</div>
                         </div>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1 }} className="md:text-right">
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>AWAY</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{matchData.awayTeamName}</div>
+                            <div style={{ fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }} className="md:text-2xl">{matchData.awayTeamName}</div>
                             {(() => {
                                 const awayInfo = getTeamInfo(matchData.awayTeam?.id);
                                 return awayInfo && (
@@ -684,8 +684,7 @@ function MatchContent() {
                                 );
                             })()}
                             {/* Away Team Goals */}
-                            <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
-                                {(matchData.events || [])
+                            <div style={{ fontSize: '0.75rem', opacity: 0.9, lineHeight: '1.6' }} className="md:text-sm">{(matchData.events || [])
                                     .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.awayTeam?.id)
                                     .map((e: any, idx: number) => {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
