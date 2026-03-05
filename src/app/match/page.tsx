@@ -749,7 +749,7 @@ function MatchContent() {
 
                     <div style={{ padding: '1rem' }} className="md:py-8 md:px-8">
                         {activeTab === 'stats' && (
-                            <div style={{ width: '100%' }} className="md:max-w-2xl md:mx-auto">
+                            <div style={{ width: '100%', maxWidth: '980px', margin: '0 auto' }}>
                                 <StatRowWithChart label="Possession" homeVal={matchData.teamStats.home.possession} awayVal={matchData.teamStats.away.possession} isPercentage />
                                 <StatRowWithChart label="Shots (On Target)" homeVal={matchData.teamStats.home.shotsOnTarget} awayVal={matchData.teamStats.away.shotsOnTarget} />
                                 <StatRowWithChart label="Pass Accuracy"
