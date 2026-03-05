@@ -857,13 +857,12 @@ function MatchContent() {
                                         <div key={i}>
                                             {/* Mobile: time left, description right (team separated by description background color) */}
                                             <div style={{
-                                                display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '8px',
                                                 padding: '6px 0',
                                                 borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
                                                 fontSize: '0.8rem'
-                                            }} className="md:hidden">
+                                            }} className="flex md:hidden">
                                                 <div style={{
                                                     minWidth: '40px',
                                                     textAlign: 'center',
