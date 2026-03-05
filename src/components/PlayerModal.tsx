@@ -284,7 +284,7 @@ export default function PlayerModal() {
                                     </div>
                                 </div>
                                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', gap: '2rem', justifyContent: 'flex-end', flexWrap: 'wrap', flexDirection: 'column' }} className="md:flex-row">
                                         <div>
                                             <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Power</div>
                                             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--success)' }}>
@@ -329,7 +329,18 @@ export default function PlayerModal() {
 
                             {/* Tabs */}
                             <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)', padding: '0', margin: 0, overflowX: 'auto' }}>
-                                {['attributes', 'season', 'matches', 'contract', 'transfer', 'history'].map((tab: string) => (
+                                {['attributes', 'season', 'matches', 'contract', 'transfer', 'history'].map((tab: string) => {
+                                    const tabLabels: { [key: string]: { icon: string; label: string } } = {
+                                        attributes: { icon: '💪', label: 'ทักษะ' },
+                                        season: { icon: '📊', label: 'ฤดูกาล' },
+                                        matches: { icon: '📅', label: 'ประวัติ' },
+                                        contract: { icon: '📄', label: 'สัญญา' },
+                                        transfer: { icon: '💱', label: 'ซื้อขาย' },
+                                        history: { icon: '🔄', label: 'การย้ายทีม' }
+                                    };
+                                    const { icon, label } = tabLabels[tab];
+                                    
+                                    return (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab as any)}
@@ -342,19 +353,11 @@ export default function PlayerModal() {
                                             fontSize: '0.95rem', textTransform: 'uppercase'
                                         }}
                                     >
-                                        {tab === 'attributes'
-                                            ? '💪 ทักษะ'
-                                            : tab === 'season'
-                                                ? '📊 ฤดูกาล'
-                                                : tab === 'matches'
-                                                    ? '📅 ประวัติ'
-                                                    : tab === 'history'
-                                                        ? '🔄 การย้ายทีม'
-                                                    : tab === 'contract'
-                                                        ? '📄 สัญญา'
-                                                        : '💱 ซื้อขาย'}
+                                        <span style={{ display: 'block', marginBottom: '4px' }}>{icon}</span>
+                                        <span style={{ display: 'none' }} className="md:inline">{label}</span>
                                     </button>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {/* Tab Content */}
