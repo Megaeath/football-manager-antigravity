@@ -223,7 +223,8 @@ export default function PlayerModal() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 1000
+                    zIndex: 1000,
+                    padding: '1rem'
                 }}
                 onClick={closeModal}
             >
@@ -233,7 +234,7 @@ export default function PlayerModal() {
                         background: 'white',
                         borderRadius: '12px',
                         maxWidth: '1000px',
-                        width: '95%',
+                        width: '100%',
                         maxHeight: '90vh',
                         overflow: 'auto',
                         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
@@ -267,15 +268,15 @@ export default function PlayerModal() {
                             </div>
 
                             {/* Header Section */}
-                            <div style={{ background: 'var(--sidebar-bg)', color: 'white', padding: '2rem', display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                            <div style={{ background: 'var(--sidebar-bg)', color: 'white', padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexDirection: 'column' }} className="md:flex-row md:gap-8 md:p-8">
                                 <div style={{
-                                    width: '80px', height: '80px', background: 'rgba(255,255,255,0.1)',
-                                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem'
-                                }}>
+                                    width: '60px', height: '60px', background: 'rgba(255,255,255,0.1)',
+                                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', flexShrink: 0
+                                }} className="md:w-20 md:h-20 md:text-4xl">
                                     👤
                                 </div>
-                                <div>
-                                    <h2 style={{ color: 'white', margin: 0, fontSize: '1.8rem' }}>{player.name}</h2>
+                                <div style={{ textAlign: 'center' }} className="md:text-left md:flex-1">
+                                    <h2 style={{ color: 'white', margin: 0, fontSize: '1.4rem' }} className="md:text-3xl">{player.name}</h2>
                                     <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
                                         <span style={{ background: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '4px', fontSize: '0.9rem' }}>{player.naturalPosition}</span>
                                         <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team.name}</span>

@@ -480,8 +480,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 <div>
                     <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>Squad List</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
                                 Formation
                             </span>
                             <select
@@ -494,11 +494,11 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 <option value="4-3-3">4-3-3</option>
                                 <option value="4-5-1">4-5-1</option>
                             </select>
-                            <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
-                            <button onClick={handleAutoSelect} disabled={loading} className="btn btn-sm">
+                            <span style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 'bold' }}>⚡{getTeamPower()}</span>
+                            <button onClick={handleAutoSelect} disabled={loading} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--primary-dark)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--primary)'; }}>
                                 Auto Select
                             </button>
-                            <button onClick={handleClearAll} disabled={loading} className="btn btn-sm btn-secondary">
+                            <button onClick={handleClearAll} disabled={loading} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--muted)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading) e.currentTarget.style.borderColor = 'var(--primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
                                 Clear All
                             </button>
                         </div>
