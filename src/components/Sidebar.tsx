@@ -43,7 +43,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             />
 
             <aside
-                className={`fixed left-0 top-0 z-[120] flex h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 md:flex ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                className={`fixed left-0 top-0 z-[120] flex h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
             >
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <h1 style={{ fontSize: '1.25rem', margin: 0, color: 'white', letterSpacing: '1px' }}>FM TEXT ⚽</h1>

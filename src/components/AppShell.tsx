@@ -13,9 +13,9 @@ export default function AppShell({ children }: AppShellProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     return (
-        <div className="min-h-screen md:pl-[var(--sidebar-width)]">
+        <div className="min-h-screen flex md:pl-[var(--sidebar-width)]">
             <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-            <div className="flex min-h-screen flex-col">
+            <div className="flex w-full min-h-screen flex-col">
                 <Header onMenuClick={() => setIsSidebarOpen((prev) => !prev)} />
                 <Breadcrumbs />
                 <main className="flex-1 p-4 md:p-6">
