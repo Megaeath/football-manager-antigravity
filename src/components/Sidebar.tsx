@@ -34,17 +34,9 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         { name: 'จำลองการแข่ง', href: '/match', icon: '⚽' },
     ];
 
-    return (
+    // Sidebar content component
+    const SidebarContent = () => (
         <>
-            <div
-                className={`fixed inset-0 z-[110] bg-black/40 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-                onClick={onClose}
-                aria-hidden="true"
-            />
-
-            <aside
-                className={`fixed left-0 top-0 z-[120] flex h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
-            >
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <h1 style={{ fontSize: '1.25rem', margin: 0, color: 'white', letterSpacing: '1px' }}>FM TEXT ⚽</h1>
             </div>
@@ -86,6 +78,28 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
                 v0.1.0 Alpha Build
             </div>
+        </>
+    );
+
+    return (
+        <>
+            {/* Mobile: Overlay backdrop */}
+            <div
+                className={`fixed inset-0 z-[110] bg-black/40 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+                onClick={onClose}
+                aria-hidden="true"
+            />
+
+            {/* Mobile: Fixed drawer */}
+            <aside
+                className={`fixed left-0 top-0 z-[120] flex h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 md:hidden ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            >
+                <SidebarContent />
+            </aside>
+
+            {/* Desktop: Static sidebar (not fixed) */}
+            <aside className="hidden md:flex fixed left-0 top-0 h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)]">
+                <SidebarContent />
             </aside>
         </>
     );
