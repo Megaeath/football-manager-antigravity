@@ -930,7 +930,7 @@ function MatchContent() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {/* Column Header - Hidden on mobile */}
                                 <div style={{ 
-                                    display: 'none',
+                                    display: 'grid',
                                     gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', 
                                     gap: '8px', 
                                     alignItems: 'center', 
@@ -942,7 +942,7 @@ function MatchContent() {
                                     borderRadius: '6px',
                                     borderBottom: '2px solid var(--border)',
                                     textTransform: 'uppercase'
-                                }} className="md:grid">
+                                }} className="hidden md:grid">
                                     <div>POS</div>
                                     <div>NAME</div>
                                     <div style={{ textAlign: 'center' }} title="Minutes played">MIN</div>
@@ -1079,9 +1079,10 @@ function MatchContent() {
                                                     }}
                                                     onClick={() => setExpandedPlayerId(isExpanded ? null : p.playerId)}
                                                 >
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} className="md:display-grid md:grid-cols-12">
+                                                    {/* Mobile Card Layout */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} className="md:hidden">
                                                         {/* Mobile Card Header - Position and Name */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }} className="md:hidden">
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                                 <div style={{ fontWeight: 'bold', minWidth: '40px' }}>{p.position}</div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1104,38 +1105,8 @@ function MatchContent() {
                                                             <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{p.rating.toFixed(1)}</div>
                                                         </div>
 
-                                                        {/* Desktop Grid View */}
-                                                        <div style={{ display: 'none', gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="md:display-grid">
-                                                            <div style={{ fontWeight: 'bold' }}>{p.position}</div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        router.push(`/match?matchId=${queryMatchId}&playerId=${p.playerId}`);
-                                                                    }}
-                                                                    style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
-                                                                >
-                                                                    {p.name}
-                                                                </button>
-                                                                {p.goals > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
-                                                                {p.assists > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
-                                                                {isSubIn && <span title="Subbed On">🔼</span>}
-                                                                {isSubOut && <span title="Subbed Off">🔽</span>}
-                                                                {isMotM && <span title="Man of the Match">🌟</span>}
-                                                            </div>
-                                                            <div style={{ textAlign: 'center' }}>{p.minutes}'</div>
-                                                            <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{p.rating.toFixed(1)}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.fitnessEnd ?? 0}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.shotsOnTarget}/{p.shots}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.passesCompleted}/{p.passesAttempted}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
-                                                            <div style={{ textAlign: 'center' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
-                                                            <div style={{ textAlign: 'center' }}>{isExpanded ? '▲' : '▼'}</div>
-                                                        </div>
-
                                                         {/* Mobile Card Stats Grid */}
-                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', fontSize: '0.75rem' }} className="md:hidden">
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', fontSize: '0.75rem' }}>
                                                             <div style={{ textAlign: 'center', padding: '4px', background: '#f8fafc', borderRadius: '4px' }}>
                                                                 <div style={{ color: 'var(--muted)', fontSize: '0.65rem', textTransform: 'uppercase' }}>MIN</div>
                                                                 <div style={{ fontWeight: 'bold' }}>{p.minutes}'</div>
@@ -1166,6 +1137,36 @@ function MatchContent() {
                                                             </div>
                                                             <div style={{ textAlign: 'center', padding: '4px' }}>{isExpanded ? '▲' : '▼'}</div>
                                                         </div>
+                                                    </div>
+
+                                                    {/* Desktop Grid View */}
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
+                                                        <div style={{ fontWeight: 'bold' }}>{p.position}</div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    router.push(`/match?matchId=${queryMatchId}&playerId=${p.playerId}`);
+                                                                }}
+                                                                style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                                            >
+                                                                {p.name}
+                                                            </button>
+                                                            {p.goals > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
+                                                            {p.assists > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
+                                                            {isSubIn && <span title="Subbed On">🔼</span>}
+                                                            {isSubOut && <span title="Subbed Off">🔽</span>}
+                                                            {isMotM && <span title="Man of the Match">🌟</span>}
+                                                        </div>
+                                                        <div style={{ textAlign: 'center' }}>{p.minutes}'</div>
+                                                        <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{p.rating.toFixed(1)}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.fitnessEnd ?? 0}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.shotsOnTarget}/{p.shots}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.passesCompleted}/{p.passesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{isExpanded ? '▲' : '▼'}</div>
                                                     </div>
 
                                                     {isExpanded && (
