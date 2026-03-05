@@ -736,11 +736,11 @@ function MatchContent() {
                                         color: activeTab === tab ? 'var(--primary)' : 'var(--muted)',
                                         fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
                                     }}
-                                    className="text-xs md:text-base md:flex-1 md:min-w-0 md:py-4 md:px-6"
+                                    className="text-xs md:text-lg md:flex-1 md:min-w-0 md:py-6 md:px-8"
                                 >
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '1rem' }}>{tabIcon}</span>
-                                        <span style={{ fontSize: '0.6rem' }} className="hidden md:inline">{tabLabel}</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }} className="md:flex-row md:gap-3">
+                                        <span style={{ fontSize: '1rem' }} className="md:text-2xl">{tabIcon}</span>
+                                        <span style={{ fontSize: '0.6rem' }} className="hidden md:inline md:text-base md:font-semibold">{tabLabel}</span>
                                     </div>
                                 </button>
                             );
