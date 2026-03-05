@@ -404,7 +404,6 @@ function MatchContent() {
         const defensivePct = Math.round((zones.defensive / total) * 100);
         const middlePct = Math.round((zones.middle / total) * 100);
         const attackingPct = Math.round((zones.attacking / total) * 100);
-        const align = side === 'home' ? 'flex-start' : 'flex-end';
 
         const segments = side === 'away'
             ? [
@@ -419,30 +418,28 @@ function MatchContent() {
             ];
 
         return (
-            <div style={{ width: '100%', display: 'flex', justifyContent: align }}>
-                <div style={{ width: '320px' }}>
-                    <div style={{ display: 'flex', height: '16px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                        {segments.map((seg) => (
-                            <div
-                                key={seg.key}
-                                title={`${seg.label}: ${seg.value} (${seg.pct}%)`}
-                                style={{
-                                    width: `${seg.pct}%`,
-                                    background: seg.color,
-                                    color: 'white',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden'
-                                }}
-                            >
-                                {seg.pct >= 12 ? `${seg.short} ${seg.pct}%` : ''}
-                            </div>
-                        ))}
-                    </div>
+            <div style={{ width: '100%' }}>
+                <div style={{ width: '100%', display: 'flex', height: '16px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    {segments.map((seg) => (
+                        <div
+                            key={seg.key}
+                            title={`${seg.label}: ${seg.value} (${seg.pct}%)`}
+                            style={{
+                                width: `${seg.pct}%`,
+                                background: seg.color,
+                                color: 'white',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden'
+                            }}
+                        >
+                            {seg.pct >= 12 ? `${seg.short} ${seg.pct}%` : ''}
+                        </div>
+                    ))}
                 </div>
             </div>
         );
