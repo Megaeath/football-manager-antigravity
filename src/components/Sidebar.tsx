@@ -97,8 +97,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <SidebarContent />
             </aside>
 
-            {/* Desktop: Static sidebar in document flow */}
-            <aside className="hidden md:flex w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] h-screen">
+            {/* Desktop: Sticky sidebar in document flow */}
+            <aside className="hidden md:flex sticky top-0 w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] h-screen overflow-y-auto">
                 <SidebarContent />
             </aside>
         </>
