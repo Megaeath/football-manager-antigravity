@@ -854,71 +854,113 @@ function MatchContent() {
                                     }
 
                                     return (
-                                        <div key={i} style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            padding: '4px 0',
-                                            borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
-                                            fontSize: '0.8rem'
-                                        }} className="md:gap-4 md:py-2 md:text-base">
-                                            {/* Left side - Home team events */}
-                                            <div style={{ 
-                                                flex: 1, 
-                                                textAlign: 'right',
-                                                display: 'flex',
-                                                justifyContent: 'flex-end',
-                                                alignItems: 'center',
-                                                gap: '3px',
-                                                paddingRight: '3px',
-                                                minWidth: 0,
-                                                overflow: 'hidden'
-                                            }} className="md:gap-2 md:pr-2">
-                                                {isHomeTeam && (
-                                                    <>
-                                                        <div style={{ fontSize: 'inherit', color: '#374151', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="md:whitespace-normal">
-                                                            {displayText}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.9rem', flexShrink: 0 }} className="md:text-xl">{getEventIcon(e.type)}</div>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            {/* Center - Time */}
+                                        <div key={i}>
+                                            {/* Mobile: time left, description right (team separated by description background color) */}
                                             <div style={{
-                                                minWidth: '40px',
-                                                textAlign: 'center',
-                                                fontWeight: 'bold',
-                                                fontSize: 'inherit',
-                                                color: '#6b7280',
-                                                background: '#f3f4f6',
-                                                padding: '3px 6px',
-                                                borderRadius: '12px',
-                                                flexShrink: 0
-                                            }} className="md:min-w-16 md:py-1.5 md:px-3 md:text-base">
-                                                {e.minute}'
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                padding: '6px 0',
+                                                borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                fontSize: '0.8rem'
+                                            }} className="md:hidden">
+                                                <div style={{
+                                                    minWidth: '40px',
+                                                    textAlign: 'center',
+                                                    fontWeight: 'bold',
+                                                    color: '#6b7280',
+                                                    background: '#f3f4f6',
+                                                    padding: '3px 6px',
+                                                    borderRadius: '12px',
+                                                    flexShrink: 0
+                                                }}>
+                                                    {e.minute}'
+                                                </div>
+
+                                                <div style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    minWidth: 0,
+                                                    background: isHomeTeam ? '#e0f2fe' : '#fef3c7',
+                                                    border: `1px solid ${isHomeTeam ? '#bae6fd' : '#fde68a'}`,
+                                                    borderRadius: '10px',
+                                                    padding: '6px 8px'
+                                                }}>
+                                                    <div style={{ fontSize: '0.95rem', flexShrink: 0 }}>{getEventIcon(e.type)}</div>
+                                                    <div style={{ color: '#374151', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {displayText}
+                                                    </div>
+                                                </div>
                                             </div>
 
-                                            {/* Right side - Away team events */}
-                                            <div style={{ 
-                                                flex: 1, 
-                                                textAlign: 'left',
-                                                display: 'flex',
-                                                justifyContent: 'flex-start',
+                                            {/* Desktop: original left/right split with time in center */}
+                                            <div style={{
                                                 alignItems: 'center',
-                                                gap: '3px',
-                                                paddingLeft: '3px',
-                                                minWidth: 0,
-                                                overflow: 'hidden'
-                                            }} className="md:gap-2 md:pl-2">
-                                                {!isHomeTeam && (
-                                                    <>
-                                                        <div style={{ fontSize: '0.9rem', flexShrink: 0 }} className="md:text-xl">{getEventIcon(e.type)}</div>
-                                                        <div style={{ fontSize: 'inherit', color: '#374151', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="md:whitespace-normal">
-                                                            {displayText}
-                                                        </div>
-                                                    </>
-                                                )}
+                                                gap: '6px',
+                                                padding: '4px 0',
+                                                borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                fontSize: '0.8rem'
+                                            }} className="hidden md:flex md:gap-4 md:py-2 md:text-base">
+                                                {/* Left side - Home team events */}
+                                                <div style={{
+                                                    flex: 1,
+                                                    textAlign: 'right',
+                                                    display: 'flex',
+                                                    justifyContent: 'flex-end',
+                                                    alignItems: 'center',
+                                                    gap: '3px',
+                                                    paddingRight: '3px',
+                                                    minWidth: 0,
+                                                    overflow: 'hidden'
+                                                }} className="md:gap-2 md:pr-2">
+                                                    {isHomeTeam && (
+                                                        <>
+                                                            <div style={{ fontSize: 'inherit', color: '#374151', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="md:whitespace-normal">
+                                                                {displayText}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.9rem', flexShrink: 0 }} className="md:text-xl">{getEventIcon(e.type)}</div>
+                                                        </>
+                                                    )}
+                                                </div>
+
+                                                {/* Center - Time */}
+                                                <div style={{
+                                                    minWidth: '40px',
+                                                    textAlign: 'center',
+                                                    fontWeight: 'bold',
+                                                    fontSize: 'inherit',
+                                                    color: '#6b7280',
+                                                    background: '#f3f4f6',
+                                                    padding: '3px 6px',
+                                                    borderRadius: '12px',
+                                                    flexShrink: 0
+                                                }} className="md:min-w-16 md:py-1.5 md:px-3 md:text-base">
+                                                    {e.minute}'
+                                                </div>
+
+                                                {/* Right side - Away team events */}
+                                                <div style={{
+                                                    flex: 1,
+                                                    textAlign: 'left',
+                                                    display: 'flex',
+                                                    justifyContent: 'flex-start',
+                                                    alignItems: 'center',
+                                                    gap: '3px',
+                                                    paddingLeft: '3px',
+                                                    minWidth: 0,
+                                                    overflow: 'hidden'
+                                                }} className="md:gap-2 md:pl-2">
+                                                    {!isHomeTeam && (
+                                                        <>
+                                                            <div style={{ fontSize: '0.9rem', flexShrink: 0 }} className="md:text-xl">{getEventIcon(e.type)}</div>
+                                                            <div style={{ fontSize: 'inherit', color: '#374151', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="md:whitespace-normal">
+                                                                {displayText}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     );
