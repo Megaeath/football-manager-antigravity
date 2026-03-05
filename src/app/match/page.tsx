@@ -331,7 +331,7 @@ function MatchContent() {
                     </div>
                 </div>
                 {/* Diverging bar chart row */}
-                <div style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0 0.8rem 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ alignItems: 'center', padding: '0.4rem 0 0.8rem 0', borderBottom: '1px solid var(--border)' }} className="hidden md:flex">
                     {/* Home bar - grows toward center from left */}
                     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                         <div style={{
@@ -778,7 +778,7 @@ function MatchContent() {
                                 <StatRowWithChart label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
                                 <StatRowWithChart label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
                                 {/* Field Zone Usage */}
-                                <div style={{ display: 'flex', alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }}>
+                                <div style={{ alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }} className="hidden md:flex">
                                     <div style={{ flex: 1 }}>
                                         <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" />
                                     </div>
