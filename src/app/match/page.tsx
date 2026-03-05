@@ -625,7 +625,7 @@ function MatchContent() {
             {/* MATCH RESULTS (IF PLAYED) */}
             {matchData && (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '1.5rem', textAlign: 'center', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:gap-0 md:p-10">
+                    <div style={{ justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '1.5rem', textAlign: 'center', gap: '1rem' }} className="flex flex-col md:flex-row md:gap-0 md:p-10">
                         <div style={{ flex: 1 }} className="md:text-left">
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>HOME</div>
                             <div style={{ fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }} className="md:text-2xl">{matchData.homeTeamName}</div>
