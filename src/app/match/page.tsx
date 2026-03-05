@@ -930,7 +930,6 @@ function MatchContent() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {/* Column Header - Hidden on mobile */}
                                 <div style={{ 
-                                    display: 'grid',
                                     gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', 
                                     gap: '8px', 
                                     alignItems: 'center', 
@@ -1080,7 +1079,7 @@ function MatchContent() {
                                                     onClick={() => setExpandedPlayerId(isExpanded ? null : p.playerId)}
                                                 >
                                                     {/* Mobile Card Layout */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} className="md:hidden">
+                                                    <div style={{ flexDirection: 'column', gap: '8px' }} className="flex md:hidden">
                                                         {/* Mobile Card Header - Position and Name */}
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1140,7 +1139,7 @@ function MatchContent() {
                                                     </div>
 
                                                     {/* Desktop Grid View */}
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
+                                                    <div style={{ gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
                                                         <div style={{ fontWeight: 'bold' }}>{p.position}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <button
