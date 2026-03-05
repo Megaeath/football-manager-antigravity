@@ -207,7 +207,7 @@ export default async function Home() {
     });
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div className="flex flex-col gap-6 md:gap-8">
             {/* Header */}
             <div style={{
                 display: 'flex',
@@ -215,12 +215,12 @@ export default async function Home() {
                 alignItems: 'flex-start',
                 background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
                 color: 'white',
-                padding: '3rem',
+                padding: '1.25rem',
                 borderRadius: '16px',
                 boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)'
-            }}>
-                <div>
-                    <h1 style={{ fontSize: '2.5rem', margin: 0, fontWeight: '800' }}>⚽ FOOTBALL MANAGER</h1>
+            }} className="flex-col gap-4 md:flex-row md:gap-6 md:p-10">
+                <div className="min-w-0">
+                    <h1 style={{ margin: 0, fontWeight: '800' }} className="text-2xl md:text-4xl">⚽ FOOTBALL MANAGER</h1>
                     <p style={{ margin: '12px 0 0 0', opacity: 0.9, fontSize: '1rem' }}>
                         {userTeam ? `อบรม ${userTeam.name} ไปสู่ความเป็นแชมป์` : 'เตรียมทีมของคุณสำหรับสิ่งที่จะมา'}
                     </p>
@@ -228,13 +228,13 @@ export default async function Home() {
                 <div style={{
                     textAlign: 'right',
                     background: 'rgba(255,255,255,0.15)',
-                    padding: '16px 24px',
+                    padding: '12px 16px',
                     borderRadius: '12px',
                     backdropFilter: 'blur(10px)',
                     border: '1px solid rgba(255,255,255,0.3)'
-                }}>
+                }} className="w-full md:w-auto">
                     <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8, marginBottom: '4px' }}>วันที่ปัจจุบัน</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: '700' }}>{dateStr}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '700' }} className="md:text-xl">{dateStr}</div>
                     <div style={{ fontSize: '0.8rem', marginTop: '8px', opacity: 0.8 }}>ฤดูกาล {settings?.currentSeason || 1}</div>
                     <div style={{ marginTop: '12px' }}>
                         <NextProcessButton />
@@ -329,13 +329,13 @@ export default async function Home() {
             )}
 
             {/* Main Content Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr]">
                 {/* League Table */}
                 <div className="card">
                     <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         📊 ตารางคะแนนลีก
                     </h3>
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="hidden overflow-x-auto md:block" style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -371,6 +371,41 @@ export default async function Home() {
                             </tbody>
                         </table>
                     </div>
+
+                    <div className="flex flex-col gap-2 md:hidden">
+                        {leagueTable.slice(0, 10).map((team, index) => (
+                            <div
+                                key={team.id}
+                                style={{
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    padding: '12px',
+                                    background: team.isUserTeam
+                                        ? 'rgba(13, 110, 253, 0.1)'
+                                        : index < 3
+                                            ? 'rgba(76, 175, 80, 0.05)'
+                                            : index > 6
+                                                ? 'rgba(220, 38, 38, 0.05)'
+                                                : 'transparent'
+                                }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>
+                                        #{index + 1} {team.name}
+                                        {team.isUserTeam && <span style={{ marginLeft: '8px', color: 'var(--primary)' }}>👑</span>}
+                                    </div>
+                                    <div style={{ fontWeight: '800', fontSize: '1rem' }}>{team.points} pts</div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                    <div>นัด: <strong style={{ color: 'var(--foreground)' }}>{team.played}</strong></div>
+                                    <div>ชนะ: <strong style={{ color: '#4caf50' }}>{team.wins}</strong></div>
+                                    <div>เสมอ: <strong style={{ color: '#ff9800' }}>{team.draws}</strong></div>
+                                    <div>แพ้: <strong style={{ color: '#dc2626' }}>{team.losses}</strong></div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
                     <Link href="/league" style={{
                         display: 'inline-block',
                         marginTop: '1rem',
@@ -507,7 +542,7 @@ export default async function Home() {
             </div>
 
             {/* Quick Links */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 <Link href="/league" className="card" style={{
                     display: 'flex',
                     flexDirection: 'column',

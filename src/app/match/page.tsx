@@ -524,10 +524,10 @@ function MatchContent() {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:justify-between md:items-flex-end">
                 <div>
-                    <h2 style={{ fontSize: '2rem', margin: 0 }}>⚽ วันแข่งขัน (Match Day)</h2>
-                    <p style={{ color: 'var(--muted)', marginTop: '4px' }}>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ วันแข่งขัน (Match Day)</h2>
+                    <p style={{ color: 'var(--muted)', marginTop: '4px', fontSize: '0.9rem' }} className="md:text-base">
                         {new Date(gameInfo.currentDate).toLocaleDateString('th-TH', {
                             weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                         })}
@@ -535,7 +535,7 @@ function MatchContent() {
                 </div>
 
                 {showNextProcess && (
-                    <button onClick={nextProcess} disabled={loading} className="btn btn-primary" style={{ padding: '12px 24px', fontSize: '1rem', background: 'var(--accent)' }}>
+                    <button onClick={nextProcess} disabled={loading} className="btn btn-primary md:w-auto md:py-3 md:px-6 md:text-base" style={{ padding: '10px 16px', fontSize: '0.9rem', background: 'var(--accent)', width: '100%' }}>
                         {loading ? 'กำลังประมวลผล...' :
                             unplayedMatches.length > 0 ? '⏩ จำลองทีมอื่นและไปวันถัดไป' : '🏁 ไปยังวันถัดไป (Next Process)'}
                     </button>
@@ -563,16 +563,16 @@ function MatchContent() {
                             <h3 style={{ marginBottom: '1.5rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span>⭐ นัดสำคัญของคุณ</span>
                             </h3>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', border: '1px solid var(--border)', borderRadius: '12px', background: 'white' }}>
-                                <div style={{ flex: 1, textAlign: 'right' }}>{formatTeamName(userMatch?.homeTeam.name || '', userMatch?.homeTeam.id || '')}</div>
-                                <div style={{ margin: '0 2rem', background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.1rem' }}>VS</div>
-                                <div style={{ flex: 1, textAlign: 'left' }}>{formatTeamName(userMatch?.awayTeam.name || '', userMatch?.awayTeam.id || '')}</div>
-                                <div style={{ marginLeft: '2rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', border: '1px solid var(--border)', borderRadius: '12px', background: 'white' }} className="md:flex-row md:gap-0">
+                                <div style={{ flex: 1, textAlign: 'right', width: '100%' }} className="md:w-auto">{formatTeamName(userMatch?.homeTeam.name || '', userMatch?.homeTeam.id || '')}</div>
+                                <div style={{ margin: '0', background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '1rem' }} className="md:mx-8 md:text-lg">VS</div>
+                                <div style={{ flex: 1, textAlign: 'left', width: '100%' }} className="md:w-auto">{formatTeamName(userMatch?.awayTeam.name || '', userMatch?.awayTeam.id || '')}</div>
+                                <div style={{ marginLeft: '0', width: '100%' }} className="md:ml-8 md:w-auto">
                                     <button
                                         onClick={() => router.push(`/squad?from=match&matchId=${userMatch!.id}`)}
                                         disabled={loading}
-                                        className="btn btn-primary"
-                                        style={{ padding: '10px 24px' }}
+                                        className="btn btn-primary md:w-auto"
+                                        style={{ padding: '10px 24px', width: '100%' }}
                                     >
                                         จัดทีมก่อนเริ่มแข่ง
                                     </button>
@@ -711,35 +711,36 @@ function MatchContent() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid var(--border)', overflowX: 'auto', whiteSpace: 'nowrap' }} className="md:overflow-visible">
                         {['stats', 'events', 'home', 'away'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
                                 style={{
-                                    flex: 1, padding: '1rem', border: 'none',
+                                    flex: 1, padding: '0.75rem 0.5rem', border: 'none',
                                     background: activeTab === tab ? '#fff' : 'transparent',
                                     borderBottom: activeTab === tab ? '3px solid var(--primary)' : '3px solid transparent',
                                     color: activeTab === tab ? 'var(--primary)' : 'var(--muted)',
-                                    fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                                    fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', fontSize: '0.9rem'
                                 }}
+                                className="text-sm md:text-base md:py-4 md:px-6"
                             >
                                 {tab === 'home' ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                         <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>HOME</span>
-                                        <span style={{ fontSize: '0.9rem' }}>{matchData.homeTeamName}</span>
+                                        <span style={{ fontSize: '0.85rem' }}>{matchData.homeTeamName}</span>
                                     </div>
                                 ) : tab === 'away' ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                         <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>AWAY</span>
-                                        <span style={{ fontSize: '0.9rem' }}>{matchData.awayTeamName}</span>
+                                        <span style={{ fontSize: '0.85rem' }}>{matchData.awayTeamName}</span>
                                     </div>
                                 ) : tab.toUpperCase()}
                             </button>
                         ))}
                     </div>
 
-                    <div style={{ padding: '2rem' }}>
+                    <div style={{ padding: '1.5rem' }} className="md:py-8 md:px-8">
                         {activeTab === 'stats' && (
                             <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                                 <StatRowWithChart label="Possession" homeVal={matchData.teamStats.home.possession} awayVal={matchData.teamStats.away.possession} isPercentage />

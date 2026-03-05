@@ -1,8 +1,11 @@
+@import "tailwindcss";
+
 :root {
   --background: #f8f9fa;
   --foreground: #1a1e23;
   --sidebar-width: 260px;
   --header-height: 64px;
+  --content-padding: 24px;
 
   --primary: #2563eb;
   --primary-rgb: 37, 99, 235;
@@ -48,6 +51,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+  overflow-x: hidden;
 }
 
 a {
@@ -112,4 +116,23 @@ button {
 .container {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --content-padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --header-height: 56px;
+    --content-padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --content-padding: 12px;
+  }
 }

@@ -1,10 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
-import Header from "@/components/Header";
-import Breadcrumbs from "@/components/Breadcrumbs";
 import { BreadcrumbProvider } from "@/components/BreadcrumbContext";
+import AppShell from "@/components/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,6 +19,11 @@ export const metadata: Metadata = {
   description: "A pure tactical football manager experience",
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,18 +31,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <BreadcrumbProvider>
-          <div style={{ display: 'flex', minHeight: '100vh' }}>
-            <Sidebar />
-            <div style={{ flex: 1, marginLeft: 'var(--sidebar-width)', display: 'flex', flexDirection: 'column' }}>
-              <Header />
-              <Breadcrumbs />
-              <main style={{ padding: '24px', flex: 1 }}>
-                {children}
-              </main>
-            </div>
-          </div>
+          <AppShell>{children}</AppShell>
         </BreadcrumbProvider>
       </body>
     </html>

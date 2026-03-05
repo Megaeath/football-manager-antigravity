@@ -47,9 +47,9 @@ export default async function FixturesPage({
     });
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h1 style={{ fontSize: '2.5rem', margin: 0 }}>📅 ตารางการแข่งขัน</h1>
+        <div className="flex flex-col gap-6 md:gap-8" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h1 className="text-3xl md:text-5xl" style={{ margin: 0 }}>📅 ตารางการแข่งขัน</h1>
                 <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
             </div>
 
@@ -72,14 +72,14 @@ export default async function FixturesPage({
                                         display: 'flex',
                                         justifyContent: 'space-between',
                                         alignItems: 'center',
-                                        padding: '1rem 2rem',
+                                        padding: '1rem',
                                         background: 'white',
                                         borderRadius: '12px',
                                         border: '1px solid var(--border)',
                                         boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                                    }}>
-                                        <div style={{ flex: 1, textAlign: 'right', fontWeight: '600' }}>{m.homeTeam.name}</div>
-                                        <div style={{ margin: '0 2rem', textAlign: 'center' }}>
+                                    }} className="flex-col gap-3 md:flex-row md:gap-0 md:px-8">
+                                        <div style={{ flex: 1, textAlign: 'right', fontWeight: '600' }} className="w-full text-left md:text-right">{m.homeTeam.name}</div>
+                                        <div style={{ margin: '0 2rem', textAlign: 'center' }} className="mx-0 md:mx-8">
                                             {m.isPlayed ? (
                                                 <div style={{ position: 'relative' }}>
                                                     <div style={{ background: 'var(--sidebar-bg)', color: 'white', padding: '4px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
@@ -93,9 +93,9 @@ export default async function FixturesPage({
                                                 <div style={{ color: 'var(--muted)', fontWeight: 'bold' }}>VS</div>
                                             )}
                                         </div>
-                                        <div style={{ flex: 1, textAlign: 'left', fontWeight: '600' }}>{m.awayTeam.name}</div>
+                                        <div style={{ flex: 1, textAlign: 'left', fontWeight: '600' }} className="w-full">{m.awayTeam.name}</div>
 
-                                        <div style={{ marginLeft: '2rem', width: '80px', textAlign: 'right' }}>
+                                        <div style={{ marginLeft: '2rem', width: '80px', textAlign: 'right' }} className="ml-0 w-full text-left md:ml-8 md:w-20 md:text-right">
                                             {m.isPlayed && (
                                                 <Link href={`/match?matchId=${m.id}`} style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>รายละเอียด</Link>
                                             )}

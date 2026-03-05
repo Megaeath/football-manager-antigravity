@@ -82,18 +82,18 @@ export default function ContractsPage() {
         return { label: 'OK', color: '#10b981' };
     };
 
-    if (loading) return <div className="container" style={{ padding: '2rem', textAlign: 'center' }}>Loading contracts...</div>;
-    if (error) return <div className="container" style={{ padding: '2rem', color: 'red' }}>{error}</div>;
+    if (loading) return <div className="container p-4 text-center md:p-8">Loading contracts...</div>;
+    if (error) return <div className="container p-4 text-red-600 md:p-8">{error}</div>;
 
     return (
-        <div className="container" style={{ padding: '2rem' }}>
+        <div className="container p-4 md:p-8">
             <div style={{ marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📄 Contract Management</h1>
+                <h1 style={{ marginBottom: '0.5rem' }} className="text-2xl md:text-3xl">📄 Contract Management</h1>
                 <p style={{ color: 'var(--muted)' }}>Expiring contracts for {data?.teamName}</p>
             </div>
 
             <div className="card" style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" style={{ display: 'grid', gap: '1rem' }}>
                     <div style={{ textAlign: 'center' }}>
                         <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Expiring Soon</div>
                         <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--primary)' }}>{data?.totalExpiring || 0}</div>
@@ -124,7 +124,8 @@ export default function ContractsPage() {
                         🎉 No expiring contracts in the next 10 weeks
                     </div>
                 ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <>
+                    <div className="hidden overflow-x-auto md:block" style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -179,6 +180,48 @@ export default function ContractsPage() {
                             </tbody>
                         </table>
                     </div>
+
+                    <div className="flex flex-col gap-3 md:hidden">
+                        {data?.expiringPlayers.map(player => {
+                            const status = getStatusBadge(player.contractEndWeek);
+                            return (
+                                <div key={player.id} className="rounded-xl border border-[var(--border)] p-3">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                                        <div style={{ fontWeight: 700 }}>{player.name}</div>
+                                        <span style={{
+                                            background: status.color,
+                                            color: 'white',
+                                            padding: '4px 8px',
+                                            borderRadius: '12px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: 'bold',
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {status.label}
+                                        </span>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', fontSize: '0.85rem', marginBottom: '10px' }}>
+                                        <div>Position: <strong>{player.naturalPosition}</strong></div>
+                                        <div>Age: <strong>{player.age}</strong></div>
+                                        <div>Popularity: <strong>{player.popularity}</strong></div>
+                                        <div>Weeks Left: <strong>{player.contractEndWeek}</strong></div>
+                                        <div style={{ gridColumn: '1 / -1' }}>Weekly Wage: <strong>{formatCurrency(player.weeklyWage)}</strong></div>
+                                    </div>
+
+                                    <button
+                                        className="btn btn-sm"
+                                        onClick={() => handleRenew(player.id)}
+                                        disabled={renewingId === player.id}
+                                        style={{ minWidth: '90px', width: '100%', justifyContent: 'center' }}
+                                    >
+                                        {renewingId === player.id ? 'Renewing...' : 'Renew'}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    </>
                 )}
             </div>
         </div>

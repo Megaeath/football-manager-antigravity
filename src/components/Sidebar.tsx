@@ -2,9 +2,22 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function Sidebar() {
+interface SidebarProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
+
+    useEffect(() => {
+        if (isOpen) {
+            onClose();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pathname]);
 
     const navItems = [
         { name: 'หน้าหลัก', href: '/', icon: '🏠' },
@@ -22,19 +35,16 @@ export default function Sidebar() {
     ];
 
     return (
-        <aside style={{
-            width: 'var(--sidebar-width)',
-            height: '100vh',
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            background: 'var(--sidebar-bg)',
-            color: 'var(--sidebar-text)',
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: 100,
-            borderRight: '1px solid var(--border)'
-        }}>
+        <>
+            <div
+                className={`fixed inset-0 z-[110] bg-black/40 transition-opacity md:hidden ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+                onClick={onClose}
+                aria-hidden="true"
+            />
+
+            <aside
+                className={`fixed left-0 top-0 z-[120] flex h-screen w-[var(--sidebar-width)] flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            >
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <h1 style={{ fontSize: '1.25rem', margin: 0, color: 'white', letterSpacing: '1px' }}>FM TEXT ⚽</h1>
             </div>
@@ -53,6 +63,7 @@ export default function Sidebar() {
                         <Link
                             key={item.href}
                             href={item.href}
+                            onClick={onClose}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -75,6 +86,7 @@ export default function Sidebar() {
             <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
                 v0.1.0 Alpha Build
             </div>
-        </aside>
+            </aside>
+        </>
     );
 }

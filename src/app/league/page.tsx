@@ -127,16 +127,16 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
     const seasons = Array.from({ length: currentSeason }, (_, i) => i + 1);
 
     return (
-        <div style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>
+        <div style={{ padding: '20px' }} className="p-4 md:p-5">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }} className="mb-6 flex-col items-start gap-3 md:mb-8 md:flex-row md:items-center">
+                <h1 style={{ fontWeight: 'bold' }} className="text-2xl md:text-4xl">
                     {isHistorical ? `ประวัติฤดูกาลที่ ${selectedSeason}` : 'ตารางคะแนนปัจจุบัน'}
                 </h1>
 
                 <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
             </div>
 
-            <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
+            <div className="card hidden md:block" style={{ padding: '0', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ background: 'var(--sidebar-bg)', color: 'white' }}>
                         <tr>
@@ -186,6 +186,45 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                         ))}
                     </tbody>
                 </table>
+            </div>
+
+            <div className="flex flex-col gap-3 md:hidden">
+                {standingsData.map((team, index) => (
+                    <div
+                        key={team.id}
+                        className="card"
+                        style={{
+                            padding: '12px',
+                            borderLeft: index === 0
+                                ? '4px solid var(--success)'
+                                : index < 3
+                                    ? '4px solid var(--primary)'
+                                    : '1px solid var(--border)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '1rem' }}>
+                                #{index + 1} {team.name}
+                            </div>
+                            <div style={{ fontWeight: 700, color: 'var(--success)' }}>⚡{team.power}</div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '10px', fontSize: '0.8rem' }}>
+                            <div>แข่ง <strong>{team.played}</strong></div>
+                            <div>ชนะ <strong>{team.won}</strong></div>
+                            <div>เสมอ <strong>{team.drawn}</strong></div>
+                            <div>แพ้ <strong>{team.lost}</strong></div>
+                            <div>ได้ <strong>{team.gf}</strong></div>
+                            <div>เสีย <strong>{team.ga}</strong></div>
+                            <div>+/- <strong>{team.gd > 0 ? `+${team.gd}` : team.gd}</strong></div>
+                            <div>แต้ม <strong>{team.points}</strong></div>
+                        </div>
+
+                        <Link href={`/team/${team.id}`} className="btn" style={{ width: '100%', justifyContent: 'center', padding: '8px 12px', fontSize: '0.85rem' }}>
+                            ดูทีม
+                        </Link>
+                    </div>
+                ))}
             </div>
         </div>
     );

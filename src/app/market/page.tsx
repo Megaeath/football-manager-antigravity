@@ -92,8 +92,8 @@ function MarketCenterContent() {
     };
 
     return (
-        <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }} className="p-4 md:p-8">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }} className="mb-6 flex-col items-start gap-3 md:mb-8 md:flex-row md:items-center">
                 <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
                     <span style={{ fontSize: '1.2em' }}>💱</span> Transfer Market Center
                 </h1>
@@ -103,7 +103,7 @@ function MarketCenterContent() {
             </div>
 
             <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }} className="flex-col items-start gap-3 md:flex-row md:items-center">
                     <h2 style={{ margin: 0 }}>Active & Recent Deals</h2>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <label style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Season:</label>
@@ -124,7 +124,8 @@ function MarketCenterContent() {
                 ) : bids.length === 0 ? (
                     <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No transfers or bids to show.</div>
                 ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <>
+                    <div className="hidden overflow-x-auto md:block" style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--muted)', fontSize: '0.85rem' }}>
@@ -186,10 +187,61 @@ function MarketCenterContent() {
                             </tbody>
                         </table>
                     </div>
+
+                    <div className="flex flex-col gap-3 md:hidden">
+                        {bids.map((bid) => {
+                            const styles = getStatusStyle(bid.status);
+                            const isUserRelated = bid.fromTeam.id === userTeamId || bid.toTeam?.id === userTeamId;
+                            return (
+                                <div
+                                    key={bid.id}
+                                    className="rounded-xl border p-3"
+                                    style={{
+                                        borderColor: 'var(--border)',
+                                        background: isUserRelated ? 'var(--primary-light)' : 'var(--card-bg)'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                        <div
+                                            style={{ fontWeight: 'bold', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }}
+                                            onClick={() => openPlayerModal(bid.player.id)}
+                                        >
+                                            {bid.player.name}
+                                        </div>
+                                        <span style={{
+                                            padding: '0.25rem 0.65rem',
+                                            borderRadius: '99px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: 'bold',
+                                            background: styles.bg,
+                                            color: styles.color
+                                        }}>
+                                            {bid.status}
+                                        </span>
+                                    </div>
+
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px' }}>
+                                        {bid.player.naturalPosition} {bid.isFreeAgent ? '(Free Agent)' : ''}
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.85rem' }}>
+                                        <div>Date: <strong>{new Date(bid.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
+                                        <div>Decision: <strong>{new Date(bid.windowEnds).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
+                                        <div>From: <strong>{bid.isFreeAgent ? '-' : bid.toTeam?.name || '-'}</strong></div>
+                                        <div>Bidder: <strong>{bid.fromTeam.name}</strong></div>
+                                        <div style={{ gridColumn: '1 / -1' }}>
+                                            Amount: <strong style={{ color: 'var(--primary)' }}>{bid.isFreeAgent ? 'Free Transfer' : `$${bid.amount.toLocaleString()}`}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    </>
                 )}
 
                 {!loading && bids.length > 0 && totalPages > 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }} className="flex-wrap">
                         <button
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}

@@ -28,11 +28,13 @@ export default function Breadcrumbs() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '16px 24px',
-            fontSize: '0.9rem',
+            padding: '12px 16px',
+            fontSize: '0.85rem',
             color: 'var(--muted)',
             background: 'white',
-            borderBottom: '1px solid var(--border)'
+            borderBottom: '1px solid var(--border)',
+            overflowX: 'auto',
+            whiteSpace: 'nowrap'
         }}>
             <Link href="/" style={{ color: 'var(--primary)', fontWeight: '500' }}>หน้าหลัก</Link>
 

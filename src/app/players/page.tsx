@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
 
@@ -169,22 +168,22 @@ export default function PlayersPage() {
 
     if (loading) {
         return (
-            <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <div className="p-4 text-center md:p-8" style={{ padding: '2rem', textAlign: 'center' }}>
                 <div style={{ fontSize: '1.5rem' }}>🔍 กำลังโหลดข้อมูลนักเตะ...</div>
             </div>
         );
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div className="flex flex-col gap-6 md:gap-8" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Header */}
             <div style={{
                 background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
                 color: 'white',
-                padding: '2rem',
+                padding: '1.25rem',
                 borderRadius: '12px'
-            }}>
-                <h1 style={{ margin: 0, fontSize: '2rem' }}>🔍 ค้นหานักเตะ</h1>
+            }} className="p-5 md:p-8">
+                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🔍 ค้นหานักเตะ</h1>
                 <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>ค้นหาและตัดสินใจด้วยตัวกรองที่ยืดหยุ่น (ในอนาคตจะเป็นระบบซื้อขาย)</p>
             </div>
 
@@ -450,7 +449,7 @@ export default function PlayersPage() {
                     </div>
                 ) : (
                     <>
-                        <div style={{
+                        <div className="hidden md:block" style={{
                             overflowX: 'auto',
                             marginBottom: '1rem',
                             borderRadius: '8px',
@@ -638,6 +637,72 @@ export default function PlayersPage() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div className="mb-4 flex flex-col gap-3 md:hidden">
+                            {paginatedPlayers.map((player) => (
+                                <div
+                                    key={player.id}
+                                    className="rounded-xl border border-[var(--border)] p-3"
+                                    onClick={() => openPlayerModal(player.id)}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                        <div style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}>{player.name}</div>
+                                        <div style={{
+                                            background: getPowerColor(player.power),
+                                            color: 'white',
+                                            padding: '4px 10px',
+                                            borderRadius: '999px',
+                                            fontWeight: 'bold',
+                                            fontSize: '0.85rem'
+                                        }}>
+                                            PWR {player.power}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', fontSize: '0.85rem', marginBottom: '10px' }}>
+                                        <div>ตำแหน่ง: <strong>{player.position}</strong></div>
+                                        <div>อายุ: <strong>{player.age}</strong></div>
+                                        <div>Rating: <strong>{player.avgRating || '-'}</strong></div>
+                                        <div>
+                                            สัญญา:{' '}
+                                            <strong>
+                                                {player.contractEndWeek ? `${player.contractEndWeek} อ.` : '-'}
+                                            </strong>
+                                        </div>
+                                        <div style={{ gridColumn: '1 / -1' }}>
+                                            ทีม:{' '}
+                                            <strong>
+                                                {player.teamId ? player.teamName : '🆓 นักเตะอิสระ'}
+                                            </strong>
+                                        </div>
+                                        <div style={{ gridColumn: '1 / -1' }}>
+                                            ราคา: <strong>${player.marketValue.toLocaleString()}</strong>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            router.push(`/players?playerId=${player.id}&tab=transfer`);
+                                        }}
+                                        style={{
+                                            background: 'var(--success)',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '8px 12px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            width: '100%'
+                                        }}
+                                    >
+                                        ซื้อ
+                                    </button>
+                                </div>
+                            ))}
                         </div>
 
                         {/* Pagination */}

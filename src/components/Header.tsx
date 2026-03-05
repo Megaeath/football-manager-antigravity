@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-export default function Header() {
+interface HeaderProps {
+    onMenuClick: () => void;
+}
+
+export default function Header({ onMenuClick }: HeaderProps) {
     const [gameDate, setGameDate] = useState<string>('');
 
     useEffect(() => {
@@ -27,38 +31,27 @@ export default function Header() {
     }, []);
 
     return (
-        <header style={{
-            height: 'var(--header-height)',
-            background: 'white',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 24px',
-            position: 'sticky',
-            top: 0,
-            zIndex: 50,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-        }}>
-            <Link href="/" style={{ color: 'var(--foreground)', fontWeight: 'bold', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.4rem' }}>🎮</span>
-                <span>Football Manager Game</span>
-            </Link>
+        <header className="sticky top-0 z-50 flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)] bg-white px-4 shadow-sm md:px-6">
+            <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    onClick={onMenuClick}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] text-xl md:hidden"
+                    aria-label="Open navigation menu"
+                >
+                    ☰
+                </button>
+
+                <Link href="/" className="flex items-center gap-2 text-base font-bold text-[var(--foreground)] md:text-lg">
+                    <span className="text-xl md:text-2xl">🎮</span>
+                    <span className="hidden sm:inline">Football Manager Game</span>
+                    <span className="sm:hidden">FM Game</span>
+                </Link>
+            </div>
 
             {gameDate && (
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    background: 'var(--primary-light)',
-                    color: 'var(--primary)',
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    fontSize: '0.9rem',
-                    fontWeight: '600',
-                    border: '1px solid var(--primary)'
-                }}>
-                    <span style={{ fontSize: '1.2rem' }}>📅</span>
+                <div className="hidden items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary-light)] px-3 py-1 text-xs font-semibold text-[var(--primary)] sm:flex md:gap-3 md:px-4 md:py-2 md:text-sm">
+                    <span className="text-base md:text-lg">📅</span>
                     <span>{gameDate}</span>
                 </div>
             )}
