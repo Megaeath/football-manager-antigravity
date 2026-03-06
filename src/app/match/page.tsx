@@ -1456,11 +1456,18 @@ function MatchContent() {
 
                                                                     {(['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const).map((actionType) => {
                                                                         const st = spaceCreation.actions[actionType];
+                                                                        // For pass stats, use analytics (action logs) to match "Detailed Action Stats" above
+                                                                        const attempts = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.attempts !== undefined) 
+                                                                            ? analytics.actions[actionType].attempts 
+                                                                            : st.attempts;
+                                                                        const success = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.success !== undefined) 
+                                                                            ? analytics.actions[actionType].success 
+                                                                            : st.success;
                                                                         return (
                                                                             <>
                                                                                 <div key={`${actionType}-name`} style={{ fontWeight: 600 }}>{actionType.replace('_', ' ')}</div>
-                                                                                <div key={`${actionType}-attempts`} style={{ textAlign: 'center' }}>{st.attempts}</div>
-                                                                                <div key={`${actionType}-success`} style={{ textAlign: 'center' }}>{st.success}</div>
+                                                                                <div key={`${actionType}-attempts`} style={{ textAlign: 'center' }}>{attempts}</div>
+                                                                                <div key={`${actionType}-success`} style={{ textAlign: 'center' }}>{success}</div>
                                                                                 <div key={`${actionType}-total`} style={{ textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>+{st.totalGain}</div>
                                                                                 <div key={`${actionType}-avg`} style={{ textAlign: 'center' }}>+{st.avgGainPerSuccess}</div>
                                                                                 <div key={`${actionType}-perAttempt`} style={{ textAlign: 'center' }}>+{st.gainPerAttempt}</div>
