@@ -535,39 +535,16 @@ function MatchContent() {
             actionStats[actionType].totalGain += gain;
         }
 
-        // Reconcile attempts/success with per-player match stats to avoid confusing mismatch
+        // Use raw action logs for dribbles (aligned with player stats if available)
         actionStats.DRIBBLE.attempts = playerStats?.dribblesAttempted ?? rawAttempts.DRIBBLE;
         actionStats.DRIBBLE.success = Math.min(playerStats?.dribblesWon ?? rawSuccess.DRIBBLE, actionStats.DRIBBLE.attempts);
 
-        const playerPassAttempts = Math.max(0, playerStats?.passesAttempted ?? 0);
-        const playerPassSuccess = Math.max(0, playerStats?.passesCompleted ?? 0);
-
-        const shortAttemptWeight = analytics?.actions?.PASS_SHORT?.attempts ?? rawAttempts.PASS_SHORT;
-        const longAttemptWeight = analytics?.actions?.PASS_LONG?.attempts ?? rawAttempts.PASS_LONG;
-        const shortSuccessWeight = analytics?.actions?.PASS_SHORT?.success ?? rawSuccess.PASS_SHORT;
-        const longSuccessWeight = analytics?.actions?.PASS_LONG?.success ?? rawSuccess.PASS_LONG;
-
-        const [shortAttempts, longAttempts] = distributeByWeight(playerPassAttempts, [shortAttemptWeight, longAttemptWeight]);
-        const [shortSuccessRaw, longSuccessRaw] = distributeByWeight(playerPassSuccess, [shortSuccessWeight, longSuccessWeight]);
-
-        const shortSuccess = Math.min(shortSuccessRaw, shortAttempts);
-        const longSuccess = Math.min(longSuccessRaw, longAttempts);
-        const successGap = playerPassSuccess - (shortSuccess + longSuccess);
-
-        if (successGap > 0) {
-            const shortCapacity = Math.max(0, shortAttempts - shortSuccess);
-            const shortAdd = Math.min(successGap, shortCapacity);
-            const longCapacity = Math.max(0, longAttempts - longSuccess);
-            const longAdd = Math.min(successGap - shortAdd, longCapacity);
-            actionStats.PASS_SHORT.success = shortSuccess + shortAdd;
-            actionStats.PASS_LONG.success = longSuccess + longAdd;
-        } else {
-            actionStats.PASS_SHORT.success = shortSuccess;
-            actionStats.PASS_LONG.success = longSuccess;
-        }
-
-        actionStats.PASS_SHORT.attempts = shortAttempts;
-        actionStats.PASS_LONG.attempts = longAttempts;
+        // For passes: use analytics (from action logs) directly as source of truth
+        // This avoids confusion from trying to split aggregated "passesAttempted" into SHORT/LONG
+        actionStats.PASS_SHORT.attempts = analytics?.actions?.PASS_SHORT?.attempts ?? rawAttempts.PASS_SHORT;
+        actionStats.PASS_SHORT.success = analytics?.actions?.PASS_SHORT?.success ?? rawSuccess.PASS_SHORT;
+        actionStats.PASS_LONG.attempts = analytics?.actions?.PASS_LONG?.attempts ?? rawAttempts.PASS_LONG;
+        actionStats.PASS_LONG.success = analytics?.actions?.PASS_LONG?.success ?? rawSuccess.PASS_LONG;
 
         trackedActions.forEach((actionType) => {
             const st = actionStats[actionType];
