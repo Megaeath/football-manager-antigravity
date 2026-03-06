@@ -445,6 +445,108 @@ function MatchContent() {
         );
     };
 
+    const isActionSuccess = (log: any) => {
+        if (typeof log?.isSuccessful === 'boolean') return log.isSuccessful;
+        return ['SUCCESS', 'GOAL'].includes(log?.result);
+    };
+
+    const buildNextTeamBallPositionMap = (logs: any[]) => {
+        const latestByTeam: Record<string, number> = {};
+        const nextBallPosByIndex: Array<number | null> = Array(logs.length).fill(null);
+
+        for (let i = logs.length - 1; i >= 0; i--) {
+            const log = logs[i];
+            const teamId = log?.teamId;
+            const ballPosition = typeof log?.ballPosition === 'number' ? log.ballPosition : null;
+
+            if (teamId && typeof latestByTeam[teamId] === 'number') {
+                nextBallPosByIndex[i] = latestByTeam[teamId];
+            }
+
+            if (teamId && ballPosition !== null) {
+                latestByTeam[teamId] = Math.max(0, Math.min(100, ballPosition));
+            }
+        }
+
+        return nextBallPosByIndex;
+    };
+
+    const calculatePlayerSpaceCreation = (
+        playerId: string,
+        teamId: string,
+        logs: any[],
+        nextTeamBallPosByIndex: Array<number | null>
+    ) => {
+        const trackedActions = ['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const;
+        const actionStats: Record<string, { attempts: number; success: number; totalGain: number; avgGainPerSuccess: number; gainPerAttempt: number }> = {
+            DRIBBLE: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 },
+            PASS_SHORT: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 },
+            PASS_LONG: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 }
+        };
+
+        for (let i = 0; i < logs.length; i++) {
+            const log = logs[i];
+            if (log?.playerId !== playerId || log?.teamId !== teamId) continue;
+            if (!trackedActions.includes(log?.actionType)) continue;
+
+            const actionType = log.actionType as keyof typeof actionStats;
+            actionStats[actionType].attempts += 1;
+
+            if (!isActionSuccess(log)) continue;
+            actionStats[actionType].success += 1;
+
+            const currentBallPos = typeof log?.ballPosition === 'number' ? Math.max(0, Math.min(100, log.ballPosition)) : null;
+            const nextBallPos = nextTeamBallPosByIndex[i];
+
+            if (currentBallPos === null || typeof nextBallPos !== 'number') continue;
+
+            const gain = Math.max(0, nextBallPos - currentBallPos);
+            actionStats[actionType].totalGain += gain;
+        }
+
+        trackedActions.forEach((actionType) => {
+            const st = actionStats[actionType];
+            st.totalGain = Number(st.totalGain.toFixed(2));
+            st.avgGainPerSuccess = st.success > 0 ? Number((st.totalGain / st.success).toFixed(2)) : 0;
+            st.gainPerAttempt = st.attempts > 0 ? Number((st.totalGain / st.attempts).toFixed(2)) : 0;
+        });
+
+        const totalGainAll = Number(trackedActions.reduce((sum, actionType) => sum + actionStats[actionType].totalGain, 0).toFixed(2));
+
+        const bestActionByTotalGain = trackedActions.reduce((best, actionType) => {
+            return actionStats[actionType].totalGain > actionStats[best].totalGain ? actionType : best;
+        }, trackedActions[0]);
+
+        const bestActionByAvgGain = trackedActions.reduce((best, actionType) => {
+            return actionStats[actionType].avgGainPerSuccess > actionStats[best].avgGainPerSuccess ? actionType : best;
+        }, trackedActions[0]);
+
+        return {
+            actions: actionStats,
+            summary: {
+                totalGainAll,
+                bestActionByTotalGain,
+                bestActionByAvgGain
+            }
+        };
+    };
+
+    const getSpaceCreationInsight = (spaceCreation: any) => {
+        if (!spaceCreation || spaceCreation.summary.totalGainAll <= 0) {
+            return 'ยังไม่พบการสร้างพื้นที่เพิ่มอย่างชัดเจนจากการเลี้ยง/จ่ายบอลในเกมนี้';
+        }
+
+        const bestTotal = spaceCreation.summary.bestActionByTotalGain;
+        const bestAvg = spaceCreation.summary.bestActionByAvgGain;
+        const toLabel = (action: string) => action.replace('_', ' ');
+
+        if (bestTotal === bestAvg) {
+            return `รูปแบบที่สร้างพื้นที่เด่นที่สุดคือ ${toLabel(bestTotal)} ทั้งด้านปริมาณรวมและประสิทธิภาพต่อครั้ง`;
+        }
+
+        return `ปริมาณรวมเด่นที่ ${toLabel(bestTotal)} แต่ประสิทธิภาพต่อครั้งเด่นที่ ${toLabel(bestAvg)} เหมาะกับการผสมจังหวะ`; 
+    };
+
     if (!gameInfo) return <div className="card">กำลังโหลดข้อมูล...</div>;
 
     const userTeamId = gameInfo.userTeamId;
@@ -996,6 +1098,8 @@ function MatchContent() {
                                 {(() => {
                                     const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
                                     const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
+                                    const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
+                                    const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
                                     const subInOrder = new Map<string, number>();
                                     (matchData?.events || [])
                                         .filter((e: any) => e.type === 'SUB' && e.teamId === teamId && e.playerId)
@@ -1035,6 +1139,7 @@ function MatchContent() {
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
                                             const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];
+                                            const spaceCreation = calculatePlayerSpaceCreation(p.playerId, teamId, rawLogsForSpace, nextTeamBallPosByIndex);
                                             const totalZoneTouches = (analytics?.zones?.total || (p.defensiveThirdTouches + p.middleThirdTouches + p.attackingThirdTouches) || 1);
                                             const defPct = Math.round(((analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0) / totalZoneTouches) * 100);
                                             const midPct = Math.round(((analytics?.zones?.middle ?? p.middleThirdTouches ?? 0) / totalZoneTouches) * 100);
@@ -1284,6 +1389,54 @@ function MatchContent() {
                                                                             </div>
                                                                         );
                                                                     })}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Space Creation Impact (Web Only) */}
+                                                            <div style={{ marginTop: '12px', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', background: '#f8fafc' }} className="hidden md:block">
+                                                                <div style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: '600', marginBottom: '8px' }}>
+                                                                    Space Creation Impact (Dribble / Short Pass / Long Pass)
+                                                                </div>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr repeat(5, minmax(70px, 1fr))', gap: '6px', fontSize: '0.75rem', marginBottom: '8px' }}>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)' }}>Action</div>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>Attempts</div>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>Success</div>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>Total +Space</div>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>Avg/Success</div>
+                                                                    <div style={{ fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>+Space/Attempt</div>
+
+                                                                    {(['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const).map((actionType) => {
+                                                                        const st = spaceCreation.actions[actionType];
+                                                                        return (
+                                                                            <>
+                                                                                <div key={`${actionType}-name`} style={{ fontWeight: 600 }}>{actionType.replace('_', ' ')}</div>
+                                                                                <div key={`${actionType}-attempts`} style={{ textAlign: 'center' }}>{st.attempts}</div>
+                                                                                <div key={`${actionType}-success`} style={{ textAlign: 'center' }}>{st.success}</div>
+                                                                                <div key={`${actionType}-total`} style={{ textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>+{st.totalGain}</div>
+                                                                                <div key={`${actionType}-avg`} style={{ textAlign: 'center' }}>+{st.avgGainPerSuccess}</div>
+                                                                                <div key={`${actionType}-perAttempt`} style={{ textAlign: 'center' }}>+{st.gainPerAttempt}</div>
+                                                                            </>
+                                                                        );
+                                                                    })}
+                                                                </div>
+
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(120px, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                                                    <div style={{ padding: '6px 8px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '0.72rem' }}>
+                                                                        <div style={{ color: 'var(--muted)' }}>Total Space (All)</div>
+                                                                        <div style={{ fontWeight: 700, color: '#0f766e' }}>+{spaceCreation.summary.totalGainAll}</div>
+                                                                    </div>
+                                                                    <div style={{ padding: '6px 8px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '0.72rem' }}>
+                                                                        <div style={{ color: 'var(--muted)' }}>Best Total</div>
+                                                                        <div style={{ fontWeight: 700 }}>{spaceCreation.summary.bestActionByTotalGain.replace('_', ' ')}</div>
+                                                                    </div>
+                                                                    <div style={{ padding: '6px 8px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '0.72rem' }}>
+                                                                        <div style={{ color: 'var(--muted)' }}>Best Avg/Success</div>
+                                                                        <div style={{ fontWeight: 700 }}>{spaceCreation.summary.bestActionByAvgGain.replace('_', ' ')}</div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div style={{ fontSize: '0.73rem', color: '#334155' }}>
+                                                                    💡 {getSpaceCreationInsight(spaceCreation)}
                                                                 </div>
                                                             </div>
                                                         </div>
