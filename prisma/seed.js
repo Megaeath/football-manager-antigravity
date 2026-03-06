@@ -79,8 +79,22 @@ async function main() {
     console.log('--- 🚀 Starting Full Seed (Premier League 2026) ---')
 
     // 1. ล้างข้อมูลเก่าตามลำดับ (ป้องกัน FK Constraint Error)
+    // หมายเหตุ: Match มี relation จาก PlayerActionLog/MatchEvent/PlayerMatchStats
+    // และ Team มี relation จากหลายตาราง (เช่น TransferHistory)
+    await prisma.playerActionLog.deleteMany()
     await prisma.playerMatchStats.deleteMany()
     await prisma.matchEvent.deleteMany()
+
+    await prisma.transferHistory.deleteMany()
+    await prisma.bid.deleteMany()
+    await prisma.news.deleteMany()
+
+    await prisma.financialEvent.deleteMany()
+    await prisma.clubFinance.deleteMany()
+    await prisma.teamReputation.deleteMany()
+    await prisma.playerReputation.deleteMany()
+    await prisma.teamTactics.deleteMany()
+
     await prisma.match.deleteMany()
     await prisma.player.deleteMany()
     await prisma.team.deleteMany()

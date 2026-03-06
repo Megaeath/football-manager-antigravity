@@ -471,29 +471,60 @@ function MatchContent() {
         return nextBallPosByIndex;
     };
 
+    const distributeByWeight = (total: number, weights: number[]) => {
+        if (total <= 0) return weights.map(() => 0);
+        const sumWeights = weights.reduce((a, b) => a + b, 0);
+        if (sumWeights <= 0) {
+            const first = Math.max(0, total);
+            return [first, ...weights.slice(1).map(() => 0)];
+        }
+
+        const raw = weights.map((w) => (total * w) / sumWeights);
+        const floored = raw.map((v) => Math.floor(v));
+        let remaining = total - floored.reduce((a, b) => a + b, 0);
+
+        const indices = raw
+            .map((v, idx) => ({ idx, frac: v - Math.floor(v) }))
+            .sort((a, b) => b.frac - a.frac)
+            .map((x) => x.idx);
+
+        for (let i = 0; i < indices.length && remaining > 0; i++) {
+            floored[indices[i]] += 1;
+            remaining -= 1;
+        }
+
+        return floored;
+    };
+
     const calculatePlayerSpaceCreation = (
         playerId: string,
         teamId: string,
         logs: any[],
-        nextTeamBallPosByIndex: Array<number | null>
+        nextTeamBallPosByIndex: Array<number | null>,
+        playerStats: any,
+        analytics: any
     ) => {
-        const trackedActions = ['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const;
-        const actionStats: Record<string, { attempts: number; success: number; totalGain: number; avgGainPerSuccess: number; gainPerAttempt: number }> = {
+        type SpaceAction = 'DRIBBLE' | 'PASS_SHORT' | 'PASS_LONG';
+        const trackedActions: SpaceAction[] = ['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'];
+        const actionStats: Record<SpaceAction, { attempts: number; success: number; totalGain: number; avgGainPerSuccess: number; gainPerAttempt: number }> = {
             DRIBBLE: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 },
             PASS_SHORT: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 },
             PASS_LONG: { attempts: 0, success: 0, totalGain: 0, avgGainPerSuccess: 0, gainPerAttempt: 0 }
         };
+
+        const rawAttempts: Record<SpaceAction, number> = { DRIBBLE: 0, PASS_SHORT: 0, PASS_LONG: 0 };
+        const rawSuccess: Record<SpaceAction, number> = { DRIBBLE: 0, PASS_SHORT: 0, PASS_LONG: 0 };
 
         for (let i = 0; i < logs.length; i++) {
             const log = logs[i];
             if (log?.playerId !== playerId || log?.teamId !== teamId) continue;
             if (!trackedActions.includes(log?.actionType)) continue;
 
-            const actionType = log.actionType as keyof typeof actionStats;
-            actionStats[actionType].attempts += 1;
+            const actionType = log.actionType as SpaceAction;
+            rawAttempts[actionType] += 1;
 
             if (!isActionSuccess(log)) continue;
-            actionStats[actionType].success += 1;
+            rawSuccess[actionType] += 1;
 
             const currentBallPos = typeof log?.ballPosition === 'number' ? Math.max(0, Math.min(100, log.ballPosition)) : null;
             const nextBallPos = nextTeamBallPosByIndex[i];
@@ -503,6 +534,40 @@ function MatchContent() {
             const gain = Math.max(0, nextBallPos - currentBallPos);
             actionStats[actionType].totalGain += gain;
         }
+
+        // Reconcile attempts/success with per-player match stats to avoid confusing mismatch
+        actionStats.DRIBBLE.attempts = playerStats?.dribblesAttempted ?? rawAttempts.DRIBBLE;
+        actionStats.DRIBBLE.success = Math.min(playerStats?.dribblesWon ?? rawSuccess.DRIBBLE, actionStats.DRIBBLE.attempts);
+
+        const playerPassAttempts = Math.max(0, playerStats?.passesAttempted ?? 0);
+        const playerPassSuccess = Math.max(0, playerStats?.passesCompleted ?? 0);
+
+        const shortAttemptWeight = analytics?.actions?.PASS_SHORT?.attempts ?? rawAttempts.PASS_SHORT;
+        const longAttemptWeight = analytics?.actions?.PASS_LONG?.attempts ?? rawAttempts.PASS_LONG;
+        const shortSuccessWeight = analytics?.actions?.PASS_SHORT?.success ?? rawSuccess.PASS_SHORT;
+        const longSuccessWeight = analytics?.actions?.PASS_LONG?.success ?? rawSuccess.PASS_LONG;
+
+        const [shortAttempts, longAttempts] = distributeByWeight(playerPassAttempts, [shortAttemptWeight, longAttemptWeight]);
+        const [shortSuccessRaw, longSuccessRaw] = distributeByWeight(playerPassSuccess, [shortSuccessWeight, longSuccessWeight]);
+
+        const shortSuccess = Math.min(shortSuccessRaw, shortAttempts);
+        const longSuccess = Math.min(longSuccessRaw, longAttempts);
+        const successGap = playerPassSuccess - (shortSuccess + longSuccess);
+
+        if (successGap > 0) {
+            const shortCapacity = Math.max(0, shortAttempts - shortSuccess);
+            const shortAdd = Math.min(successGap, shortCapacity);
+            const longCapacity = Math.max(0, longAttempts - longSuccess);
+            const longAdd = Math.min(successGap - shortAdd, longCapacity);
+            actionStats.PASS_SHORT.success = shortSuccess + shortAdd;
+            actionStats.PASS_LONG.success = longSuccess + longAdd;
+        } else {
+            actionStats.PASS_SHORT.success = shortSuccess;
+            actionStats.PASS_LONG.success = longSuccess;
+        }
+
+        actionStats.PASS_SHORT.attempts = shortAttempts;
+        actionStats.PASS_LONG.attempts = longAttempts;
 
         trackedActions.forEach((actionType) => {
             const st = actionStats[actionType];
@@ -1139,7 +1204,14 @@ function MatchContent() {
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
                                             const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];
-                                            const spaceCreation = calculatePlayerSpaceCreation(p.playerId, teamId, rawLogsForSpace, nextTeamBallPosByIndex);
+                                            const spaceCreation = calculatePlayerSpaceCreation(
+                                                p.playerId,
+                                                teamId,
+                                                rawLogsForSpace,
+                                                nextTeamBallPosByIndex,
+                                                p,
+                                                analytics
+                                            );
                                             const totalZoneTouches = (analytics?.zones?.total || (p.defensiveThirdTouches + p.middleThirdTouches + p.attackingThirdTouches) || 1);
                                             const defPct = Math.round(((analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0) / totalZoneTouches) * 100);
                                             const midPct = Math.round(((analytics?.zones?.middle ?? p.middleThirdTouches ?? 0) / totalZoneTouches) * 100);
