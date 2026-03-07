@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
 import { simulateMatch } from '../engine/match';
-import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes } from '../engine/types';
+import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes, MatchPrepConfig } from '../engine/types';
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
 import { calculateMatchExp } from '../engine/experience';
 import { calculatePlayerPower, getEffectiveAttributes, toPlayerAttributes } from '../engine/playerPower';
@@ -139,6 +139,8 @@ function mapPlayer(p: any): PlayerState {
         exp: exp,
         tacticalPosition: p.tacticalPosition,
         playerRole: p.playerRole || null,
+        attackingRolePreset: p.attackingRolePreset || p.playerRole || null,
+        defensiveRolePreset: p.defensiveRolePreset || p.playerRole || null,
         cards: { yellow: 0, red: 0 },
         stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }
     };
@@ -291,7 +293,15 @@ export async function processMatch(matchId: string) {
         players: matchDB.awayTeam.players.map(mapPlayer)
     };
 
-    const result = simulateMatch(homeTeam, awayTeam);
+    // Parse match prep configs
+    const homePrep: MatchPrepConfig | null = matchDB.homePrepConfig 
+        ? JSON.parse(matchDB.homePrepConfig) 
+        : null;
+    const awayPrep: MatchPrepConfig | null = matchDB.awayPrepConfig 
+        ? JSON.parse(matchDB.awayPrepConfig) 
+        : null;
+
+    const result = simulateMatch(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
 
     const defaultTeamStats = {
         possession: 50,

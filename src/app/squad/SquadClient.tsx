@@ -9,6 +9,7 @@ import { getExpBonus } from '@/lib/engine/experience';
 import PlayerModal from '@/components/PlayerModal';
 import TacticsTabs from '@/components/TacticsTabs';
 import PlayerRolesTab from '@/components/PlayerRolesTab';
+import MatchPrepTab from '@/components/MatchPrepTab';
 
 type PlayerProps = {
     id: string;
@@ -19,6 +20,8 @@ type PlayerProps = {
     morale: number;
     tacticalPosition: string | null;
     playerRole?: string | null;
+    attackingRolePreset?: string | null;
+    defensiveRolePreset?: string | null;
     suitability: number;
     fitnessSuitability: number;
     rawAttributes: PlayerAttributes;
@@ -99,7 +102,7 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [] }: {
     teamId: string,
     players: PlayerProps[],
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
@@ -111,12 +114,13 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         awayTeamId: string;
         homeTeam: { id: string; name: string };
         awayTeam: { id: string; name: string };
-    }
+    },
+    opponentPlayers?: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[]
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -459,6 +463,24 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 >
                     👥 Roles
                 </button>
+                {fromMatch && upcomingMatch && opponentPlayers.length > 0 && (
+                    <button
+                        onClick={() => setActiveTab('matchprep')}
+                        style={{
+                            padding: '12px 16px',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === 'matchprep' ? '3px solid var(--primary)' : 'none',
+                            cursor: 'pointer',
+                            fontWeight: activeTab === 'matchprep' ? 'bold' : 'normal',
+                            fontSize: '0.9rem',
+                            color: activeTab === 'matchprep' ? 'var(--primary)' : 'inherit'
+                        }}
+                        className="text-sm md:text-base md:px-5"
+                    >
+                        🎯 Match Prep
+                    </button>
+                )}
             </div>
 
             {activeTab === 'matches' && (
@@ -834,6 +856,14 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
             {activeTab === 'roles' && (
                 <PlayerRolesTab players={players} teamId={teamId} onViewPlayer={openPlayerModal} />
+            )}
+
+            {activeTab === 'matchprep' && upcomingMatch && (
+                <MatchPrepTab 
+                    matchId={upcomingMatch.id}
+                    teamId={teamId}
+                    opponentPlayers={opponentPlayers}
+                />
             )}
 
             <PlayerModal />

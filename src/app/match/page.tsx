@@ -451,24 +451,39 @@ function MatchContent() {
     };
 
     const buildNextTeamBallPositionMap = (logs: any[]) => {
-        const latestByTeam: Record<string, number> = {};
         const nextBallPosByIndex: Array<number | null> = Array(logs.length).fill(null);
 
-        for (let i = logs.length - 1; i >= 0; i--) {
-            const log = logs[i];
-            const teamId = log?.teamId;
-            const ballPosition = typeof log?.ballPosition === 'number' ? log.ballPosition : null;
+        // Use only immediate next action from the same team.
+        // This avoids inflated "space gain" when a team loses possession and regains much later.
+        for (let i = 0; i < logs.length - 1; i++) {
+            const current = logs[i];
+            const next = logs[i + 1];
+            if (!current?.teamId || !next?.teamId) continue;
+            if (current.teamId !== next.teamId) continue;
 
-            if (teamId && typeof latestByTeam[teamId] === 'number') {
-                nextBallPosByIndex[i] = latestByTeam[teamId];
-            }
+            const nextPos = typeof next?.ballPosition === 'number'
+                ? Math.max(0, Math.min(100, next.ballPosition))
+                : null;
 
-            if (teamId && ballPosition !== null) {
-                latestByTeam[teamId] = Math.max(0, Math.min(100, ballPosition));
+            if (nextPos !== null) {
+                nextBallPosByIndex[i] = nextPos;
             }
         }
 
         return nextBallPosByIndex;
+    };
+
+    const parseActionMetadata = (metadata: any) => {
+        if (!metadata) return null;
+        if (typeof metadata === 'object') return metadata;
+        if (typeof metadata === 'string') {
+            try {
+                return JSON.parse(metadata);
+            } catch {
+                return null;
+            }
+        }
+        return null;
     };
 
     const distributeByWeight = (total: number, weights: number[]) => {
@@ -502,7 +517,8 @@ function MatchContent() {
         logs: any[],
         nextTeamBallPosByIndex: Array<number | null>,
         playerStats: any,
-        analytics: any
+        analytics: any,
+        isHomeTeam: boolean
     ) => {
         type SpaceAction = 'DRIBBLE' | 'PASS_SHORT' | 'PASS_LONG';
         const trackedActions: SpaceAction[] = ['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'];
@@ -521,17 +537,39 @@ function MatchContent() {
             if (!trackedActions.includes(log?.actionType)) continue;
 
             const actionType = log.actionType as SpaceAction;
+            const metadata = parseActionMetadata(log?.metadata);
+
+            // Exclude set-piece passes from open-play space creation metrics
+            if ((actionType === 'PASS_SHORT' || actionType === 'PASS_LONG') && metadata?.setPiece) {
+                continue;
+            }
+
             rawAttempts[actionType] += 1;
 
             if (!isActionSuccess(log)) continue;
             rawSuccess[actionType] += 1;
 
             const currentBallPos = typeof log?.ballPosition === 'number' ? Math.max(0, Math.min(100, log.ballPosition)) : null;
-            const nextBallPos = nextTeamBallPosByIndex[i];
+            const targetFromMetadata = typeof metadata?.targetPosition === 'number'
+                ? Math.max(0, Math.min(100, metadata.targetPosition))
+                : null;
+            const nextBallPos = targetFromMetadata ?? nextTeamBallPosByIndex[i];
 
             if (currentBallPos === null || typeof nextBallPos !== 'number') continue;
 
-            const gain = Math.max(0, nextBallPos - currentBallPos);
+            const directionalGain = isHomeTeam
+                ? (nextBallPos - currentBallPos)
+                : (currentBallPos - nextBallPos);
+
+            let gain = Math.max(0, directionalGain);
+
+            // For older logs without `targetPosition`, cap inferred gain by action-type limits
+            if (targetFromMetadata === null) {
+                if (actionType === 'PASS_SHORT') gain = Math.min(gain, 2);
+                if (actionType === 'PASS_LONG') gain = Math.min(gain, 5);
+                if (actionType === 'DRIBBLE') gain = Math.min(gain, 3);
+            }
+
             actionStats[actionType].totalGain += gain;
         }
 
@@ -1187,7 +1225,8 @@ function MatchContent() {
                                                 rawLogsForSpace,
                                                 nextTeamBallPosByIndex,
                                                 p,
-                                                analytics
+                                                analytics,
+                                                activeTab === 'home'
                                             );
                                             const totalZoneTouches = (analytics?.zones?.total || (p.defensiveThirdTouches + p.middleThirdTouches + p.attackingThirdTouches) || 1);
                                             const defPct = Math.round(((analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0) / totalZoneTouches) * 100);
@@ -1286,8 +1325,8 @@ function MatchContent() {
                                                                     >
                                                                         {p.name}
                                                                     </button>
-                                                                    {p.goals > 0 && <span title={`Scorer (${p.goals})`}>⚽</span>}
-                                                                    {p.assists > 0 && <span title={`Assist (${p.assists})`}>🅰️</span>}
+                                                                    {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽</span>}
+                                                                    {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️</span>}
                                                                     {isSubIn && <span title="Subbed On">🔼</span>}
                                                                     {isSubOut && <span title="Subbed Off">🔽</span>}
                                                                     {isMotM && <span title="Man of the Match">🌟</span>}
@@ -1343,8 +1382,8 @@ function MatchContent() {
                                                             >
                                                                 {p.name}
                                                             </button>
-                                                            {p.goals > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
-                                                            {p.assists > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
+                                                            {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
+                                                            {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
                                                             {isSubIn && <span title="Subbed On">🔼</span>}
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
@@ -1492,6 +1531,65 @@ function MatchContent() {
                                                                 </div>
 
                                                                 <div style={{ fontSize: '0.73rem', color: '#334155' }}>
+                                                                    💡 {getSpaceCreationInsight(spaceCreation)}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Space Creation Impact (Mobile Version) */}
+                                                            <div style={{ marginTop: '12px', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', background: '#f8fafc' }} className="md:hidden">
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: '600', marginBottom: '8px' }}>
+                                                                    Space Creation Impact
+                                                                </div>
+                                                                
+                                                                {/* Mobile: 3 compact cards, one per action type */}
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
+                                                                    {(['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const).map((actionType) => {
+                                                                        const st = spaceCreation.actions[actionType];
+                                                                        const attempts = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.attempts !== undefined) 
+                                                                            ? analytics.actions[actionType].attempts 
+                                                                            : st.attempts;
+                                                                        const success = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.success !== undefined) 
+                                                                            ? analytics.actions[actionType].success 
+                                                                            : st.success;
+                                                                        const label = actionType === 'PASS_SHORT' ? 'P-Short' : actionType === 'PASS_LONG' ? 'P-Long' : 'Dribble';
+                                                                        
+                                                                        return (
+                                                                            <div key={actionType} style={{ 
+                                                                                border: '1px solid var(--border)', 
+                                                                                borderRadius: '6px', 
+                                                                                padding: '8px', 
+                                                                                background: '#ffffff',
+                                                                                fontSize: '0.65rem'
+                                                                            }}>
+                                                                                <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--muted)' }}>{label}</div>
+                                                                                <div style={{ fontSize: '0.7rem', marginBottom: '2px' }}>
+                                                                                    <span style={{ color: 'var(--muted)' }}>Att:</span> <span style={{ fontWeight: 600 }}>{attempts}</span>
+                                                                                </div>
+                                                                                <div style={{ fontSize: '0.7rem', marginBottom: '2px' }}>
+                                                                                    <span style={{ color: 'var(--muted)' }}>Suc:</span> <span style={{ fontWeight: 600, color: '#059669' }}>{success}</span>
+                                                                                </div>
+                                                                                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#2563eb' }}>
+                                                                                    +{st.totalGain} space
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+
+                                                                {/* Mobile: Summary boxes in single row */}
+                                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+                                                                    <div style={{ padding: '6px', borderRadius: '4px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '0.65rem' }}>
+                                                                        <div style={{ color: 'var(--muted)', marginBottom: '2px' }}>Total Space</div>
+                                                                        <div style={{ fontWeight: 700, color: '#0f766e', fontSize: '0.8rem' }}>+{spaceCreation.summary.totalGainAll}</div>
+                                                                    </div>
+                                                                    <div style={{ padding: '6px', borderRadius: '4px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '0.65rem' }}>
+                                                                        <div style={{ color: 'var(--muted)', marginBottom: '2px' }}>Best Action</div>
+                                                                        <div style={{ fontWeight: 700, fontSize: '0.75rem' }}>{spaceCreation.summary.bestActionByTotalGain === 'PASS_SHORT' ? 'P-Short' : spaceCreation.summary.bestActionByTotalGain === 'PASS_LONG' ? 'P-Long' : 'Dribble'}</div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Mobile: Insight as single line */}
+                                                                <div style={{ fontSize: '0.65rem', color: '#334155', lineHeight: '1.4' }}>
                                                                     💡 {getSpaceCreationInsight(spaceCreation)}
                                                                 </div>
                                                             </div>

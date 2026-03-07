@@ -460,6 +460,8 @@ export async function handleContractExpiration(teamId: string): Promise<{
                 data: {
                     teamId: null, // Remove from team
                     playerRole: null, // Clear role assignment
+                    attackingRolePreset: null,
+                    defensiveRolePreset: null,
                     tacticalPosition: null, // Clear tactical position
                     transferStatus: 'NOT_LISTED'
                 }

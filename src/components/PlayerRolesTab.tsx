@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ROLE_DEFINITIONS } from '@/lib/engine/playerRoles';
+import { ROLE_DEFINITIONS, getPreferredRoleNamesForPhase, getSuggestedRolePresets } from '@/lib/engine/playerRoles';
 import type { PlayerAttributes } from '@/lib/engine/types';
 
 type PlayerProps = {
@@ -9,6 +9,8 @@ type PlayerProps = {
     name: string;
     naturalPosition: string;
     playerRole?: string | null;
+    attackingRolePreset?: string | null;
+    defensiveRolePreset?: string | null;
     rawAttributes: PlayerAttributes;
 };
 
@@ -31,10 +33,25 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
     const [roleSuitability, setRoleSuitability] = useState<RoleSuitability[]>([]);
     const [loadingSuitability, setLoadingSuitability] = useState(false);
     const [playersList, setPlayersList] = useState<PlayerProps[]>(players);
+    const [selectedMode, setSelectedMode] = useState<'attacking' | 'defensive'>('attacking');
 
     // Sync playersList when props change
     useEffect(() => {
-        setPlayersList(players);
+        setPlayersList(prev => {
+            const prevMap = new Map(prev.map(p => [p.id, p]));
+            return players.map(p => {
+                const cached = prevMap.get(p.id);
+                if (!cached) return p;
+
+                return {
+                    ...p,
+                    // Preserve newest local edits if parent hasn't refreshed yet
+                    playerRole: cached.playerRole ?? p.playerRole,
+                    attackingRolePreset: cached.attackingRolePreset ?? p.attackingRolePreset,
+                    defensiveRolePreset: cached.defensiveRolePreset ?? p.defensiveRolePreset
+                };
+            });
+        });
     }, [players]);
 
     // Load role suitability when player is selected
@@ -51,11 +68,18 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
                 const data = await res.json();
                 if (data.roles) {
                     setRoleSuitability(data.roles);
-                    // Update selectedPlayer with latest playerRole from API
-                    if (data.playerRole !== selectedPlayer.playerRole) {
+                    const incomingAttack = data.attackingRolePreset ?? data.playerRole ?? null;
+                    const incomingDefense = data.defensiveRolePreset ?? data.playerRole ?? null;
+                    // Update selectedPlayer with latest role presets from API
+                    if (
+                        incomingAttack !== (selectedPlayer.attackingRolePreset ?? selectedPlayer.playerRole ?? null)
+                        || incomingDefense !== (selectedPlayer.defensiveRolePreset ?? selectedPlayer.playerRole ?? null)
+                    ) {
                         setSelectedPlayer(prev => prev ? {
                             ...prev,
-                            playerRole: data.playerRole
+                            playerRole: data.playerRole,
+                            attackingRolePreset: incomingAttack,
+                            defensiveRolePreset: incomingDefense
                         } : null);
                     }
                 }
@@ -69,13 +93,17 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
         fetchSuitability();
     }, [selectedPlayer?.id]);
 
-    const handleAssignRole = async (playerId: string, roleName: string | null) => {
+    const handleAssignRole = async (playerId: string, roleName: string | null, mode: 'attacking' | 'defensive') => {
         setLoading(true);
         try {
+            const payload = mode === 'attacking'
+                ? { attackingRolePreset: roleName }
+                : { defensiveRolePreset: roleName };
+
             const res = await fetch(`/api/player/${playerId}/role`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ playerRole: roleName })
+                body: JSON.stringify(payload)
             });
             
             const data = await res.json();
@@ -89,14 +117,23 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
             if (selectedPlayer && data.player) {
                 const updatedPlayer = {
                     ...selectedPlayer,
-                    playerRole: data.player.playerRole
+                    playerRole: data.player.playerRole,
+                    attackingRolePreset: data.player.attackingRolePreset,
+                    defensiveRolePreset: data.player.defensiveRolePreset
                 };
                 setSelectedPlayer(updatedPlayer);
                 
                 // Update playersList to reflect the change in the list
                 setPlayersList(prevList =>
                     prevList.map(p =>
-                        p.id === playerId ? { ...p, playerRole: data.player.playerRole } : p
+                        p.id === playerId
+                            ? {
+                                ...p,
+                                playerRole: data.player.playerRole,
+                                attackingRolePreset: data.player.attackingRolePreset,
+                                defensiveRolePreset: data.player.defensiveRolePreset
+                            }
+                            : p
                     )
                 );
                 
@@ -110,7 +147,9 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
                         // Ensure selectedPlayer is in sync with API
                         setSelectedPlayer(prev => prev ? {
                             ...prev,
-                            playerRole: suitData.playerRole
+                            playerRole: suitData.playerRole,
+                            attackingRolePreset: suitData.attackingRolePreset,
+                            defensiveRolePreset: suitData.defensiveRolePreset
                         } : null);
                     }
                 } catch (error) {
@@ -131,6 +170,67 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
         if (!roleName) return 'No Role';
         const role = ROLE_DEFINITIONS[roleName];
         return role ? role.displayName : roleName;
+    };
+
+    const getActiveRoleForMode = (player: PlayerProps, mode: 'attacking' | 'defensive') => {
+        if (mode === 'attacking') {
+            return player.attackingRolePreset ?? player.playerRole ?? null;
+        }
+        return player.defensiveRolePreset ?? player.playerRole ?? null;
+    };
+
+    const getRolesForSelectedMode = (allRoles: RoleSuitability[]) => {
+        const preferred = new Set(getPreferredRoleNamesForPhase(selectedMode));
+        const preferredRoles = allRoles.filter(r => preferred.has(r.roleName));
+        return preferredRoles.length > 0 ? preferredRoles : allRoles;
+    };
+
+    const handleApplyRecommendedPresets = async (player: PlayerProps) => {
+        setLoading(true);
+        try {
+            const preset = getSuggestedRolePresets(player.naturalPosition);
+            const res = await fetch(`/api/player/${player.id}/role`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    attackingRolePreset: preset.attackingRolePreset,
+                    defensiveRolePreset: preset.defensiveRolePreset
+                })
+            });
+
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.error || 'Failed to apply recommended presets');
+                return;
+            }
+
+            setPlayersList(prevList =>
+                prevList.map(p =>
+                    p.id === player.id
+                        ? {
+                            ...p,
+                            playerRole: data.player.playerRole,
+                            attackingRolePreset: data.player.attackingRolePreset,
+                            defensiveRolePreset: data.player.defensiveRolePreset
+                        }
+                        : p
+                )
+            );
+
+            if (selectedPlayer?.id === player.id) {
+                setSelectedPlayer(prev => prev ? {
+                    ...prev,
+                    playerRole: data.player.playerRole,
+                    attackingRolePreset: data.player.attackingRolePreset,
+                    defensiveRolePreset: data.player.defensiveRolePreset
+                } : null);
+            }
+        } catch (error) {
+            console.error('Failed to apply recommended presets:', error);
+            alert('Failed to apply recommended presets');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const getStarRating = (stars: number) => {
@@ -171,32 +271,96 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
         return (
             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
                 <div style={{ marginBottom: '0.75rem' }}>
+                    <div style={{
+                        marginBottom: '0.65rem',
+                        padding: '0.5rem 0.65rem',
+                        borderRadius: '6px',
+                        background: 'var(--hover-bg)',
+                        border: '1px solid var(--border)',
+                        fontSize: '0.8rem',
+                        color: 'var(--text-muted)'
+                    }}>
+                        <div style={{ marginBottom: '0.2rem' }}>⚔️ Current Attacking: <strong>{getRoleDisplayName(getActiveRoleForMode(player, 'attacking'))}</strong></div>
+                        <div>🛡️ Current Defensive: <strong>{getRoleDisplayName(getActiveRoleForMode(player, 'defensive'))}</strong></div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
+                        <button
+                            onClick={() => setSelectedMode('attacking')}
+                            style={{
+                                padding: '0.35rem 0.7rem',
+                                borderRadius: '999px',
+                                border: selectedMode === 'attacking' ? '1px solid var(--primary)' : '1px solid var(--border)',
+                                background: selectedMode === 'attacking' ? 'var(--primary-light)' : 'white',
+                                color: selectedMode === 'attacking' ? 'var(--primary)' : 'var(--text-muted)',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            ⚔️ เกมรุก
+                        </button>
+                        <button
+                            onClick={() => setSelectedMode('defensive')}
+                            style={{
+                                padding: '0.35rem 0.7rem',
+                                borderRadius: '999px',
+                                border: selectedMode === 'defensive' ? '1px solid var(--primary)' : '1px solid var(--border)',
+                                background: selectedMode === 'defensive' ? 'var(--primary-light)' : 'white',
+                                color: selectedMode === 'defensive' ? 'var(--primary)' : 'var(--text-muted)',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            🛡️ เกมรับ
+                        </button>
+                    </div>
+
                     <button
-                        onClick={() => handleAssignRole(player.id, null)}
-                        disabled={loading || !player.playerRole}
+                        onClick={() => handleAssignRole(player.id, null, selectedMode)}
+                        disabled={loading || !getActiveRoleForMode(player, selectedMode)}
                         style={{
                             padding: '0.4rem 0.8rem',
                             background: 'var(--danger)',
                             color: 'white',
                             border: 'none',
                             borderRadius: '4px',
-                            cursor: loading || !player.playerRole ? 'not-allowed' : 'pointer',
-                            opacity: loading || !player.playerRole ? 0.5 : 1,
+                            cursor: loading || !getActiveRoleForMode(player, selectedMode) ? 'not-allowed' : 'pointer',
+                            opacity: loading || !getActiveRoleForMode(player, selectedMode) ? 0.5 : 1,
                             fontSize: '0.85rem'
                         }}
                     >
-                        Clear Role
+                        Clear {selectedMode === 'attacking' ? 'Attacking' : 'Defensive'} Role
+                    </button>
+
+                    <button
+                        onClick={() => handleApplyRecommendedPresets(player)}
+                        disabled={loading}
+                        style={{
+                            marginLeft: '0.5rem',
+                            padding: '0.4rem 0.8rem',
+                            background: 'var(--primary)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            opacity: loading ? 0.5 : 1,
+                            fontSize: '0.85rem'
+                        }}
+                    >
+                        Apply Recommended Presets
                     </button>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {roleSuitability.map(role => (
+                    {getRolesForSelectedMode(roleSuitability).map(role => (
                         <div
                             key={role.roleName}
                             style={{
                                 padding: '0.75rem',
-                                background: player.playerRole === role.roleName ? 'var(--success-light)' : 'var(--card-bg)',
-                                border: player.playerRole === role.roleName ? '2px solid var(--success)' : '1px solid var(--border)',
+                                background: getActiveRoleForMode(player, selectedMode) === role.roleName ? 'var(--success-light)' : 'var(--card-bg)',
+                                border: getActiveRoleForMode(player, selectedMode) === role.roleName ? '2px solid var(--success)' : '1px solid var(--border)',
                                 borderRadius: '4px'
                             }}
                         >
@@ -208,20 +372,20 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => handleAssignRole(player.id, role.roleName)}
-                                    disabled={loading || player.playerRole === role.roleName}
+                                    onClick={() => handleAssignRole(player.id, role.roleName, selectedMode)}
+                                    disabled={loading || getActiveRoleForMode(player, selectedMode) === role.roleName}
                                     style={{
                                         padding: '0.3rem 0.6rem',
-                                        background: player.playerRole === role.roleName ? 'var(--success)' : 'var(--primary)',
+                                        background: getActiveRoleForMode(player, selectedMode) === role.roleName ? 'var(--success)' : 'var(--primary)',
                                         color: 'white',
                                         border: 'none',
                                         borderRadius: '3px',
-                                        cursor: loading || player.playerRole === role.roleName ? 'not-allowed' : 'pointer',
+                                        cursor: loading || getActiveRoleForMode(player, selectedMode) === role.roleName ? 'not-allowed' : 'pointer',
                                         fontSize: '0.75rem',
                                         opacity: loading ? 0.5 : 1
                                     }}
                                 >
-                                    {player.playerRole === role.roleName ? '✓ Active' : 'Assign'}
+                                    {getActiveRoleForMode(player, selectedMode) === role.roleName ? '✓ Active' : 'Assign'}
                                 </button>
                             </div>
                             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.3rem 0' }}>
@@ -338,8 +502,9 @@ export default function PlayerRolesTab({ players, teamId, onViewPlayer }: {
                                                 }}
                                                 aria-label={`Toggle role assignment for ${player.name}`}
                                             >
-                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                    {getRoleDisplayName(player.playerRole)}
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                                                    <div>⚔️ {getRoleDisplayName(getActiveRoleForMode(player, 'attacking'))}</div>
+                                                    <div>🛡️ {getRoleDisplayName(getActiveRoleForMode(player, 'defensive'))}</div>
                                                 </div>
                                                 <span style={{ 
                                                     fontSize: '1.2rem', 

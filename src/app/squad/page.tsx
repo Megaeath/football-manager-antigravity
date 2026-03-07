@@ -137,6 +137,8 @@ export default async function SquadPage() {
             morale: p.morale,
             tacticalPosition: p.tacticalPosition,
             playerRole: p.playerRole,
+            attackingRolePreset: p.attackingRolePreset,
+            defensiveRolePreset: p.defensiveRolePreset,
             suitability: baseSuitability,
             fitnessSuitability,
             rawAttributes: attrs,
@@ -189,6 +191,78 @@ export default async function SquadPage() {
         orderBy: { date: 'asc' }
     });
 
+    // Fetch opponent players for match prep if upcoming match exists
+    let opponentPlayers: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[] = [];
+    if (upcomingMatch) {
+        const opponentTeamId = upcomingMatch.homeTeamId === team.id ? upcomingMatch.awayTeamId : upcomingMatch.homeTeamId;
+        const opponentTeam = await prisma.team.findUnique({
+            where: { id: opponentTeamId },
+            include: {
+                players: {
+                    where: { isRetired: false, tacticalPosition: { not: null } },
+                    select: {
+                        id: true,
+                        name: true,
+                        naturalPosition: true,
+                        // Attributes for power calculation
+                        handling: true, tackling: true, passing: true, shooting: true,
+                        heading: true, dribbling: true, setPieces: true, throw: true,
+                        aggression: true, positioning: true, vision: true,
+                        bravery: true, leadership: true, teamwork: true, composure: true,
+                        pace: true, acceleration: true, stamina: true, strength: true,
+                        agility: true, balance: true, crossing: true,
+                        condition: true,
+                        avgRating: true,
+                        goals: true,
+                        assists: true,
+                        matchStats: {
+                            where: { minutes: { gt: 0 } },
+                            select: { rating: true },
+                            take: 20
+                        },
+                        exp: true
+                    }
+                }
+            }
+        });
+
+        if (opponentTeam) {
+            opponentPlayers = opponentTeam.players.map(p => {
+                const attrs: PlayerAttributes = toPlayerAttributes({
+                    handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
+                    heading: p.heading, dribbling: p.dribbling, setPieces: p.setPieces, throw: p.throw,
+                    aggression: p.aggression, positioning: p.positioning, vision: p.vision,
+                    bravery: p.bravery, leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
+                    pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
+                    agility: p.agility, balance: p.balance, crossing: p.crossing
+                });
+                const natPos = p.naturalPosition.split('_')[0];
+                const power = calculatePlayerPower({
+                    attributes: attrs,
+                    targetPosition: natPos,
+                    condition: p.condition,
+                    exp: p.exp || 0
+                }).powerWithExp;
+
+                const derivedAvgRating = p.matchStats.length > 0
+                    ? p.matchStats.reduce((sum, stat) => sum + (stat.rating || 0), 0) / p.matchStats.length
+                    : 0;
+                const displayAvgRating = (p.avgRating && p.avgRating > 0) ? p.avgRating : derivedAvgRating;
+
+                return {
+                    id: p.id,
+                    name: p.name,
+                    position: p.naturalPosition.split('_')[0],
+                    power,
+                    condition: p.condition,
+                    avgRating: displayAvgRating,
+                    goals: p.goals,
+                    assists: p.assists
+                };
+            }).sort((a, b) => b.power - a.power); // Sort by power descending
+        }
+    }
+
     return (
         <div>
             <div style={{ marginBottom: '2rem' }}>
@@ -206,6 +280,7 @@ export default async function SquadPage() {
                     matches={matches as any} 
                     currentSeason={settings.currentSeason}
                     upcomingMatch={upcomingMatch as any}
+                    opponentPlayers={opponentPlayers}
                 />
             </Suspense>
         </div>

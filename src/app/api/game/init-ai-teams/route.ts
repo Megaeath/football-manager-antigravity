@@ -16,21 +16,17 @@ export async function POST() {
 
         const userTeamId = settings.userTeamId;
 
-        // Check if any AI teams are missing player roles
-        const teamsWithoutRoles = await prisma.team.findMany({
-            where: {
-                id: { not: userTeamId || undefined },
-                players: {
-                    none: {
-                        playerRole: { not: null }
-                    }
-                }
-            },
-            select: { id: true, name: true }
-        });
+        const aiTeamIds = (await prisma.team.findMany({
+            where: { id: { not: userTeamId || undefined } },
+            select: { id: true }
+        })).map(t => t.id);
 
-        if (teamsWithoutRoles.length > 0) {
-            console.log(`[InitializeAITeams] Found ${teamsWithoutRoles.length} teams without role assignments. Assigning now...`);
+        // Always normalize AI roles when this endpoint is called.
+        // This ensures both legacy role + split presets are synchronized.
+        const needRoleInitialization = aiTeamIds.length > 0;
+
+        if (needRoleInitialization) {
+            console.log('[InitializeAITeams] Found AI players missing role assignment/split presets. Assigning now...');
             
             try {
                 const { autoAssignRolesForAllAITeams } = await import('@/lib/services/aiRoleSelector');
@@ -69,7 +65,7 @@ export async function POST() {
         return NextResponse.json({
             success: true,
             message: 'AI team initialization complete',
-            rolesAssigned: teamsWithoutRoles.length,
+            rolesAssigned: needRoleInitialization ? aiTeamIds.length : 0,
             tacPositionsAssigned: teamsWithoutTacticalPositions.length
         });
     } catch (error) {

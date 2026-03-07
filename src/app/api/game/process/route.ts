@@ -74,8 +74,20 @@ export async function POST(req: Request) {
                     }
                 });
 
-                if (teamWithoutRoles) {
-                    console.log('[Process API] Initializing AI team roles...');
+                // Check if any AI player is missing split presets (new system)
+                const teamWithoutSplitRoles = await prisma.player.findFirst({
+                    where: {
+                        teamId: { in: aiTeams.map(t => t.id) },
+                        isRetired: false,
+                        OR: [
+                            { attackingRolePreset: null },
+                            { defensiveRolePreset: null }
+                        ]
+                    }
+                });
+
+                if (teamWithoutRoles || teamWithoutSplitRoles) {
+                    console.log('[Process API] Initializing AI team roles (including split presets)...');
                     await autoAssignRolesForAllAITeams(userTeamId || undefined);
                 }
 
@@ -99,7 +111,7 @@ export async function POST(req: Request) {
         }
 
         if (action === 'update_match_tactics') {
-            // Save match-specific tactics before simulation (for user team)
+            // Save match-specific tactics AND prep config before simulation (for user team)
             const updates: any = {};
             
             if (homeTactics) {

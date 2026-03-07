@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { getEligibleRoles, calculateRoleSuitability, ROLE_DEFINITIONS } from '@/lib/engine/playerRoles';
+import { getEligibleRoles, calculateRoleSuitability, getSuggestedRolePresets } from '@/lib/engine/playerRoles';
 
 /**
  * Auto-assign player roles for AI teams based on suitability
@@ -74,17 +74,22 @@ export async function autoAssignPlayerRoles(teamId: string): Promise<number> {
         roleSuitability.push({ roleName: role.name, stars });
       }
 
-      // Find highest suitability
+      // Find highest suitability (legacy single role)
       const maxStars = Math.max(...roleSuitability.map(r => r.stars));
       const bestRoles = roleSuitability.filter(r => r.stars === maxStars);
 
       // Pick one randomly if multiple have same suitability
       const selectedRole = bestRoles[Math.floor(Math.random() * bestRoles.length)];
+      const suggested = getSuggestedRolePresets(player.naturalPosition);
 
       // Assign role to player
       await prisma.player.update({
         where: { id: player.id },
-        data: { playerRole: selectedRole.roleName }
+        data: {
+          playerRole: selectedRole.roleName,
+          attackingRolePreset: suggested.attackingRolePreset || selectedRole.roleName,
+          defensiveRolePreset: suggested.defensiveRolePreset || selectedRole.roleName
+        } as any
       });
 
       assignedCount++;
@@ -193,11 +198,16 @@ export async function reassignRoleAfterTransfer(playerId: string): Promise<strin
 
     // Pick one randomly if multiple have same suitability
     const selectedRole = bestRoles[Math.floor(Math.random() * bestRoles.length)];
+    const suggested = getSuggestedRolePresets(player.naturalPosition);
 
     // Assign role to player
     await prisma.player.update({
       where: { id: player.id },
-      data: { playerRole: selectedRole.roleName }
+      data: {
+        playerRole: selectedRole.roleName,
+        attackingRolePreset: suggested.attackingRolePreset || selectedRole.roleName,
+        defensiveRolePreset: suggested.defensiveRolePreset || selectedRole.roleName
+      } as any
     });
 
     console.log(`[aiRoleSelector] Assigned role ${selectedRole.roleName} to ${player.name}`);

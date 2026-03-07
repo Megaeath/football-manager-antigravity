@@ -24,11 +24,16 @@
             ]
         },
         "long_pass": {
-            "attacker_formula": "(crossing*0.3)+ (passing * 0.2) + (vision * 0.3) + (setPieces * 0.2)",
+            "attacker_formula": "(crossing * 0.5) + (vision * 0.3) + (passing * 0.2)",
             "defender_formula": "(positioning * 0.48) + (heading * 0.32) + (pace * 0.20)",
             "attacker_bonus": [
                 {
                     "stat": "vision",
+                    "threshold": 16,
+                    "bonus": 1
+                },
+                {
+                    "stat": "crossing",
                     "threshold": 16,
                     "bonus": 1
                 }

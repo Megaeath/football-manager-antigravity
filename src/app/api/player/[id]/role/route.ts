@@ -9,14 +9,26 @@ export async function PATCH(
   try {
     const { id: playerId } = await params;
     const body = await request.json();
-    const { playerRole } = body;
+    const { playerRole, attackingRolePreset, defensiveRolePreset } = body;
+
+    const requestedAttackingRole = attackingRolePreset !== undefined
+      ? attackingRolePreset
+      : (playerRole !== undefined ? playerRole : undefined);
+
+    const requestedDefensiveRole = defensiveRolePreset !== undefined
+      ? defensiveRolePreset
+      : (playerRole !== undefined ? playerRole : undefined);
+
+    const requestedRoles = [requestedAttackingRole, requestedDefensiveRole].filter(r => r !== undefined);
 
     // Validate role name
-    if (playerRole && !ROLE_DEFINITIONS[playerRole]) {
-      return Response.json(
-        { error: 'Invalid player role' },
-        { status: 400 }
-      );
+    for (const roleName of requestedRoles) {
+      if (roleName && !ROLE_DEFINITIONS[roleName]) {
+        return Response.json(
+          { error: `Invalid player role: ${roleName}` },
+          { status: 400 }
+        );
+      }
     }
 
     // Fetch player to validate position compatibility
@@ -33,8 +45,9 @@ export async function PATCH(
     }
 
     // Validate role is compatible with player position
-    if (playerRole) {
-      const role = ROLE_DEFINITIONS[playerRole];
+    for (const roleName of requestedRoles) {
+      if (!roleName) continue;
+      const role = ROLE_DEFINITIONS[roleName];
       const basePosition = player.naturalPosition.split('_')[0]; // Extract base position
       
       const isCompatible = role.positions.some(pos => 
@@ -48,6 +61,7 @@ export async function PATCH(
           { 
             error: 'Role not compatible with player position',
             playerPosition: player.naturalPosition,
+            role: roleName,
             rolePositions: role.positions
           },
           { status: 400 }
@@ -55,10 +69,34 @@ export async function PATCH(
       }
     }
 
+    const data: Record<string, string | null> = {};
+
+    if (requestedAttackingRole !== undefined) {
+      data.attackingRolePreset = requestedAttackingRole || null;
+    }
+    if (requestedDefensiveRole !== undefined) {
+      data.defensiveRolePreset = requestedDefensiveRole || null;
+    }
+
+    // Keep legacy field for compatibility.
+    // Priority: explicit playerRole, otherwise mirror attacking preset when provided.
+    if (playerRole !== undefined) {
+      data.playerRole = playerRole || null;
+    } else if (requestedAttackingRole !== undefined) {
+      data.playerRole = requestedAttackingRole || null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return Response.json(
+        { error: 'No role fields provided' },
+        { status: 400 }
+      );
+    }
+
     // Update player role
     const updatedPlayer = await prisma.player.update({
       where: { id: playerId },
-      data: { playerRole: playerRole || null }
+      data
     });
 
     return Response.json({
@@ -66,7 +104,9 @@ export async function PATCH(
       player: {
         id: updatedPlayer.id,
         name: updatedPlayer.name,
-        playerRole: updatedPlayer.playerRole
+        playerRole: updatedPlayer.playerRole,
+        attackingRolePreset: (updatedPlayer as any).attackingRolePreset,
+        defensiveRolePreset: (updatedPlayer as any).defensiveRolePreset
       }
     });
   } catch (error: any) {

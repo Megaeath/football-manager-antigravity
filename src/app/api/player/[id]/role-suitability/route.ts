@@ -76,6 +76,8 @@ export async function GET(
       playerName: player.name,
       naturalPosition: player.naturalPosition,
       playerRole: player.playerRole,
+      attackingRolePreset: (player as any).attackingRolePreset || player.playerRole,
+      defensiveRolePreset: (player as any).defensiveRolePreset || player.playerRole,
       roles: roleSuitability
     });
   } catch (error: any) {

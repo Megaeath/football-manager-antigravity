@@ -7,6 +7,8 @@ type Player = {
     name: string;
     naturalPosition: string;
     playerRole?: string | null;
+    attackingRolePreset?: string | null;
+    defensiveRolePreset?: string | null;
     age: number;
     apps: number;
     goals: number;
@@ -54,8 +56,15 @@ export default function PlayerRolesReadOnlyTab({ players, teamName, onViewPlayer
         }
     });
 
-    // Count assigned roles
-    const assignedCount = players.filter(p => p.playerRole).length;
+    const getActiveRoleForMode = (player: Player, mode: 'attacking' | 'defensive') => {
+        if (mode === 'attacking') return player.attackingRolePreset ?? player.playerRole ?? null;
+        return player.defensiveRolePreset ?? player.playerRole ?? null;
+    };
+
+    // Count assigned roles (both presets)
+    const assignedCount = players.filter(
+        p => getActiveRoleForMode(p, 'attacking') || getActiveRoleForMode(p, 'defensive')
+    ).length;
     const totalCount = players.filter(p => !p.naturalPosition.startsWith('GK')).length;
 
     return (
@@ -103,8 +112,8 @@ export default function PlayerRolesReadOnlyTab({ players, teamName, onViewPlayer
                                         key={player.id}
                                         style={{
                                             padding: '0.75rem',
-                                            background: player.playerRole ? 'var(--card-bg)' : 'var(--hover-bg)',
-                                            border: player.playerRole ? '1px solid var(--primary)' : '1px solid var(--border)',
+                                            background: (getActiveRoleForMode(player, 'attacking') || getActiveRoleForMode(player, 'defensive')) ? 'var(--card-bg)' : 'var(--hover-bg)',
+                                            border: (getActiveRoleForMode(player, 'attacking') || getActiveRoleForMode(player, 'defensive')) ? '1px solid var(--primary)' : '1px solid var(--border)',
                                             borderRadius: '6px'
                                         }}
                                     >
@@ -130,21 +139,22 @@ export default function PlayerRolesReadOnlyTab({ players, teamName, onViewPlayer
                                             </span>
                                         </div>
 
-                                        {player.playerRole ? (
+                                        {(getActiveRoleForMode(player, 'attacking') || getActiveRoleForMode(player, 'defensive')) ? (
                                             <>
-                                                <div style={{
-                                                    fontSize: '0.9rem',
-                                                    color: 'var(--primary)',
-                                                    fontWeight: 'bold',
-                                                    marginBottom: '0.25rem'
-                                                }}>
-                                                    {getRoleDisplayName(player.playerRole)}
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                                                    ⚔️ {getRoleDisplayName(getActiveRoleForMode(player, 'attacking'))}
+                                                </div>
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                                                    🛡️ {getRoleDisplayName(getActiveRoleForMode(player, 'defensive'))}
                                                 </div>
                                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                                                    {getRoleDescription(player.playerRole)}
+                                                    {getRoleDescription(getActiveRoleForMode(player, 'attacking')) || getRoleDescription(getActiveRoleForMode(player, 'defensive'))}
                                                 </div>
                                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                    Condition Drain: +{getRoleConditionDrain(player.playerRole)}%
+                                                    Condition Drain: +{Math.max(
+                                                        Number(getRoleConditionDrain(getActiveRoleForMode(player, 'attacking')) || 0),
+                                                        Number(getRoleConditionDrain(getActiveRoleForMode(player, 'defensive')) || 0)
+                                                    )}%
                                                 </div>
                                             </>
                                         ) : (

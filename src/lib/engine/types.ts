@@ -46,6 +46,8 @@ export interface PlayerState {
     exp: number;       // Total accumulated EXP (0-1000)
     tacticalPosition: string | null; // e.g. "GK", "FW_L"
     playerRole?: string | null; // e.g. "PLAYMAKER", "TARGET_MAN"
+    attackingRolePreset?: string | null;
+    defensiveRolePreset?: string | null;
     cards: { yellow: number; red: number };
     stats: { goals: number; assists: number; tackles: number; passes: number };
 }
@@ -177,4 +179,39 @@ export interface MatchEventLog {
     type: string;
     teamId?: string;
     playerId?: string;
+}
+
+// ============ MATCH PREP CONFIG ============
+
+export type NeutralizationIntensity = 'MODERATE' | 'TIGHT';
+export type PressCommitment = 'SAFE' | 'BALANCED' | 'AGGRESSIVE';
+export type FieldZone = 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING';
+export type TransitionSpeed = 'HOLD' | 'QUICK' | 'DIRECT';
+export type RecoveryUrgency = 'URGENT' | 'CONTROLLED';
+
+export interface NeutralizationConfig {
+    targetPlayerIds: string[];  // Up to 3 players
+    intensity: NeutralizationIntensity;
+}
+
+export interface PressTrapConfig {
+    commitment: PressCommitment;
+    triggerZones: FieldZone[];  // Which zones to activate press traps
+}
+
+export interface TransitionRulesConfig {
+    defenseToAttack: TransitionSpeed;   // When winning ball back
+    attackToDefense: RecoveryUrgency;   // When losing possession
+}
+
+export interface MatchPrepConfig {
+    neutralization?: NeutralizationConfig;
+    pressTrap?: PressTrapConfig;
+    transitionRules?: TransitionRulesConfig;
+}
+
+// Runtime state during match simulation
+export interface ActiveMatchPrep {
+    home: MatchPrepConfig | null;
+    away: MatchPrepConfig | null;
 }

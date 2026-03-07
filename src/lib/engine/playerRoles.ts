@@ -187,6 +187,61 @@ export const ROLE_DEFINITIONS: Record<string, RoleDefinition> = {
   }
 };
 
+const ATTACKING_ROLE_PRIORITY = [
+  'TREQUARTISTA',
+  'PLAYMAKER',
+  'WIDE_PLAYMAKER',
+  'TRADITIONAL_WINGER',
+  'INVERTED_WINGER',
+  'FALSE_9',
+  'POACHER',
+  'COMPLETE_FORWARD',
+  'TARGET_MAN',
+  'WINGBACK',
+  'BOX_TO_BOX',
+  'NO_NONSENSE_DEFENDER',
+  'BALL_WINNING_MIDFIELDER',
+  'MAN_MARKER'
+] as const;
+
+const DEFENSIVE_ROLE_PRIORITY = [
+  'MAN_MARKER',
+  'NO_NONSENSE_DEFENDER',
+  'BALL_WINNING_MIDFIELDER',
+  'BOX_TO_BOX',
+  'WINGBACK',
+  'TARGET_MAN',
+  'COMPLETE_FORWARD',
+  'WIDE_PLAYMAKER',
+  'PLAYMAKER',
+  'TRADITIONAL_WINGER',
+  'INVERTED_WINGER',
+  'FALSE_9',
+  'POACHER',
+  'TREQUARTISTA'
+] as const;
+
+export function getPreferredRoleNamesForPhase(phase: 'attacking' | 'defensive'): string[] {
+  return phase === 'attacking'
+    ? [...ATTACKING_ROLE_PRIORITY]
+    : [...DEFENSIVE_ROLE_PRIORITY];
+}
+
+export function getSuggestedRolePresets(naturalPosition: string): {
+  attackingRolePreset: string | null;
+  defensiveRolePreset: string | null;
+} {
+  const eligibleRoleNames = new Set(getEligibleRoles(naturalPosition).map(r => r.name));
+
+  const attackingRolePreset = ATTACKING_ROLE_PRIORITY.find(roleName => eligibleRoleNames.has(roleName)) || null;
+  const defensiveRolePreset = DEFENSIVE_ROLE_PRIORITY.find(roleName => eligibleRoleNames.has(roleName)) || attackingRolePreset;
+
+  return {
+    attackingRolePreset,
+    defensiveRolePreset
+  };
+}
+
 /**
  * Get eligible roles for a natural position
  */
