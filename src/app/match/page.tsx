@@ -121,7 +121,10 @@ function MatchContent() {
             // Simple approach: calculate standings from matches directly
             const matchesRes = await fetch('/api/league/fixtures');
             const allMatches = await matchesRes.json();
-            console.log('[STANDINGS] Got', allMatches.length, 'matches');
+
+            // IMPORTANT: standings must be calculated only from current season
+            const seasonMatches = (allMatches || []).filter((m: any) => m.season === currentSeason);
+            console.log('[STANDINGS] Got', allMatches.length, 'matches total,', seasonMatches.length, 'for season', currentSeason);
 
             // Calculate standings from match results
             const standingsMap: Record<string, { position: number; power: number }> = {};
@@ -129,7 +132,7 @@ function MatchContent() {
 
             // Initialize all teams first
             const teamIds = new Set<string>();
-            allMatches.forEach((m: any) => {
+            seasonMatches.forEach((m: any) => {
                 if (m.homeTeam?.id) teamIds.add(m.homeTeam.id);
                 if (m.awayTeam?.id) teamIds.add(m.awayTeam.id);
             });
@@ -139,7 +142,7 @@ function MatchContent() {
             });
 
             // Process match results
-            allMatches.forEach((match: any) => {
+            seasonMatches.forEach((match: any) => {
                 if (!match.isPlayed) return;
                 
                 const homeId = match.homeTeam?.id;

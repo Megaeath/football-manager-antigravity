@@ -59,9 +59,8 @@ export default function TeamFinanceTab({ teamId }: { teamId: string }) {
     if (!data) return <div style={{ padding: '2rem' }}>No data available</div>;
 
     const formatCurrency = (num: number) => {
-        if (num >= 1000000) return `$${(num / 1000000).toFixed(1)}M`;
-        if (num >= 1000) return `$${(num / 1000).toFixed(1)}K`;
-        return `$${num}`;
+        const safeNumber = Number.isFinite(num) ? Math.round(num) : 0;
+        return `$${new Intl.NumberFormat('en-US').format(Math.abs(safeNumber))}`;
     };
 
     const getStatusColor = (status: string) => {

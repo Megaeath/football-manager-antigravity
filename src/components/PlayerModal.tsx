@@ -124,7 +124,12 @@ export default function PlayerModal() {
             const res = await fetch(`/api/player/${playerId}`);
             const data = await res.json();
             setPlayer(data);
-            setSelectedSeason(data.currentSeason);
+            // Keep user's selected season if still available, otherwise fallback to current season
+            setSelectedSeason((prev) => {
+                const availableSeasons: number[] = data.availableSeasons || [];
+                if (prev && availableSeasons.includes(prev)) return prev;
+                return data.currentSeason;
+            });
         } catch (e) {
             console.error('Failed to fetch player:', e);
         } finally {
@@ -142,19 +147,25 @@ export default function PlayerModal() {
         } else {
             setActiveTab('attributes');
         }
+    }, [playerId, fetchPlayer, searchParams]);
 
-        // Fetch player analytics
+    useEffect(() => {
+        if (!playerId) return;
+
+        // Fetch player analytics for selected season only (without reloading player data)
         const fetchAnalytics = async () => {
             try {
-                const res = await fetch(`/api/player/${playerId}/analytics?season=${selectedSeason || 1}`);
+                const season = selectedSeason ?? 1;
+                const res = await fetch(`/api/player/${playerId}/analytics?season=${season}`);
                 const data = await res.json();
                 setPlayerAnalytics(data);
             } catch (e) {
                 console.error('Failed to fetch player analytics:', e);
             }
         };
+
         fetchAnalytics();
-    }, [playerId, fetchPlayer, searchParams, selectedSeason]);
+    }, [playerId, selectedSeason]);
 
     useEffect(() => {
         const fetchUserTeam = async () => {
@@ -279,7 +290,7 @@ export default function PlayerModal() {
                                     <h2 style={{ color: 'white', margin: 0, fontSize: '1.4rem' }} className="md:text-3xl">{player.name}</h2>
                                     <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
                                         <span style={{ background: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '4px', fontSize: '0.9rem' }}>{player.naturalPosition}</span>
-                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team.name}</span>
+                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'นักเตะอิสระ'}</span>
                                         <span style={{ color: 'rgba(255,255,255,0.7)' }}>• อายุ {player.age} ปี</span>
                                     </div>
                                 </div>

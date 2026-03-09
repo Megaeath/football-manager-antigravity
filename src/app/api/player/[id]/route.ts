@@ -47,6 +47,15 @@ export async function GET(
 
         const seasons = [...new Set(allSeasons.map(s => s.match.season))].sort((a, b) => b - a);
 
+        // Overall average rating (same basis used for players list pricing consistency)
+        const overallRatingAgg = await prisma.playerMatchStats.aggregate({
+            where: { playerId: id },
+            _avg: { rating: true }
+        });
+        const overallAvgRating = overallRatingAgg._avg.rating
+            ? Number(overallRatingAgg._avg.rating.toFixed(2))
+            : 0;
+
         // Get stats for each season
         const seasonStatsArray = await Promise.all(
             seasons.map(async (season) => {
@@ -106,9 +115,8 @@ export async function GET(
             })
         );
 
-        // Calculate career average rating from latest season or all seasons
+        // Keep latest season stats for UI panels, but pricing uses overallAvgRating for consistency
         const latestSeasonStats = seasonStatsArray[0];
-        const careerAvgRating = latestSeasonStats?.avgRating || '0.00';
 
         // Calculate power (same as modal: suitability to natural position)
         const attrs: PlayerAttributes = toPlayerAttributes({
@@ -150,7 +158,7 @@ export async function GET(
         const playerPopularityMultiplier = 0.8 + (player.popularity / 100) * 1.0;
         const clubReputationMultiplier = 0.7 + ((player.team?.reputation || 50) / 100) * 0.8;
         
-        const formMultiplier = 0.5 + (latestSeasonStats?.avgRating ? Math.min(parseFloat(latestSeasonStats.avgRating), 10) / 10 * 1.0 : 0.5);
+        const formMultiplier = 0.5 + (overallAvgRating / 10) * 1.0;
         
         let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
         marketValue = Math.min(marketValue, 200000000);
@@ -159,7 +167,7 @@ export async function GET(
             ...player,
             power,
             marketValue,
-            avgRating: parseFloat(String(careerAvgRating)),
+            avgRating: overallAvgRating,
             currentSeason,
             availableSeasons: seasons,
             seasonStats: seasonStatsArray,

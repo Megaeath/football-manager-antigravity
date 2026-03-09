@@ -44,7 +44,7 @@ type YouthAttributes = {
     balance: number;
 };
 
-function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 'talented' = 'normal'): YouthAttributes {
+function generateYouthAttributes(naturalPosition: string, quality: 'talented' | 'normal' = 'normal'): YouthAttributes {
     const base: YouthAttributes = {
         handling: randomInt(5, 17),
         tackling: randomInt(5, 17),
@@ -107,16 +107,18 @@ function generateYouthAttributes(naturalPosition: string, quality: 'normal' | 't
         applyRange(['tackling', 'handling', 'crossing'], 2, 8);
     }
 
-    // Talented prospects: boost mainly relevant profile stats (not every stat)
+    // Quality boost for talented prospects
     if (quality === 'talented') {
         const boostKeys: Array<keyof YouthAttributes> = naturalPosition === 'GK'
             ? ['handling', 'positioning', 'agility', 'composure', 'throw', 'vision']
             : ['passing', 'vision', 'composure', 'pace', 'acceleration', 'stamina', 'positioning', 'agility'];
 
+        // Talented: +2 to +6 boost on key attributes
         for (const key of boostKeys) {
-            base[key] = Math.min(20, base[key] + randomInt(1, 5));
+            base[key] = Math.min(20, base[key] + randomInt(2, 6));
         }
     }
+    // Normal: no boost (base attributes only)
 
     return base;
 }
@@ -401,20 +403,31 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         standings = sorted;
     }
 
-    // Determine youth count based on ranking
-    const getYouthCount = (ranking: number): number => {
-        if (ranking <= 5) return 1;
-        if (ranking <= 10) return 2;
-        if (ranking <= 15) return 3;
-        return 4;
+    // Determine number of talented youth based on ranking
+    // Best ranking (1st) = 1 talented + 4 normal
+    // Worst ranking (last) = 4 talented + 1 normal
+    // Linear progression between ranks
+    const getTalentedYouthCount = (ranking: number, totalTeams: number): number => {
+        // Formula: Linear interpolation from 1 (best) to 4 (worst)
+        // rank 1 → 1 talented, rank 20 → 4 talented
+        const normalized = (ranking - 1) / (totalTeams - 1); // 0 to 1
+        const talented = Math.round(1 + (normalized * 3)); // 1 to 4
+        return Math.max(1, Math.min(4, talented));
     };
+
+    // All teams get 5 youth players
+    const YOUTH_PLAYERS_PER_TEAM = 5;
 
     for (const team of allTeams) {
         const teamStanding = standings.find(s => s.teamId === team.id);
         const ranking = teamStanding?.ranking || allTeams.indexOf(team) + 1;
-        const youthCount = getYouthCount(ranking);
+        const talentedCount = getTalentedYouthCount(ranking, allTeams.length);
+        const normalCount = YOUTH_PLAYERS_PER_TEAM - talentedCount;
 
-        for (let i = 0; i < youthCount; i++) {
+        let addedCount = 0;
+
+        // Add talented youth players
+        for (let i = 0; i < talentedCount; i++) {
             const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
             const youthAge = randomInt(16, 20);
             const youthName = randomName();
@@ -435,8 +448,35 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                     ...generateYouthAttributes(randomPosition, 'talented')
                 }
             });
+            addedCount++;
         }
-        console.log(`[StartNewSeason] Added ${youthCount} talented young prospects to ${team.name} (Ranking: ${ranking})`);
+
+        // Add normal youth players (fill remaining slots)
+        for (let i = 0; i < normalCount; i++) {
+            const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
+            const youthAge = randomInt(16, 20);
+            const youthName = randomName();
+
+            await prisma.player.create({
+                data: {
+                    teamId: team.id,
+                    name: youthName,
+                    age: youthAge,
+                    naturalPosition: randomPosition,
+                    retirementAge: randomInt(32, 38),
+                    morale: 100,
+                    condition: 100,
+                    isRetired: false,
+                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                    popularity: randomInt(10, 30),
+                    weeklyWage: randomInt(5000, 15000),
+                    ...generateYouthAttributes(randomPosition, 'normal')
+                }
+            });
+            addedCount++;
+        }
+
+        console.log(`[StartNewSeason] Added ${addedCount} youth to ${team.name} (Ranking: ${ranking}) - ${talentedCount} talented, ${normalCount} normal`);
     }
 
     // 7. AI Role & Tactical Position Auto-Assignment

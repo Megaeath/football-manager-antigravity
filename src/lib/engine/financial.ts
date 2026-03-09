@@ -338,6 +338,22 @@ export async function checkFFPCompliance(teamId: string): Promise<{
  * Process weekly accounting: deduct expenses, add income, update balance
  */
 export async function processWeeklyFinances(teamId: string, week: number): Promise<void> {
+    // Idempotency guard: this function may be triggered more than once for the same
+    // calendar boundary (e.g., month-change path). If already processed, skip entirely
+    // to avoid duplicate balance updates and unique constraint errors.
+    const existingWeekRecord = await prisma.clubFinance.findUnique({
+        where: {
+            teamId_week: {
+                teamId,
+                week
+            }
+        }
+    });
+
+    if (existingWeekRecord) {
+        return;
+    }
+
     const team = await prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new Error(`Team ${teamId} not found`);
 
@@ -366,11 +382,22 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
         data: { balance: newBalance }
     });
 
-    // Create financial record
-    await prisma.clubFinance.create({
-        data: {
+    // Create/update financial record (defensive against race conditions)
+    await prisma.clubFinance.upsert({
+        where: {
+            teamId_week: {
+                teamId,
+                week
+            }
+        },
+        create: {
             teamId,
             week,
+            balance: newBalance,
+            weeklyIncome: accounting.income,
+            weeklyExpenses: accounting.expenses
+        },
+        update: {
             balance: newBalance,
             weeklyIncome: accounting.income,
             weeklyExpenses: accounting.expenses

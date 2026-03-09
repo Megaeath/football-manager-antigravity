@@ -64,29 +64,81 @@ export async function submitBid(
     windowEnds.setMonth(windowEnds.getMonth() + 1);
 
     if (isFreeAgent || !player.teamId) {
-        // Free Agent logic
-        const newBid = await prisma.bid.create({
-            data: {
-                playerId,
-                fromTeamId,
-                toTeamId: fromTeamId, // free agent, no 'toTeam' so just themselves to avoid null, though realistically might need nullable
-                amount: 0,
-                signOnBonus,
-                isFreeAgent: true,
-                status: 'PENDING',
-                createdAt: currentDate,
-                windowEnds,
-                season: currentSeason
+        // Free Agent logic - Instant transfer (no waiting period)
+        
+        // Check team has enough balance for sign-on bonus
+        if (signOnBonus > fromTeam.balance) {
+            return { success: false, message: `Sign-on bonus exceeds current balance ($${fromTeam.balance.toLocaleString()})` };
+        }
+
+        // Execute immediate transfer
+        const newBid = await prisma.$transaction(async (tx) => {
+            // Create accepted bid
+            const bid = await tx.bid.create({
+                data: {
+                    playerId,
+                    fromTeamId,
+                    toTeamId: fromTeamId,
+                    amount: 0,
+                    signOnBonus,
+                    isFreeAgent: true,
+                    status: 'ACCEPTED', // Instant acceptance for free agents
+                    createdAt: currentDate,
+                    windowEnds: currentDate, // No waiting period
+                    season: currentSeason
+                }
+            });
+
+            // Transfer player to new team
+            await tx.player.update({
+                where: { id: playerId },
+                data: {
+                    teamId: fromTeamId,
+                    lastTransferredSeason: currentSeason,
+                    transferStatus: 'NOT_LISTED'
+                }
+            });
+
+            // Deduct sign-on bonus from team balance
+            if (signOnBonus > 0) {
+                await tx.team.update({
+                    where: { id: fromTeamId },
+                    data: { balance: { decrement: signOnBonus } }
+                });
+
+                await tx.financialEvent.create({
+                    data: {
+                        teamId: fromTeamId,
+                        type: 'PLAYER_BOUGHT',
+                        amount: -signOnBonus,
+                        description: `Sign-on bonus for ${player.name} (Free Agent)`,
+                        date: currentDate
+                    }
+                });
             }
+
+            // Create transfer history
+            await tx.transferHistory.create({
+                data: {
+                    playerId,
+                    fromTeamId: null, // Was free agent
+                    toTeamId: fromTeamId,
+                    fee: 0,
+                    date: currentDate,
+                    season: currentSeason
+                }
+            });
+
+            return bid;
         });
 
         // Broadcast news
         await createNewsEvent(
-            `Free Agent Offer: ${fromTeam.name} has offered a contract to ${player.name}.`,
+            `Free Agent Signed: ${fromTeam.name} has signed ${player.name} on a free transfer!`,
             fromTeamId
         );
 
-        return { success: true, message: 'Contract offer submitted to Free Agent', bid: newBid };
+        return { success: true, message: `${player.name} has joined ${fromTeam.name}!`, bid: newBid };
     }
 
     // Normal Transfer logic
@@ -233,6 +285,8 @@ async function createNewsEvent(text: string, teamId: string | null = null, isGlo
 export async function processBiddingRules() {
     // Process all bids where windowEnds <= currentDate
     const currentDate = await getGlobalDate();
+    const settings = await getGameTime();
+    const currentSeason = settings.currentSeason;
 
     const expiredPendingBids = await prisma.bid.findMany({
         where: { windowEnds: { lte: currentDate }, status: 'PENDING' },
@@ -249,14 +303,50 @@ export async function processBiddingRules() {
     for (const playerId in bidsByPlayer) {
         const bids = bidsByPlayer[playerId];
 
+        // Re-check latest player state to prevent multiple transfers in the same season
+        const latestPlayer = await prisma.player.findUnique({
+            where: { id: playerId },
+            select: { id: true, teamId: true, lastTransferredSeason: true }
+        });
+
+        if (!latestPlayer) {
+            continue;
+        }
+
+        // Already transferred this season -> reject all remaining pending bids
+        if (latestPlayer.lastTransferredSeason >= currentSeason) {
+            for (const b of bids) {
+                await prisma.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
+            }
+            continue;
+        }
+
+        // Keep only bids that still match player's current ownership state
+        const validBids = bids.filter((b) => {
+            if (b.isFreeAgent) {
+                return latestPlayer.teamId === null;
+            }
+            return latestPlayer.teamId !== null && b.toTeamId === latestPlayer.teamId;
+        });
+
+        // Reject stale bids that no longer match current ownership
+        const staleBids = bids.filter((b) => !validBids.some(v => v.id === b.id));
+        for (const b of staleBids) {
+            await prisma.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
+        }
+
+        if (validBids.length === 0) {
+            continue;
+        }
+
         // Find highest bid / best free agent offer
-        if (bids.length > 0) {
-            const player = bids[0].player;
+        if (validBids.length > 0) {
+            const player = validBids[0].player;
             let winningBid;
 
-            if (bids[0].isFreeAgent) {
+            if (validBids[0].isFreeAgent) {
                 // Free Agent chooses by reputation or highest sign on bonus
-                winningBid = bids.sort((a, b) => {
+                winningBid = validBids.sort((a, b) => {
                     const aRep = a.fromTeam.reputation;
                     const bRep = b.fromTeam.reputation;
                     if (aRep !== bRep) return bRep - aRep; // Higher repo wins
@@ -264,15 +354,37 @@ export async function processBiddingRules() {
                 })[0];
             } else {
                 // Highest amount wins
-                winningBid = bids.sort((a, b) => b.amount - a.amount)[0];
+                winningBid = validBids.sort((a, b) => b.amount - a.amount)[0];
             }
 
             // Execute transfer
             await prisma.$transaction(async (tx) => {
                 // Reject all other bids
-                const otherBids = bids.filter(b => b.id !== winningBid.id);
+                const otherBids = validBids.filter(b => b.id !== winningBid.id);
                 for (const b of otherBids) {
                     await tx.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
+                }
+
+                // Final guard in transaction: if already transferred this season, reject winner and stop
+                const playerForUpdate = await tx.player.findUnique({
+                    where: { id: playerId },
+                    select: { id: true, teamId: true, lastTransferredSeason: true }
+                });
+
+                if (!playerForUpdate || playerForUpdate.lastTransferredSeason >= currentSeason) {
+                    await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'REJECTED' } });
+                    return;
+                }
+
+                // Ownership changed after bid creation -> reject stale winner and stop
+                if (!winningBid.isFreeAgent && playerForUpdate.teamId !== winningBid.toTeamId) {
+                    await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'REJECTED' } });
+                    return;
+                }
+
+                if (winningBid.isFreeAgent && playerForUpdate.teamId !== null) {
+                    await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'REJECTED' } });
+                    return;
                 }
 
                 // Set winning bid to ACCEPTED
@@ -333,7 +445,7 @@ export async function processBiddingRules() {
                         teamId: winningBid.fromTeamId,
                         transferStatus: 'NOT_LISTED',
                         askingPrice: null,
-                        lastTransferredSeason: (await getGameTime()).currentSeason
+                        lastTransferredSeason: currentSeason
                     }
                 });
 
@@ -343,7 +455,7 @@ export async function processBiddingRules() {
                         playerId,
                         fromTeamId: winningBid.isFreeAgent ? null : winningBid.toTeamId,
                         toTeamId: winningBid.fromTeamId,
-                        season: (await getGameTime()).currentSeason,
+                        season: currentSeason,
                         date: currentDate,
                         fee: winningBid.isFreeAgent ? 0 : winningBid.amount
                     }

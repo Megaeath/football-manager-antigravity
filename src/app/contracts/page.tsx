@@ -85,10 +85,56 @@ export default function ContractsPage() {
     if (loading) return <div className="container p-4 text-center md:p-8">Loading contracts...</div>;
     if (error) return <div className="container p-4 text-red-600 md:p-8">{error}</div>;
 
+    const totalExpiring = data?.totalExpiring || 0;
+    const urgentCount = data?.expiringPlayers.filter(p => p.contractEndWeek <= 4).length || 0;
+    const warningCount = data?.expiringPlayers.filter(p => p.contractEndWeek > 4 && p.contractEndWeek <= 10).length || 0;
+
     return (
         <div className="container p-4 md:p-8">
             <div style={{ marginBottom: '2rem' }}>
-                <h1 style={{ marginBottom: '0.5rem' }} className="text-2xl md:text-3xl">📄 Contract Management</h1>
+                <h1 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }} className="text-2xl md:text-3xl">
+                    <span>📄 Contract Management</span>
+                    <span
+                        style={{
+                            background: 'var(--primary)',
+                            color: 'white',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '999px'
+                        }}
+                    >
+                        {totalExpiring} expiring
+                    </span>
+                    {urgentCount > 0 && (
+                        <span
+                            style={{
+                                background: '#dc2626',
+                                color: 'white',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold',
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '999px'
+                            }}
+                        >
+                            {urgentCount} urgent
+                        </span>
+                    )}
+                    {warningCount > 0 && (
+                        <span
+                            style={{
+                                background: '#f59e0b',
+                                color: 'white',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold',
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '999px'
+                            }}
+                        >
+                            {warningCount} warning
+                        </span>
+                    )}
+                </h1>
                 <p style={{ color: 'var(--muted)' }}>Expiring contracts for {data?.teamName}</p>
             </div>
 
@@ -96,12 +142,12 @@ export default function ContractsPage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" style={{ display: 'grid', gap: '1rem' }}>
                     <div style={{ textAlign: 'center' }}>
                         <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Expiring Soon</div>
-                        <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--primary)' }}>{data?.totalExpiring || 0}</div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--primary)' }}>{totalExpiring}</div>
                     </div>
                     <div style={{ textAlign: 'center' }}>
                         <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Urgent (≤ 4 weeks)</div>
                         <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: '#dc2626' }}>
-                            {data?.expiringPlayers.filter(p => p.contractEndWeek <= 4).length || 0}
+                            {urgentCount}
                         </div>
                     </div>
                     <div style={{ textAlign: 'center' }}>

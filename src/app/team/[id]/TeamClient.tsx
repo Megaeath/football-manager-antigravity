@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import type { PlayerAttributes } from '@/lib/engine/types';
@@ -80,6 +81,19 @@ interface Team {
     creative_freedom: string;
 }
 
+interface TransferHistoryItem {
+    id: string;
+    playerId: string;
+    fromTeamId: string | null;
+    toTeamId: string;
+    season: number;
+    date: string;
+    fee: number;
+    player: { id: string; name: string; naturalPosition: string; age: number };
+    fromTeam: { id: string; name: string } | null;
+    toTeam: { id: string; name: string };
+}
+
 interface NextMatch {
     id: string;
     date: string;
@@ -101,13 +115,28 @@ interface NextMatch {
     awayTactics_creative_freedom?: string;
 }
 
-export default function TeamClient({ team, matches, currentSeason = 1, nextMatch, userTeamId = '' }: { team: Team; matches: Match[]; currentSeason?: number; nextMatch?: NextMatch; userTeamId?: string }) {
+export default function TeamClient({
+    team,
+    matches,
+    transferHistory = [],
+    currentSeason = 1,
+    nextMatch,
+    userTeamId = ''
+}: {
+    team: Team;
+    matches: Match[];
+    transferHistory?: TransferHistoryItem[];
+    currentSeason?: number;
+    nextMatch?: NextMatch;
+    userTeamId?: string;
+}) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance' | 'transfer'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
+    const [transferFilter, setTransferFilter] = useState<'all' | 'in' | 'out'>('all');
 
     const openPlayerModal = (playerId: string) => {
         router.push(`/team/${team.id}?playerId=${playerId}`);
@@ -116,10 +145,12 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
     // Check for tab query parameter
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles' || tab === 'finance') {
+        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles' || tab === 'finance' || tab === 'transfer') {
             setActiveTab(tab as any);
         }
     }, [searchParams]);
+
+    const formatCurrency = (num: number) => `$${new Intl.NumberFormat('en-US').format(Math.abs(Math.round(num || 0)))}`;
 
     const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
     const toHundred = (values: number[]) => {
@@ -222,6 +253,15 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
 
     // Filter matches by season
     const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const sortedTransferHistory = [...transferHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const filteredTransfers = sortedTransferHistory.filter((t) => {
+        if (transferFilter === 'all') return true;
+        if (transferFilter === 'in') return t.toTeamId === team.id;
+        return t.fromTeamId === team.id;
+    });
+    const transferInCount = sortedTransferHistory.filter(t => t.toTeamId === team.id).length;
+    const transferOutCount = sortedTransferHistory.filter(t => t.fromTeamId === team.id).length;
 
     const handleSort = (key: typeof sortKey) => {
         if (key === 'pos') {
@@ -345,6 +385,21 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
                     }}
                 >
                     💰 Finance
+                </button>
+                <button
+                    onClick={() => setActiveTab('transfer')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'transfer' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'transfer' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'transfer' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    🔁 Transfer Player ({sortedTransferHistory.length})
                 </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
@@ -639,6 +694,120 @@ export default function TeamClient({ team, matches, currentSeason = 1, nextMatch
 
             {activeTab === 'finance' && (
                 <TeamFinanceTab teamId={team.id} />
+            )}
+
+            {activeTab === 'transfer' && (
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                        <h3 style={{ margin: 0 }}>🔁 Transfer Player History</h3>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={() => setTransferFilter('all')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'all' ? 'var(--primary)' : 'var(--bg)',
+                                    color: transferFilter === 'all' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                All ({sortedTransferHistory.length})
+                            </button>
+                            <button
+                                onClick={() => setTransferFilter('in')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'in' ? '#10b981' : 'var(--bg)',
+                                    color: transferFilter === 'in' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                In ({transferInCount})
+                            </button>
+                            <button
+                                onClick={() => setTransferFilter('out')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'out' ? '#ef4444' : 'var(--bg)',
+                                    color: transferFilter === 'out' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                Out ({transferOutCount})
+                            </button>
+                        </div>
+                    </div>
+
+                    {filteredTransfers.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)' }}>
+                            No transfer records for this filter.
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {filteredTransfers.map((t) => {
+                                const isIn = t.toTeamId === team.id;
+                                return (
+                                    <div
+                                        key={t.id}
+                                        style={{
+                                            border: '1px solid var(--border)',
+                                            borderLeft: `4px solid ${isIn ? '#10b981' : '#ef4444'}`,
+                                            borderRadius: '10px',
+                                            padding: '0.9rem 1rem',
+                                            display: 'grid',
+                                            gridTemplateColumns: '2fr 1.5fr 1fr',
+                                            gap: '0.75rem',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>
+                                                {new Date(t.date).toLocaleDateString('th-TH')} • Season {t.season}
+                                            </div>
+                                            <div style={{ fontWeight: 700 }}>
+                                                <button
+                                                    onClick={() => openPlayerModal(t.player.id)}
+                                                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, fontWeight: 700, textDecoration: 'underline' }}
+                                                >
+                                                    {t.player.name}
+                                                </button>
+                                                <span style={{ color: 'var(--muted)', fontWeight: 400 }}> ({t.player.naturalPosition}, {t.player.age}y)</span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ fontSize: '0.9rem' }}>
+                                            <div>
+                                                <span style={{ color: 'var(--muted)' }}>From: </span>
+                                                {t.fromTeam ? <Link href={`/team/${t.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.fromTeam.name}</Link> : 'Free Agent'}
+                                            </div>
+                                            <div>
+                                                <span style={{ color: 'var(--muted)' }}>To: </span>
+                                                <Link href={`/team/${t.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.toTeam.name}</Link>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{
+                                                display: 'inline-block',
+                                                background: isIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+                                                color: isIn ? '#047857' : '#b91c1c',
+                                                padding: '0.15rem 0.5rem',
+                                                borderRadius: '999px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                marginBottom: '0.35rem'
+                                            }}>
+                                                {isIn ? 'IN' : 'OUT'}
+                                            </div>
+                                            <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+                                                {t.fee > 0 ? formatCurrency(t.fee) : 'Free'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             )}
 
             <PlayerModal />

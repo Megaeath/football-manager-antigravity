@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
         const currentDate = settings?.currentDate || new Date();
         const weekStart = new Date(currentDate);
         weekStart.setUTCDate(weekStart.getUTCDate() - 7);
+        const seasonStart = new Date(Date.UTC(new Date(currentDate).getUTCFullYear(), 0, 1));
 
         const seasonRewardAgg = await prisma.financialEvent.aggregate({
             where: {
@@ -61,17 +62,18 @@ export async function GET(request: NextRequest) {
         });
         const seasonRewards = seasonRewardAgg._sum.amount || 0;
 
+        // Transfer values are shown as season-to-date (more meaningful than a strict 7-day window)
         const transferIncomeAgg = await prisma.financialEvent.aggregate({
-            where: { teamId, type: 'PLAYER_SOLD', date: { gte: weekStart, lte: currentDate } },
+            where: { teamId, type: 'PLAYER_SOLD', date: { gte: seasonStart, lte: currentDate } },
             _sum: { amount: true }
         });
         const playerSales = transferIncomeAgg._sum.amount || 0;
 
         const transferExpenseAgg = await prisma.financialEvent.aggregate({
-            where: { teamId, type: 'PLAYER_BOUGHT', date: { gte: weekStart, lte: currentDate } },
+            where: { teamId, type: 'PLAYER_BOUGHT', date: { gte: seasonStart, lte: currentDate } },
             _sum: { amount: true }
         });
-        const playerPurchases = transferExpenseAgg._sum.amount || 0;
+        const playerPurchases = Math.abs(transferExpenseAgg._sum.amount || 0);
 
         // Revenue calculation
         const sponsorship = 20000 * (1 + reputation / 100);

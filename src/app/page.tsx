@@ -30,7 +30,10 @@ export default async function Home() {
     if (userTeamId) {
         userTeam = await prisma.team.findUnique({
             where: { id: userTeamId },
-            include: {
+            select: {
+                id: true,
+                name: true,
+                balance: true,
                 players: { select: { id: true, name: true } }
             }
         });
@@ -52,9 +55,10 @@ export default async function Home() {
             orderBy: { date: 'asc' }
         });
 
-        // Get team finance
+        // Get latest team finance snapshot (fallback only)
         teamFinance = await prisma.clubFinance.findFirst({
-            where: { teamId: userTeamId }
+            where: { teamId: userTeamId },
+            orderBy: { createdAt: 'desc' }
         });
 
         // Get league table
@@ -267,7 +271,7 @@ export default async function Home() {
                     <div className="card" style={{ background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%)', borderLeft: '4px solid #4caf50' }}>
                         <h4 style={{ margin: '0 0 1rem 0', color: '#4caf50' }}>💰 สถานะการเงิน</h4>
                         <div style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#4caf50' }}>
-                            ${(teamFinance?.balance || 0).toLocaleString()}
+                            ${(userTeam?.balance ?? teamFinance?.balance ?? 0).toLocaleString()}
                         </div>
                         <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>งบประมาณที่มี</div>
                         <Link href="/finances" style={{

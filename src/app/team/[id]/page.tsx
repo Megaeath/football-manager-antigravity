@@ -24,6 +24,21 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
 
     if (!team) return <div className="card">ไม่พบข้อมูลทีม</div>;
 
+    const transferHistory = await prisma.transferHistory.findMany({
+        where: {
+            OR: [
+                { fromTeamId: id },
+                { toTeamId: id }
+            ]
+        },
+        include: {
+            player: { select: { id: true, name: true, naturalPosition: true, age: true } },
+            fromTeam: { select: { id: true, name: true } },
+            toTeam: { select: { id: true, name: true } }
+        },
+        orderBy: { date: 'desc' }
+    });
+
     // Get next upcoming match to show auto-selected tactics
     const nextMatch = await prisma.match.findFirst({
         where: {
@@ -87,6 +102,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
     return <TeamClient 
         team={{ ...team, players: playersWithRating } as any} 
         matches={matches as any} 
+        transferHistory={transferHistory as any}
         currentSeason={settings.currentSeason}
         nextMatch={nextMatch as any}
         userTeamId={settings.userTeamId || ''}

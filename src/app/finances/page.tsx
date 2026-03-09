@@ -69,9 +69,12 @@ export default function FinancesPage() {
     if (!data) return <div className="container" style={{ padding: '2rem' }}>No data available</div>;
 
     const formatCurrency = (num: number) => {
-        if (num >= 1000000) return `$${(num / 1000000).toFixed(1)}M`;
-        if (num >= 1000) return `$${(num / 1000).toFixed(1)}K`;
-        return `$${num}`;
+        const abs = Math.abs(num);
+        const sign = num < 0 ? '-' : '';
+
+        if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(1)}M`;
+        if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}K`;
+        return `${sign}$${abs}`;
     };
 
     const getStatusColor = (status: string) => {

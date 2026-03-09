@@ -7,6 +7,7 @@ export async function GET(request: Request) {
         const teamId = searchParams.get('teamId');
         const playerId = searchParams.get('playerId');
         const season = searchParams.get('season');
+        const seasonInt = season ? parseInt(season) : null;
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '20');
 
@@ -20,8 +21,8 @@ export async function GET(request: Request) {
         if (playerId) {
             whereClause.playerId = playerId;
         }
-        if (season) {
-            whereClause.season = parseInt(season);
+        if (seasonInt !== null) {
+            whereClause.season = seasonInt;
         }
 
         const skip = (page - 1) * limit;
@@ -31,7 +32,16 @@ export async function GET(request: Request) {
                 where: whereClause,
                 include: {
                     player: {
-                        select: { id: true, name: true, naturalPosition: true, transferStatus: true }
+                        select: {
+                            id: true,
+                            name: true,
+                            naturalPosition: true,
+                            transferStatus: true,
+                            age: true,
+                            avgRating: true,
+                            goals: true,
+                            assists: true
+                        }
                     },
                     fromTeam: { select: { id: true, name: true } },
                     toTeam: { select: { id: true, name: true } }
@@ -48,8 +58,40 @@ export async function GET(request: Request) {
             })
         ]);
 
+        // Compute per-season AVG rating for players in current result set
+        // (Player.avgRating can be stale/lifetime; market page needs season-aware value)
+        const playerIds = Array.from(new Set(bids.map(b => b.player.id)));
+        const seasonAvgMap = new Map<string, number>();
+
+        if (playerIds.length > 0) {
+            const grouped = await prisma.playerMatchStats.groupBy({
+                by: ['playerId'],
+                where: {
+                    playerId: { in: playerIds },
+                    ...(seasonInt !== null ? { match: { season: seasonInt } } : {})
+                },
+                _avg: {
+                    rating: true
+                }
+            });
+
+            for (const row of grouped) {
+                seasonAvgMap.set(row.playerId, Number(row._avg.rating || 0));
+            }
+        }
+
+        const bidsWithSeasonAvg = bids.map((bid) => ({
+            ...bid,
+            player: {
+                ...bid.player,
+                avgRating: seasonAvgMap.has(bid.player.id)
+                    ? Number(seasonAvgMap.get(bid.player.id) || 0)
+                    : Number(bid.player.avgRating || 0)
+            }
+        }));
+
         return NextResponse.json({ 
-            bids,
+            bids: bidsWithSeasonAvg,
             total,
             page,
             limit,

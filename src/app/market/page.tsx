@@ -13,7 +13,16 @@ type BidItem = {
     createdAt: string;
     windowEnds: string;
     season: number;
-    player: { id: string; name: string; naturalPosition: string; transferStatus: string };
+    player: {
+        id: string;
+        name: string;
+        naturalPosition: string;
+        transferStatus: string;
+        age: number;
+        avgRating: number;
+        goals: number;
+        assists: number;
+    };
     fromTeam: { id: string; name: string };
     toTeam: { id: string; name: string } | null;
 };
@@ -156,12 +165,29 @@ function MarketCenterContent() {
                                                 <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'normal' }}>
                                                     {bid.player.naturalPosition} {bid.isFreeAgent ? '(Free Agent)' : ''}
                                                 </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'normal', marginTop: '0.25rem' }}>
+                                                    Age {bid.player.age} • Avg {Number(bid.player.avgRating || 0).toFixed(2)} • G {bid.player.goals || 0} • A {bid.player.assists || 0}
+                                                </div>
                                             </td>
                                             <td style={{ padding: '1rem 0.5rem' }}>
-                                                {bid.isFreeAgent ? '-' : bid.toTeam?.name}
+                                                {bid.isFreeAgent || !bid.toTeam ? (
+                                                    '-'
+                                                ) : (
+                                                    <Link
+                                                        href={`/team/${bid.toTeam.id}`}
+                                                        style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 600 }}
+                                                    >
+                                                        {bid.toTeam.name}
+                                                    </Link>
+                                                )}
                                             </td>
                                             <td style={{ padding: '1rem 0.5rem', fontWeight: 'bold' }}>
-                                                {bid.fromTeam.name}
+                                                <Link
+                                                    href={`/team/${bid.fromTeam.id}`}
+                                                    style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 700 }}
+                                                >
+                                                    {bid.fromTeam.name}
+                                                </Link>
                                             </td>
                                             <td style={{ padding: '1rem 0.5rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
                                                 {bid.isFreeAgent ? 'Free Transfer' : `$${bid.amount.toLocaleString()}`}
@@ -224,11 +250,33 @@ function MarketCenterContent() {
                                         {bid.player.naturalPosition} {bid.isFreeAgent ? '(Free Agent)' : ''}
                                     </div>
 
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px' }}>
+                                        Age <strong>{bid.player.age}</strong> • Avg <strong>{Number(bid.player.avgRating || 0).toFixed(2)}</strong> • G <strong>{bid.player.goals || 0}</strong> • A <strong>{bid.player.assists || 0}</strong>
+                                    </div>
+
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.85rem' }}>
                                         <div>Date: <strong>{new Date(bid.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
                                         <div>Decision: <strong>{new Date(bid.windowEnds).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
-                                        <div>From: <strong>{bid.isFreeAgent ? '-' : bid.toTeam?.name || '-'}</strong></div>
-                                        <div>Bidder: <strong>{bid.fromTeam.name}</strong></div>
+                                        <div>
+                                            From:{' '}
+                                            <strong>
+                                                {bid.isFreeAgent || !bid.toTeam ? (
+                                                    '-'
+                                                ) : (
+                                                    <Link href={`/team/${bid.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
+                                                        {bid.toTeam.name}
+                                                    </Link>
+                                                )}
+                                            </strong>
+                                        </div>
+                                        <div>
+                                            Bidder:{' '}
+                                            <strong>
+                                                <Link href={`/team/${bid.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
+                                                    {bid.fromTeam.name}
+                                                </Link>
+                                            </strong>
+                                        </div>
                                         <div style={{ gridColumn: '1 / -1' }}>
                                             Amount: <strong style={{ color: 'var(--primary)' }}>{bid.isFreeAgent ? 'Free Transfer' : `$${bid.amount.toLocaleString()}`}</strong>
                                         </div>

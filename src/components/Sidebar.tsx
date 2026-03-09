@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -11,6 +11,8 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
+    const [incomingBidsCount, setIncomingBidsCount] = useState(0);
+    const [expiringContractsCount, setExpiringContractsCount] = useState(0);
 
     useEffect(() => {
         if (isOpen) {
@@ -18,6 +20,37 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pathname]);
+
+    useEffect(() => {
+        // Fetch notification counters for sidebar badges
+        const fetchMenuNotiCounts = async () => {
+            try {
+                const userRes = await fetch('/api/game/info');
+                const userData = await userRes.json();
+                
+                if (userData.userTeamId) {
+                    const bidsRes = await fetch(`/api/market/incoming-bids?teamId=${userData.userTeamId}`);
+                    if (bidsRes.ok) {
+                        const data = await bidsRes.json();
+                        setIncomingBidsCount(data.count || 0);
+                    }
+
+                    const contractsRes = await fetch(`/api/contracts?teamId=${userData.userTeamId}`);
+                    if (contractsRes.ok) {
+                        const contractsData = await contractsRes.json();
+                        setExpiringContractsCount(contractsData.totalExpiring || 0);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch sidebar notification counts:', error);
+            }
+        };
+
+        fetchMenuNotiCounts();
+        // Refresh every 30 seconds
+        const interval = setInterval(fetchMenuNotiCounts, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     const navItems = [
         { name: 'หน้าหลัก', href: '/', icon: '🏠' },
@@ -51,6 +84,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             }}>
                 {navItems.map((item) => {
                     const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                    const isNews = item.href === '/news';
+                    const isContracts = item.href === '/contracts';
+                    const badgeCount = isNews ? incomingBidsCount : isContracts ? expiringContractsCount : 0;
+                    const showBadge = badgeCount > 0;
+                    const badgeBg = isNews ? '#ef4444' : '#f59e0b';
+                    
                     return (
                         <Link
                             key={item.href}
@@ -66,10 +105,28 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                                 color: isActive ? 'white' : 'var(--sidebar-text)',
                                 fontWeight: isActive ? '600' : '400',
                                 transition: 'all 0.2s ease',
+                                position: 'relative'
                             }}
                         >
                             <span style={{ fontSize: '1.2rem' }}>{item.icon}</span>
                             {item.name}
+                            {showBadge && (
+                                <span style={{
+                                    position: 'absolute',
+                                    right: '12px',
+                                    background: badgeBg,
+                                    color: 'white',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 'bold',
+                                    padding: '0.15rem 0.5rem',
+                                    borderRadius: '99px',
+                                    minWidth: '20px',
+                                    textAlign: 'center',
+                                    boxShadow: isNews ? '0 2px 8px rgba(239, 68, 68, 0.4)' : '0 2px 8px rgba(245, 158, 11, 0.4)'
+                                }}>
+                                    {badgeCount}
+                                </span>
+                            )}
                         </Link>
                     );
                 })}
