@@ -1221,6 +1221,8 @@ function MatchContent() {
                                             const isSubOut = subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
+                                            const didNotPlay = (p.minutes || 0) <= 0;
+                                            const displayRating = didNotPlay ? '-' : Number(p.rating || 0).toFixed(1);
                                             const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];
                                             const spaceCreation = calculatePlayerSpaceCreation(
                                                 p.playerId,
@@ -1335,7 +1337,7 @@ function MatchContent() {
                                                                     {isMotM && <span title="Man of the Match">🌟</span>}
                                                                 </div>
                                                             </div>
-                                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{p.rating.toFixed(1)}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{displayRating}</div>
                                                         </div>
 
                                                         {/* Mobile Card Stats Grid */}
@@ -1392,7 +1394,7 @@ function MatchContent() {
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
                                                         </div>
                                                         <div style={{ textAlign: 'center' }}>{p.minutes}'</div>
-                                                        <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{p.rating.toFixed(1)}</div>
+                                                        <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{displayRating}</div>
                                                         <div style={{ textAlign: 'center' }}>{p.fitnessEnd ?? 0}</div>
                                                         <div style={{ textAlign: 'center' }}>{p.shotsOnTarget}/{p.shots}</div>
                                                         <div style={{ textAlign: 'center' }}>{p.passesCompleted}/{p.passesAttempted}</div>

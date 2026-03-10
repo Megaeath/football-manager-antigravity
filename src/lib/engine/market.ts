@@ -59,6 +59,25 @@ export async function submitBid(
 
     const currentDate = await getGlobalDate();
 
+    const activeAcceptedDeal = await prisma.bid.findFirst({
+        where: {
+            playerId,
+            status: 'ACCEPTED',
+            windowEnds: { gte: currentDate }
+        },
+        include: {
+            fromTeam: { select: { name: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    if (activeAcceptedDeal) {
+        return {
+            success: false,
+            message: `${player.name} already has an agreed transfer with ${activeAcceptedDeal.fromTeam?.name || 'another club'} and is no longer available for new offers.`
+        };
+    }
+
     // Default window ends 1 month from now
     const windowEnds = new Date(currentDate);
     windowEnds.setMonth(windowEnds.getMonth() + 1);
@@ -266,6 +285,133 @@ async function triggerBiddingWar(player: any, originalTeam: any, currentAmount: 
             where: { id: currentBidId },
             data: { status: 'HIJACKED' }
         });
+    }
+}
+
+/**
+ * Executes all ACCEPTED bids whose windowEnds date has passed.
+ * This actually moves the player to the buying team and handles financials.
+ */
+export async function processAcceptedTransfers() {
+    const currentDate = await getGlobalDate();
+    const settings = await getGameTime();
+    const currentSeason = settings.currentSeason;
+
+    // Find ACCEPTED bids where the window has now closed AND player hasn't moved yet
+    const readyBids = await prisma.bid.findMany({
+        where: {
+            status: 'ACCEPTED',
+            windowEnds: { lte: currentDate }
+        },
+        include: {
+            player: true,
+            fromTeam: true,
+            toTeam: true
+        },
+        orderBy: { windowEnds: 'asc' }
+    });
+
+    for (const bid of readyBids) {
+        const player = bid.player;
+
+        // Skip if player already moved to the buying team (already executed)
+        if (player.teamId === bid.fromTeamId) {
+            continue;
+        }
+
+        // Skip if player already transferred this season
+        if (player.lastTransferredSeason >= currentSeason) {
+            console.log(`[AcceptedTransfer] Skipping ${player.name} — already transferred this season.`);
+            continue;
+        }
+
+        // Safety: skip if player's current team no longer matches the selling team
+        if (!bid.isFreeAgent && player.teamId !== bid.toTeamId) {
+            console.log(`[AcceptedTransfer] Skipping ${player.name} — ownership changed since deal was agreed.`);
+            continue;
+        }
+
+        console.log(`[AcceptedTransfer] Executing transfer: ${player.name} → ${bid.fromTeam.name} for $${bid.amount.toLocaleString()}`);
+
+        try {
+            await prisma.$transaction(async (tx) => {
+                // Move player to buying team
+                await tx.player.update({
+                    where: { id: player.id },
+                    data: {
+                        teamId: bid.fromTeamId,
+                        transferStatus: 'NOT_LISTED',
+                        askingPrice: null,
+                        lastTransferredSeason: currentSeason
+                    }
+                });
+
+                if (!bid.isFreeAgent && bid.amount > 0) {
+                    // Deduct fee from buying team
+                    await tx.team.update({
+                        where: { id: bid.fromTeamId },
+                        data: { balance: { decrement: bid.amount } }
+                    });
+
+                    // Pay selling team
+                    await tx.team.update({
+                        where: { id: bid.toTeamId! },
+                        data: { balance: { increment: bid.amount } }
+                    });
+
+                    await tx.financialEvent.create({
+                        data: {
+                            teamId: bid.fromTeamId,
+                            type: 'PLAYER_BOUGHT',
+                            amount: -bid.amount,
+                            description: `Bought ${player.name} (transfer completed)`,
+                            date: currentDate
+                        }
+                    });
+
+                    await tx.financialEvent.create({
+                        data: {
+                            teamId: bid.toTeamId!,
+                            type: 'PLAYER_SOLD',
+                            amount: bid.amount,
+                            description: `Sold ${player.name} (transfer completed)`,
+                            date: currentDate
+                        }
+                    });
+                }
+
+                // Record transfer history
+                await tx.transferHistory.create({
+                    data: {
+                        playerId: player.id,
+                        fromTeamId: bid.isFreeAgent ? null : bid.toTeamId,
+                        toTeamId: bid.fromTeamId,
+                        season: currentSeason,
+                        date: currentDate,
+                        fee: bid.isFreeAgent ? 0 : bid.amount
+                    }
+                });
+            });
+
+            // Auto-assign role for AI teams
+            if (bid.fromTeamId !== settings.userTeamId) {
+                try {
+                    const { reassignRoleAfterTransfer } = await import('../services/aiRoleSelector');
+                    await reassignRoleAfterTransfer(player.id);
+                } catch (err) {
+                    console.error(`[AcceptedTransfer] Failed to reassign role for ${player.name}:`, err);
+                }
+            }
+
+            await createNewsEvent(
+                `Transfer Completed: ${player.name} has officially joined ${bid.fromTeam.name}${bid.amount > 0 ? ` for $${bid.amount.toLocaleString()}` : ' on a free transfer'}.`,
+                bid.fromTeam.id
+            );
+
+            console.log(`[AcceptedTransfer] ✅ ${player.name} moved to ${bid.fromTeam.name}`);
+        } catch (error) {
+            console.error(`[AcceptedTransfer] ❌ Failed to execute transfer for ${player.name}:`, error);
+        }
     }
 }
 

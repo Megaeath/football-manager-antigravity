@@ -37,21 +37,53 @@ export async function POST(request: Request) {
         const currentDate = settings.currentDate;
 
         if (action === 'ACCEPT') {
-            // Accept the bid - change status to ACCEPTED
-            await prisma.bid.update({
-                where: { id: bidId },
-                data: { status: 'ACCEPTED' }
+            const existingAccepted = await prisma.bid.findFirst({
+                where: {
+                    playerId: bid.playerId,
+                    status: 'ACCEPTED',
+                    id: { not: bidId },
+                    windowEnds: { gte: currentDate }
+                }
             });
 
-            // Create news event
-            await prisma.news.create({
-                data: {
-                    title: `Bid Accepted: ${bid.player.name}`,
-                    content: `${bid.toTeam?.name || 'The club'} has accepted ${bid.fromTeam.name}'s bid of $${bid.amount.toLocaleString()} for ${bid.player.name}. The transfer will be completed when the window closes.`,
-                    date: currentDate,
-                    teamId: bid.toTeamId,
-                    type: 'TRANSFER'
-                }
+            if (existingAccepted) {
+                return NextResponse.json({
+                    error: `${bid.player.name} already has an agreed transfer and cannot accept another offer.`
+                }, { status: 400 });
+            }
+
+            await prisma.$transaction(async (tx) => {
+                await tx.bid.update({
+                    where: { id: bidId },
+                    data: { status: 'ACCEPTED' }
+                });
+
+                await tx.bid.updateMany({
+                    where: {
+                        playerId: bid.playerId,
+                        id: { not: bidId },
+                        status: { in: ['PENDING', 'HIJACKED'] }
+                    },
+                    data: { status: 'REJECTED' }
+                });
+
+                await tx.player.update({
+                    where: { id: bid.playerId },
+                    data: {
+                        transferStatus: 'NOT_LISTED',
+                        askingPrice: null
+                    }
+                });
+
+                await tx.news.create({
+                    data: {
+                        title: `Bid Accepted: ${bid.player.name}`,
+                        content: `${bid.toTeam?.name || 'The club'} has accepted ${bid.fromTeam.name}'s bid of $${bid.amount.toLocaleString()} for ${bid.player.name}. The transfer will be completed when the window closes.`,
+                        date: currentDate,
+                        teamId: bid.toTeamId,
+                        type: 'TRANSFER'
+                    }
+                });
             });
 
             return NextResponse.json({

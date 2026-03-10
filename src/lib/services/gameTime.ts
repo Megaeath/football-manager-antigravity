@@ -3,12 +3,13 @@ import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
 import { applySeasonRewards } from './seasonAwards';
-import { processBiddingRules } from '../engine/market';
+import { processBiddingRules, processAcceptedTransfers } from '../engine/market';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
 const INTL_FIRST_NAMES = ['Luca', 'Mateo', 'Noah', 'Ethan', 'Hugo', 'Leo', 'Milan', 'Oscar', 'Rafael', 'Adrian'];
 const INTL_LAST_NAMES = ['Silva', 'Fernandez', 'Martinez', 'Kovacic', 'Rossi', 'Novak', 'Almeida', 'Costa', 'Muller', 'Nielsen'];
+const PLAYER_POSITIONS = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randomName = () => {
@@ -123,6 +124,41 @@ function generateYouthAttributes(naturalPosition: string, quality: 'talented' | 
     return base;
 }
 
+async function generateMonthlyFreeAgentProspects(currentDate: Date, count: number = 3) {
+    let talentedCount = 0;
+    let normalCount = 0;
+
+    for (let i = 0; i < count; i++) {
+        const position = PLAYER_POSITIONS[randomInt(0, PLAYER_POSITIONS.length - 1)];
+        const age = randomInt(16, 19);
+        const quality: 'talented' | 'normal' = Math.random() < 0.45 ? 'talented' : 'normal';
+
+        await prisma.player.create({
+            data: {
+                teamId: null, // free agent
+                name: randomName(),
+                age,
+                naturalPosition: position,
+                retirementAge: randomInt(33, 39),
+                morale: 100,
+                condition: 100,
+                isRetired: false,
+                birthDate: new Date(Date.UTC(currentDate.getUTCFullYear() - age, randomInt(0, 11), randomInt(1, 28))),
+                popularity: randomInt(8, 35),
+                weeklyWage: randomInt(3000, 12000),
+                transferStatus: 'NOT_LISTED',
+                squadStatus: 'BACKUP',
+                ...generateYouthAttributes(position, quality)
+            }
+        });
+
+        if (quality === 'talented') talentedCount++;
+        else normalCount++;
+    }
+
+    console.log(`[GameTime] Added ${count} free-agent youth prospects (age 16-19): talented=${talentedCount}, normal=${normalCount}`);
+}
+
 export async function getGameTime() {
     let settings = await prisma.globalGameSettings.findFirst();
     if (!settings) {
@@ -194,6 +230,7 @@ export async function advanceDay() {
     // Process expired bids and transfers (daily)
     try {
         await processBiddingRules();
+        await processAcceptedTransfers();
 
         // Process age-based EXP decay for players 31+ (monthly trigger, prevents multiple per month)
         await processAgeBasedExpDecay();
@@ -203,6 +240,20 @@ export async function advanceDay() {
 
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
+
+    // Bootstrap: if there are no free-agent youth at all, create an initial pool immediately
+    // This helps existing saves start seeing the new system before the next 1st day of month.
+    try {
+        const freeYouthCount = await prisma.player.count({
+            where: { teamId: null, isRetired: false, age: { gte: 16, lte: 19 } }
+        });
+        if (freeYouthCount === 0) {
+            console.log('[GameTime] Bootstrap: no free-agent youth found, generating initial 3 prospects...');
+            await generateMonthlyFreeAgentProspects(nextDate, 3);
+        }
+    } catch (error) {
+        console.error('[GameTime] Failed bootstrap free-agent youth generation:', error);
+    }
 
     console.log('[GameTime] Advancing from', settings.currentDate.toISOString(), 'to', nextDate.toISOString());
     console.log('[GameTime] Is new year?', isNewYear);
@@ -235,6 +286,9 @@ export async function advanceDay() {
     const isFirstDayOfMonth = nextDate.getUTCDate() === 1;
     if (isFirstDayOfMonth) {
         try {
+            console.log('[GameTime] Generating monthly free-agent youth prospects (1 player)...');
+            await generateMonthlyFreeAgentProspects(nextDate, 1);
+
             console.log('[GameTime] Triggering monthly AI Market movements (day 1)...');
             const { processAIMarketMovements } = await import('./aiMarketService');
             await processAIMarketMovements();
@@ -365,7 +419,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
 
     // 6. Add Young Prospects (based on ranking)
     console.log('[StartNewSeason] Step 6: Adding young prospects based on league ranking');
-    const POSITIONS = ['GK', 'DC', 'DR', 'DL', 'DMC', 'MC', 'AMC', 'MR', 'ML', 'FWC'];
+    const POSITIONS = PLAYER_POSITIONS;
     const allTeams = await prisma.team.findMany();
 
     // Get standings from last season

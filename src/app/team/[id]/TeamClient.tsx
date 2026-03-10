@@ -15,6 +15,7 @@ import TeamFinanceTab from '@/components/TeamFinanceTab';
 interface Player {
     id: string;
     name: string;
+    transferStatus?: string | null;
     naturalPosition: string;
     tacticalPosition: string | null;
     playerRole?: string | null;
@@ -255,6 +256,7 @@ export default function TeamClient({
     const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const sortedTransferHistory = [...transferHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const listedCount = team.players.filter(p => p.transferStatus === 'LISTED').length;
     const filteredTransfers = sortedTransferHistory.filter((t) => {
         if (transferFilter === 'all') return true;
         if (transferFilter === 'in') return t.toTeamId === team.id;
@@ -425,7 +427,16 @@ export default function TeamClient({
                 <div className="card">
                     <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>ทีมเตะ ({team.players.length} คน)</span>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span
+                                className="badge"
+                                title={`Listed for transfer: ${listedCount}`}
+                                style={{ background: '#ffedd5', color: '#9a3412', whiteSpace: 'nowrap' }}
+                            >
+                                📤 {listedCount}
+                            </span>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 'bold' }}>Team Power: ⚡{getTeamPower()}</span>
+                        </div>
                     </h3>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
@@ -552,6 +563,24 @@ export default function TeamClient({
                                         >
                                             {p.name}
                                         </button>
+                                        {p.transferStatus === 'LISTED' && (
+                                            <span
+                                                title="Listed for transfer"
+                                                style={{
+                                                    marginLeft: '6px',
+                                                    fontSize: '0.9rem',
+                                                    fontWeight: 700,
+                                                    color: '#9a3412',
+                                                    background: '#ffedd5',
+                                                    border: '1px solid #fdba74',
+                                                    borderRadius: '999px',
+                                                    padding: '1px 5px',
+                                                    verticalAlign: 'middle'
+                                                }}
+                                            >
+                                                📤
+                                            </span>
+                                        )}
                                     </td>
                                     <td style={{ padding: '12px', textAlign: 'center' }}>{p.apps}</td>
                                     <td style={{ padding: '12px', textAlign: 'center' }}>{p.goals}</td>

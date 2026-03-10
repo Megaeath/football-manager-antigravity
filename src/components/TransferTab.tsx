@@ -2,6 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 
+function formatDateDMY(date: string | Date) {
+    return new Date(date).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
 interface TransferTabProps {
     playerId: string;
     playerName: string;
@@ -203,7 +211,7 @@ export function TransferTab({
                         <h4 style={{ margin: '0 0 0.5rem 0' }}>Transfer Agreed! 🤝</h4>
                         <p style={{ margin: 0, fontSize: '0.9rem' }}>
                             You have accepted an offer from <strong>{acceptedDeal.fromTeam.name}</strong> for <strong>${acceptedDeal.amount.toLocaleString()}</strong>.
-                            Transfer is pending official confirmation on {new Date(acceptedDeal.windowEnds).toLocaleDateString()}.
+                            Transfer is pending official confirmation on {formatDateDMY(acceptedDeal.windowEnds)}.
                         </p>
                     </div>
                 ) : (
@@ -329,7 +337,7 @@ export function TransferTab({
                     <h4 style={{ margin: '0 0 0.5rem 0' }}>Deal in Progress! 🤝</h4>
                     <p style={{ margin: 0, fontSize: '0.9rem' }}>
                         Your offer of <strong>${acceptedDeal.amount.toLocaleString()}</strong> has already been <strong>ACCEPTED</strong>.
-                        We are currently waiting for the official confirmation (estimated: {new Date(acceptedDeal.windowEnds).toLocaleDateString()}).
+                        We are currently waiting for the official confirmation (estimated: {formatDateDMY(acceptedDeal.windowEnds)}).
                     </p>
                 </div>
             ) : pendingDeal ? (
@@ -347,7 +355,7 @@ export function TransferTab({
                         Please wait for the club to respond before submitting a new offer.
                     </p>
                     <div style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
-                        Decision date: {new Date(pendingDeal.windowEnds).toLocaleDateString()}
+                        Decision date: {formatDateDMY(pendingDeal.windowEnds)}
                     </div>
                 </div>
             ) : (

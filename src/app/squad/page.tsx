@@ -53,6 +53,20 @@ export default async function SquadPage() {
     const settings = await getGameTime();
 
     if (!team) return <div>Team not found. Please seed the database.</div>;
+    const transferHistory = await prisma.transferHistory.findMany({
+        where: {
+            OR: [
+                { fromTeamId: team.id },
+                { toTeamId: team.id }
+            ]
+        },
+        include: {
+            player: { select: { id: true, name: true, naturalPosition: true, age: true } },
+            fromTeam: { select: { id: true, name: true } },
+            toTeam: { select: { id: true, name: true } }
+        },
+        orderBy: { date: 'desc' }
+    });
 
     const ensuredTactics = team.tactics ?? await prisma.teamTactics.upsert({
         where: { teamId: team.id },
@@ -131,6 +145,7 @@ export default async function SquadPage() {
         return {
             id: p.id,
             name: p.name,
+            transferStatus: p.transferStatus,
             naturalPosition: p.naturalPosition,
             age: p.age,
             condition: p.condition,
@@ -281,6 +296,7 @@ export default async function SquadPage() {
                     currentSeason={settings.currentSeason}
                     upcomingMatch={upcomingMatch as any}
                     opponentPlayers={opponentPlayers}
+                    transferHistory={transferHistory as any} 
                 />
             </Suspense>
         </div>

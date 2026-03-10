@@ -1649,10 +1649,21 @@ function attemptSubstitutions(
 
 function calculateRatings(matchState: MatchState) {
     Object.values(matchState.playerStats).forEach(stat => {
+        // Players who did not play should not be performance-rated
+        if ((stat.minutes || 0) <= 0) {
+            stat.rating = 6.0;
+            return;
+        }
+
         let rating = 6.0;
 
         // Check if player is goalkeeper by position
         const isGoalkeeper = stat.position === 'GK';
+        const isDefender = ['DC', 'DR', 'DL', 'DMC', 'DMR', 'DML'].includes(stat.position);
+
+        const teamGoalsFor = stat.teamId === matchState.homeTeamId ? matchState.homeScore : matchState.awayScore;
+        const teamGoalsAgainst = stat.teamId === matchState.homeTeamId ? matchState.awayScore : matchState.homeScore;
+        const goalDiff = teamGoalsFor - teamGoalsAgainst;
 
         rating += (stat.goals * 1.2);
         rating += (stat.assists * 0.7);
@@ -1675,6 +1686,35 @@ function calculateRatings(matchState: MatchState) {
         rating -= (stat.redCards * 2.0);
         rating -= (stat.fouls * 0.1);
 
-        stat.rating = Math.max(1, Math.min(10, Math.round(rating * 10) / 10));
+        // Team performance penalties/bonuses for realism
+        if (goalDiff < 0) {
+            // Losing team penalty scales with margin (capped)
+            rating -= Math.min(2.5, Math.abs(goalDiff) * 0.35);
+        } else if (goalDiff > 0) {
+            // Small boost for winners
+            rating += Math.min(0.8, goalDiff * 0.2);
+        }
+
+        // Conceded goals impact (strong for GK/DEF, light for others)
+        if (teamGoalsAgainst > 0) {
+            if (isGoalkeeper) {
+                rating -= teamGoalsAgainst * 0.45;
+            } else if (isDefender) {
+                rating -= teamGoalsAgainst * 0.22;
+            } else {
+                rating -= Math.max(0, teamGoalsAgainst - 2) * 0.08;
+            }
+        } else {
+            // Clean sheet reward (mainly defensive players)
+            if (isGoalkeeper) rating += 0.8;
+            else if (isDefender) rating += 0.5;
+        }
+
+        // Hard cap for extreme collapses to avoid unrealistic 10.0 in big defeats
+        let ratingCap = 10;
+        if (teamGoalsAgainst >= 10) ratingCap = isGoalkeeper || isDefender ? 5.5 : 7.0;
+        else if (teamGoalsAgainst >= 6) ratingCap = isGoalkeeper || isDefender ? 6.5 : 8.0;
+
+        stat.rating = Math.max(1, Math.min(ratingCap, Math.round(rating * 10) / 10));
     });
 }

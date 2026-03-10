@@ -1,6 +1,50 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+function calculateAdjustedDisplayRating(ps: any, match: any): number {
+    // Players who did not play should not be performance-rated
+    if ((ps.minutes || 0) <= 0) return 6.0;
+
+    let rating = 6.0;
+    const isGoalkeeper = ps.player?.naturalPosition === 'GK';
+    const isDefender = ['DC', 'DR', 'DL', 'DMC', 'DMR', 'DML'].includes(ps.player?.naturalPosition);
+
+    const teamGoalsFor = ps.teamId === match.homeTeamId ? (match.homeScore ?? 0) : (match.awayScore ?? 0);
+    const teamGoalsAgainst = ps.teamId === match.homeTeamId ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
+    const goalDiff = teamGoalsFor - teamGoalsAgainst;
+
+    rating += (ps.goals || 0) * 1.2;
+    rating += (ps.assists || 0) * 0.7;
+    rating += (ps.saves || 0) * (isGoalkeeper ? 0.15 : 0.2);
+    rating += (ps.tacklesWon || 0) * 0.3;
+    rating += (ps.passesCompleted || 0) * 0.01;
+    rating += (ps.dribblesWon || 0) * 0.2;
+
+    rating -= ((ps.shots || 0) - (ps.shotsOnTarget || 0)) * 0.1;
+    rating -= ((ps.tacklesAttempted || 0) - (ps.tacklesWon || 0)) * 0.1;
+    rating -= (ps.yellowCards || 0) * 0.5;
+    rating -= (ps.redCards || 0) * 2.0;
+    rating -= (ps.fouls || 0) * 0.1;
+
+    if (goalDiff < 0) rating -= Math.min(2.5, Math.abs(goalDiff) * 0.35);
+    else if (goalDiff > 0) rating += Math.min(0.8, goalDiff * 0.2);
+
+    if (teamGoalsAgainst > 0) {
+        if (isGoalkeeper) rating -= teamGoalsAgainst * 0.45;
+        else if (isDefender) rating -= teamGoalsAgainst * 0.22;
+        else rating -= Math.max(0, teamGoalsAgainst - 2) * 0.08;
+    } else {
+        if (isGoalkeeper) rating += 0.8;
+        else if (isDefender) rating += 0.5;
+    }
+
+    let cap = 10;
+    if (teamGoalsAgainst >= 10) cap = isGoalkeeper || isDefender ? 5.5 : 7.0;
+    else if (teamGoalsAgainst >= 6) cap = isGoalkeeper || isDefender ? 6.5 : 8.0;
+
+    return Math.max(1, Math.min(cap, Math.round(rating * 10) / 10));
+}
+
 export async function GET(
     req: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -45,12 +89,13 @@ export async function GET(
         // Format the response to match what MatchPage expects
         const formattedStats: Record<string, any> = {};
         match.playerStats.forEach((ps: any) => {
+            const adjustedRating = calculateAdjustedDisplayRating(ps, match);
             formattedStats[ps.playerId] = {
                 playerId: ps.playerId,
                 name: ps.player.name,
                 teamId: ps.teamId,
                 position: ps.player.naturalPosition,
-                rating: ps.rating,
+                rating: adjustedRating,
                 minutes: ps.minutes,
                 goals: ps.goals,
                 assists: ps.assists,

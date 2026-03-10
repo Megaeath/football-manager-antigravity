@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updateTacticalPosition, updateTeamTactics } from '../actions';
 import type { PlayerAttributes } from '../../lib/engine/types';
@@ -14,6 +15,7 @@ import MatchPrepTab from '@/components/MatchPrepTab';
 type PlayerProps = {
     id: string;
     name: string;
+    transferStatus?: string | null;
     naturalPosition: string;
     age: number;
     condition: number;
@@ -49,6 +51,26 @@ type MatchType = {
     role: 'home' | 'away';
     opponent: { name: string };
     season: number;
+};
+
+type TransferHistoryItem = {
+    id: string;
+    date: Date;
+    season: number;
+    fee: number;
+    fromTeamId: string | null;
+    toTeamId: string;
+    player: { id: string; name: string; naturalPosition: string; age: number };
+    fromTeam: { id: string; name: string } | null;
+    toTeam: { id: string; name: string };
+};
+
+type PresetKey = 'A' | 'B' | 'C';
+
+type SavedLineupPreset = {
+    formation: string;
+    assignments: { playerId: string; position: string }[];
+    savedAt: string;
 };
 
 const FORMATIONS: Record<string, { id: string, label: string }[]> = {
@@ -102,7 +124,7 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [] }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [], transferHistory = [] }: {
     teamId: string,
     players: PlayerProps[],
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
@@ -115,17 +137,126 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         homeTeam: { id: string; name: string };
         awayTeam: { id: string; name: string };
     },
-    opponentPlayers?: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[]
+    opponentPlayers?: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[],
+    transferHistory?: TransferHistoryItem[]
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep' | 'transfer'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
+    const [transferFilter, setTransferFilter] = useState<'all' | 'in' | 'out'>('all');
+    const [lineupPresets, setLineupPresets] = useState<Record<PresetKey, SavedLineupPreset | null>>({ A: null, B: null, C: null });
+    const [presetFeedback, setPresetFeedback] = useState('');
     const router = useRouter();
     const searchParams = useSearchParams();
     const fromMatch = searchParams.get('from') === 'match';
     const matchId = searchParams.get('matchId');
+
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab === 'squad' || tab === 'matches' || tab === 'tactics' || tab === 'roles' || tab === 'matchprep' || tab === 'transfer') {
+            setActiveTab(tab as 'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep' | 'transfer');
+        }
+    }, [searchParams]);
+
+    const presetStorageKey = `lineup-presets-${teamId}`;
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(presetStorageKey);
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as Record<PresetKey, SavedLineupPreset | null>;
+            setLineupPresets({
+                A: parsed?.A || null,
+                B: parsed?.B || null,
+                C: parsed?.C || null
+            });
+        } catch (error) {
+            console.error('Failed to load lineup presets', error);
+        }
+    }, [presetStorageKey]);
+
+    const showPresetFeedback = (message: string) => {
+        setPresetFeedback(message);
+        setTimeout(() => setPresetFeedback(''), 2500);
+    };
+
+    const getCurrentAssignments = () => {
+        return players
+            .filter(p => !!p.tacticalPosition)
+            .map(p => ({ playerId: p.id, position: p.tacticalPosition as string }));
+    };
+
+    const savePreset = (key: PresetKey) => {
+        const assignments = getCurrentAssignments();
+        if (assignments.length === 0) {
+            showPresetFeedback(`Preset ${key}: ไม่มีตัวที่จัดตำแหน่งอยู่`);
+            return;
+        }
+
+        const next = {
+            ...lineupPresets,
+            [key]: {
+                formation: currentTactics.formation,
+                assignments,
+                savedAt: new Date().toISOString()
+            }
+        };
+
+        setLineupPresets(next);
+        try {
+            localStorage.setItem(presetStorageKey, JSON.stringify(next));
+        } catch (error) {
+            console.error('Failed to save lineup preset', error);
+        }
+
+        showPresetFeedback(`บันทึก Preset ${key} แล้ว (${assignments.length} คน)`);
+    };
+
+    const loadPreset = async (key: PresetKey) => {
+        const preset = lineupPresets[key];
+        if (!preset) {
+            showPresetFeedback(`Preset ${key}: ยังไม่เคยบันทึก`);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            if (preset.formation !== currentTactics.formation) {
+                await updateTeamTactics(teamId, { formation: preset.formation });
+            }
+
+            await bulkAssignTacticalPositions(teamId, preset.assignments);
+            showPresetFeedback(`โหลด Preset ${key} เรียบร้อย`);
+        } catch (error) {
+            console.error(`Failed to load lineup preset ${key}`, error);
+            showPresetFeedback(`โหลด Preset ${key} ไม่สำเร็จ`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const clearPreset = (key: PresetKey) => {
+        if (!lineupPresets[key]) {
+            showPresetFeedback(`Preset ${key}: ไม่มีข้อมูลให้ลบ`);
+            return;
+        }
+
+        const next = {
+            ...lineupPresets,
+            [key]: null
+        };
+
+        setLineupPresets(next);
+        try {
+            localStorage.setItem(presetStorageKey, JSON.stringify(next));
+        } catch (error) {
+            console.error('Failed to clear lineup preset', error);
+        }
+
+        showPresetFeedback(`ลบ Preset ${key} แล้ว`);
+    };
 
     const openPlayerModal = (playerId: string) => {
         router.push(`/squad?playerId=${playerId}`);
@@ -351,6 +482,16 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
     // Filter matches by season
     const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sortedTransferHistory = [...transferHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const listedCount = players.filter(p => p.transferStatus === 'LISTED').length;
+    const filteredTransfers = sortedTransferHistory.filter((t) => {
+        if (transferFilter === 'all') return true;
+        if (transferFilter === 'in') return t.toTeamId === teamId;
+        return t.fromTeamId === teamId;
+    });
+    const transferInCount = sortedTransferHistory.filter(t => t.toTeamId === teamId).length;
+    const transferOutCount = sortedTransferHistory.filter(t => t.fromTeamId === teamId).length;
+    const formatCurrency = (num: number) => `$${new Intl.NumberFormat('en-US').format(Math.abs(Math.round(num || 0)))}`;
 
     const handleSort = (key: typeof sortKey) => {
         if (key === 'pos') {
@@ -463,6 +604,22 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 >
                     👥 Roles
                 </button>
+                <button
+                    onClick={() => setActiveTab('transfer')}
+                    style={{
+                        padding: '12px 16px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'transfer' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'transfer' ? 'bold' : 'normal',
+                        fontSize: '0.9rem',
+                        color: activeTab === 'transfer' ? 'var(--primary)' : 'inherit'
+                    }}
+                    className="text-sm md:text-base md:px-5"
+                >
+                    🔁 Transfer Player ({sortedTransferHistory.length})
+                </button>
                 {fromMatch && upcomingMatch && opponentPlayers.length > 0 && (
                     <button
                         onClick={() => setActiveTab('matchprep')}
@@ -500,9 +657,13 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
             {activeTab === 'squad' && (
                 <div>
-                    <h3 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Squad List</span>
+                    <h3 style={{ marginTop: 0, marginBottom: '10px' }}>Squad List</h3>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span className="badge" style={{ background: '#ffedd5', color: '#9a3412', whiteSpace: 'nowrap' }}>
+                                <span title={`Listed for transfer: ${listedCount}`}>📤 {listedCount}</span>
+                            </span>
                             <span className="badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
                                 Formation
                             </span>
@@ -517,6 +678,9 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 <option value="4-5-1">4-5-1</option>
                             </select>
                             <span style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 'bold' }}>⚡{getTeamPower()}</span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <button onClick={handleAutoSelect} disabled={loading} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--primary-dark)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--primary)'; }}>
                                 Auto Select
                             </button>
@@ -524,7 +688,77 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 Clear All
                             </button>
                         </div>
-                    </h3>
+
+                        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '8px 10px', background: 'var(--bg)' }}>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 700, marginBottom: '6px' }}>
+                                Lineup Presets (A/B/C)
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                                {(['A', 'B', 'C'] as PresetKey[]).map((key) => {
+                                    const hasData = !!lineupPresets[key];
+                                    return (
+                                        <div key={`save-${key}`} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <button
+                                                onClick={() => savePreset(key)}
+                                                disabled={loading}
+                                                title={`Save current lineup to preset ${key}`}
+                                                style={{
+                                                    padding: '5px 9px',
+                                                    fontSize: '0.8rem',
+                                                    border: '1px solid #93c5fd',
+                                                    background: '#eff6ff',
+                                                    color: '#1d4ed8',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 700,
+                                                    minWidth: '30px'
+                                                }}
+                                            >
+                                                {key}
+                                            </button>
+                                            <button
+                                                onClick={() => loadPreset(key)}
+                                                disabled={loading || !hasData}
+                                                title={hasData ? `Load preset ${key}` : `Preset ${key} is empty`}
+                                                style={{
+                                                    padding: '5px 8px',
+                                                    fontSize: '0.72rem',
+                                                    border: '1px solid var(--border)',
+                                                    background: hasData ? '#ecfdf5' : '#f3f4f6',
+                                                    color: hasData ? '#047857' : '#9ca3af',
+                                                    borderRadius: '6px',
+                                                    cursor: hasData ? 'pointer' : 'not-allowed'
+                                                }}
+                                            >
+                                                Load
+                                            </button>
+                                            <button
+                                                onClick={() => clearPreset(key)}
+                                                disabled={loading || !hasData}
+                                                title={hasData ? `Clear preset ${key}` : `Preset ${key} is empty`}
+                                                style={{
+                                                    padding: '5px 8px',
+                                                    fontSize: '0.72rem',
+                                                    border: '1px solid var(--border)',
+                                                    background: hasData ? '#fef2f2' : '#f3f4f6',
+                                                    color: hasData ? '#b91c1c' : '#9ca3af',
+                                                    borderRadius: '6px',
+                                                    cursor: hasData ? 'pointer' : 'not-allowed'
+                                                }}
+                                            >
+                                                Clear
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                    {presetFeedback && (
+                        <div style={{ marginBottom: '8px', fontSize: '0.82rem', color: 'var(--primary)', fontWeight: 600 }}>
+                            {presetFeedback}
+                        </div>
+                    )}
                     {/* Desktop Table */}
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }} className="hidden md:table">
                         <thead>
@@ -677,6 +911,24 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             >
                                                 {p.name}
                                             </button>
+                                            {p.transferStatus === 'LISTED' && (
+                                                <span
+                                                    title="Listed for transfer"
+                                                    style={{
+                                                        marginLeft: '6px',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: 700,
+                                                        color: '#9a3412',
+                                                        background: '#ffedd5',
+                                                        border: '1px solid #fdba74',
+                                                        borderRadius: '999px',
+                                                        padding: '1px 5px',
+                                                        verticalAlign: 'middle'
+                                                    }}
+                                                >
+                                                    📤
+                                                </span>
+                                            )}
                                             {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
                                         </td>
                                         <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
@@ -740,6 +992,14 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             >
                                                 {p.name}
                                             </button>
+                                            {p.transferStatus === 'LISTED' && (
+                                                <span
+                                                    title="Listed for transfer"
+                                                    className="inline-flex items-center text-sm font-bold text-orange-700 bg-orange-100 border border-orange-300 rounded-full px-1.5 py-0 mt-1"
+                                                >
+                                                    📤
+                                                </span>
+                                            )}
                                             {p.tacticalPosition && <span className="text-xs text-green-600 font-semibold">({p.tacticalPosition})</span>}
                                         </div>
                                         <span className="text-xs font-bold px-2 py-1 rounded bg-yellow-400 text-white flex-shrink-0">
@@ -856,6 +1116,121 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
             {activeTab === 'roles' && (
                 <PlayerRolesTab players={players} teamId={teamId} onViewPlayer={openPlayerModal} />
+            )}
+
+            {activeTab === 'transfer' && (
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }} className="flex-col items-start gap-3 md:flex-row md:items-center">
+                        <h3 style={{ margin: 0 }}>🔁 Transfer Player History</h3>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={() => setTransferFilter('all')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'all' ? 'var(--primary)' : 'var(--bg)',
+                                    color: transferFilter === 'all' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                All ({sortedTransferHistory.length})
+                            </button>
+                            <button
+                                onClick={() => setTransferFilter('in')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'in' ? '#10b981' : 'var(--bg)',
+                                    color: transferFilter === 'in' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                In ({transferInCount})
+                            </button>
+                            <button
+                                onClick={() => setTransferFilter('out')}
+                                className="btn btn-sm"
+                                style={{
+                                    background: transferFilter === 'out' ? '#ef4444' : 'var(--bg)',
+                                    color: transferFilter === 'out' ? 'white' : 'var(--text)',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                Out ({transferOutCount})
+                            </button>
+                        </div>
+                    </div>
+
+                    {filteredTransfers.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)' }}>
+                            No transfer records for this filter.
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {filteredTransfers.map((t) => {
+                                const isIn = t.toTeamId === teamId;
+                                return (
+                                    <div
+                                        key={t.id}
+                                        style={{
+                                            border: '1px solid var(--border)',
+                                            borderLeft: `4px solid ${isIn ? '#10b981' : '#ef4444'}`,
+                                            borderRadius: '10px',
+                                            padding: '0.9rem 1rem',
+                                            display: 'grid',
+                                            gridTemplateColumns: '2fr 1.5fr 1fr',
+                                            gap: '0.75rem',
+                                            alignItems: 'center'
+                                        }}
+                                        className="md:grid"
+                                    >
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>
+                                                {new Date(t.date).toLocaleDateString('th-TH')} • Season {t.season}
+                                            </div>
+                                            <div style={{ fontWeight: 700 }}>
+                                                <button
+                                                    onClick={() => openPlayerModal(t.player.id)}
+                                                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, fontWeight: 700, textDecoration: 'underline' }}
+                                                >
+                                                    {t.player.name}
+                                                </button>
+                                                <span style={{ color: 'var(--muted)', fontWeight: 400 }}> ({t.player.naturalPosition}, {t.player.age}y)</span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ fontSize: '0.9rem' }}>
+                                            <div>
+                                                <span style={{ color: 'var(--muted)' }}>From: </span>
+                                                {t.fromTeam ? <Link href={`/team/${t.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.fromTeam.name}</Link> : 'Free Agent'}
+                                            </div>
+                                            <div>
+                                                <span style={{ color: 'var(--muted)' }}>To: </span>
+                                                <Link href={`/team/${t.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.toTeam.name}</Link>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{
+                                                display: 'inline-block',
+                                                background: isIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+                                                color: isIn ? '#047857' : '#b91c1c',
+                                                padding: '0.15rem 0.5rem',
+                                                borderRadius: '999px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                marginBottom: '0.35rem'
+                                            }}>
+                                                {isIn ? 'IN' : 'OUT'}
+                                            </div>
+                                            <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+                                                {t.fee > 0 ? formatCurrency(t.fee) : 'Free'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             )}
 
             {activeTab === 'matchprep' && upcomingMatch && (
