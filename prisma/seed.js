@@ -10,11 +10,46 @@ const TEAM_NAMES = [
     "Nottingham Forest", "Southampton", "Tottenham Hotspur", "West Ham United", "Wolves"
 ]
 
-const FIRST_NAMES = ["James", "Bukayo", "Kevin", "Erling", "Mohamed", "Martin", "Marcus", "Bruno", "Virgil", "Declan", "Cole", "Ollie", "Jack", "Phil", "Trent", "Alisson", "Ederson", "Ruben", "William", "Gabriel"]
-const LAST_NAMES = ["Smith", "Saka", "De Bruyne", "Haaland", "Salah", "Odegaard", "Rashford", "Fernandes", "van Dijk", "Rice", "Palmer", "Watkins", "Grealish", "Foden", "Alexander-Arnold", "Becker", "Moraes", "Dias", "Saliba", "Magalhaes"]
+const FIRST_NAMES = [
+    "James", "Bukayo", "Kevin", "Erling", "Mohamed", "Martin", "Marcus", "Bruno", "Virgil", "Declan",
+    "Cole", "Ollie", "Jack", "Phil", "Trent", "Alisson", "Ederson", "Ruben", "William", "Gabriel",
+    "Liam", "Noah", "Oliver", "Elijah", "Lucas", "Mason", "Ethan", "Logan", "Aiden", "Kai",
+    "Leo", "Hugo", "Mateo", "Adrian", "Rafael", "Sergio", "Pablo", "Diego", "Andres", "Javier",
+    "Nicolas", "Thiago", "Rodrigo", "Federico", "Lorenzo", "Matteo", "Alessandro", "Marco", "Antonio", "Giovanni",
+    "Alex", "Daniel", "Benjamin", "Samuel", "Isaac", "Jacob", "Ryan", "Oscar", "Adam", "Nathan",
+    "Aaron", "Milan", "Ivan", "Viktor", "Marek", "Kacper", "Maksim", "Yusuf", "Amir", "Ibrahim"
+]
+
+const LAST_NAMES = [
+    "Smith", "Saka", "De Bruyne", "Haaland", "Salah", "Odegaard", "Rashford", "Fernandes", "van Dijk", "Rice",
+    "Palmer", "Watkins", "Grealish", "Foden", "Alexander-Arnold", "Becker", "Moraes", "Dias", "Saliba", "Magalhaes",
+    "Johnson", "Brown", "Taylor", "Wilson", "Davies", "Evans", "Roberts", "Walker", "Hall", "Turner",
+    "Parker", "Morgan", "Hughes", "Bennett", "Carter", "Ward", "Cooper", "Murphy", "Bailey", "Bell",
+    "Silva", "Costa", "Almeida", "Fernandez", "Martinez", "Lopez", "Garcia", "Santos", "Pereira", "Ramos",
+    "Torres", "Vargas", "Navarro", "Castro", "Mendes", "Nunes", "Goncalves", "Sousa", "Ribeiro", "Correia",
+    "Rossi", "Bianchi", "Romano", "Gallo", "Conti", "Moretti", "Ricci", "Marino", "Greco", "Lombardi",
+    "Kovacic", "Novak", "Horvat", "Petrovic", "Jovanovic", "Muller", "Schneider", "Weber", "Fischer", "Wagner"
+]
 
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
-const randomName = () => `${FIRST_NAMES[randomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[randomInt(0, LAST_NAMES.length - 1)]}`
+const USED_NAMES = new Set()
+const randomName = () => {
+    let name = ''
+    let attempts = 0
+
+    while (attempts < 25) {
+        name = `${FIRST_NAMES[randomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[randomInt(0, LAST_NAMES.length - 1)]}`
+        if (!USED_NAMES.has(name)) {
+            USED_NAMES.add(name)
+            return name
+        }
+        attempts++
+    }
+
+    const fallback = `${FIRST_NAMES[randomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[randomInt(0, LAST_NAMES.length - 1)]} ${randomInt(1, 999)}`
+    USED_NAMES.add(fallback)
+    return fallback
+}
 
 // --- ATTRIBUTE GENERATOR LOGIC ---
 

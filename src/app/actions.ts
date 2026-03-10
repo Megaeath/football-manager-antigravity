@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { initializeNewGame } from '@/lib/services/newGameInitializer';
 
 export async function updateTacticalPosition(playerId: string, teamId: string, position: string) {
     // 1. If another player in the same team has this position, clear it
@@ -72,4 +73,22 @@ export async function updateTeamTactics(teamId: string, tactics: { formation?: s
     });
 
     revalidatePath('/squad');
+}
+
+export async function resetGameWithSelectedTeam(teamName: string) {
+    if (!teamName) {
+        throw new Error('Team is required');
+    }
+
+    const result = await initializeNewGame(teamName);
+
+    revalidatePath('/', 'layout');
+    revalidatePath('/');
+    revalidatePath('/squad');
+    revalidatePath('/fixtures');
+    revalidatePath('/league');
+    revalidatePath('/market');
+    revalidatePath('/news');
+
+    return result;
 }
