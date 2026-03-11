@@ -1,0 +1,28 @@
+Player: Oscar Costa | nat: DMC | team: Manchester United
+condition: 100 exp: 0
+┌──────────────┬────────┐
+│ (index)      │ Values │
+├──────────────┼────────┤
+│ tackling     │ 13     │
+│ passing      │ 13     │
+│ shooting     │ 8      │
+│ heading      │ 13     │
+│ dribbling    │ 14     │
+│ aggression   │ 11     │
+│ positioning  │ 16     │
+│ vision       │ 8      │
+│ bravery      │ 6      │
+│ leadership   │ 11     │
+│ teamwork     │ 11     │
+│ composure    │ 9      │
+│ pace         │ 11     │
+│ acceleration │ 6      │
+│ stamina      │ 13     │
+│ strength     │ 17     │
+│ agility      │ 14     │
+│ balance      │ 10     │
+│ crossing     │ 5      │
+│ handling     │ 4      │
+│ setPieces    │ 12     │
+│ throw        │ 10     │
+└──────────────┴────────┘

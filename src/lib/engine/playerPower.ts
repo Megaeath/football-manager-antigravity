@@ -60,25 +60,60 @@ export function getFitnessFactor(condition: number): number {
 export function calculatePlayerPower(params: {
   attributes: PlayerAttributes;
   targetPosition: string;
+  naturalPosition?: string;
   condition?: number;
   exp?: number;
 }) {
-  const { attributes, targetPosition, condition = 100, exp = 0 } = params;
+  const { attributes, targetPosition, naturalPosition, condition = 100, exp = 0 } = params;
   const effectiveAttributes = getEffectiveAttributes(attributes, exp);
   const fitnessFactor = getFitnessFactor(condition);
 
+  const getPosAffinity = (naturalPos?: string, targetPos?: string) => {
+    if (!naturalPos || !targetPos) return 0;
+    const nat = naturalPos.split('_')[0];
+    const tgt = targetPos.split('_')[0];
+
+    if (nat === 'DMC') {
+      if (tgt === 'DMC') return 10;
+      if (tgt === 'MC') return 8;
+      if (tgt === 'AMC') return 3;
+      if (tgt === 'DC') return -8;
+      if (tgt === 'DR' || tgt === 'DL') return -6;
+    }
+
+    if (nat === 'MC') {
+      if (tgt === 'MC') return 10;
+      if (tgt === 'DMC') return 8;
+      if (tgt === 'AMC') return 5;
+      if (tgt === 'DC') return -7;
+    }
+
+    if (nat === 'DC') {
+      if (tgt === 'DC') return 10;
+      if (tgt === 'DMC') return -4;
+      if (tgt === 'MC') return -8;
+    }
+
+    return 0;
+  };
+
+  const affinity = getPosAffinity(naturalPosition, targetPosition);
+
   const baseSuitabilityNoExp = calculateSuitability(attributes, targetPosition);
   const baseSuitabilityWithExp = calculateSuitability(effectiveAttributes, targetPosition);
+
+  const adjustedNoExp = Math.max(0, Math.min(100, baseSuitabilityNoExp + affinity));
+  const adjustedWithExp = Math.max(0, Math.min(100, baseSuitabilityWithExp + affinity));
 
   return {
     expBonus: getExpBonus(exp),
     fitnessFactor,
     effectiveAttributes,
-    baseSuitabilityNoExp,
-    baseSuitabilityWithExp,
-    powerNoExpNoFitness: Math.round(baseSuitabilityNoExp),
-    powerWithExpNoFitness: Math.round(baseSuitabilityWithExp),
-    powerNoExp: Math.round(baseSuitabilityNoExp * fitnessFactor),
-    powerWithExp: Math.round(baseSuitabilityWithExp * fitnessFactor)
+    baseSuitabilityNoExp: adjustedNoExp,
+    baseSuitabilityWithExp: adjustedWithExp,
+    powerNoExpNoFitness: Math.round(adjustedNoExp),
+    powerWithExpNoFitness: Math.round(adjustedWithExp),
+    powerNoExp: Math.round(adjustedNoExp * fitnessFactor),
+    powerWithExp: Math.round(adjustedWithExp * fitnessFactor)
   };
 }

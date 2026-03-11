@@ -58,41 +58,134 @@ function scaleRoleModifier(modifier: number, roleInfluence: number): number {
     return 1 + ((modifier - 1) * roleInfluence);
 }
 
+function getRoleActionModifier(
+    player: PlayerState,
+    inPossession: boolean,
+    teamTactics: any,
+    actionType: ActionType
+): number {
+    const activeRole = getActiveRolePreset(player, inPossession);
+    const roleEffects = activeRole ? getRoleEffects(activeRole) : null;
+    const roleInfluence = getRoleInfluenceByCreativeFreedom(teamTactics?.creative_freedom);
+    const actionModifiers = roleEffects?.actionModifiers || {};
+
+    // Support aliases used in role definitions
+    // - crossing -> long pass style actions
+    // - heading -> shooting conversion/finishing context
+    const direct = (actionModifiers as any)[actionType] || 1.0;
+    const alias = actionType === 'PASS_LONG'
+        ? ((actionModifiers as any).crossing || 1.0)
+        : actionType === 'SHOOT'
+            ? ((actionModifiers as any).heading || 1.0)
+            : 1.0;
+
+    return scaleRoleModifier(direct as number, roleInfluence)
+        * scaleRoleModifier(alias as number, roleInfluence);
+}
+
+function getDefenderOpponentPenalty(
+    defender: PlayerState | null | undefined,
+    defendingTeamTactics: any,
+    actionType: ActionType
+): number {
+    if (!defender) return 1.0;
+    const defenderRole = getActiveRolePreset(defender, false);
+    const defenderRoleEffects = defenderRole ? getRoleEffects(defenderRole) : null;
+    const defenderRoleInfluence = getRoleInfluenceByCreativeFreedom(defendingTeamTactics?.creative_freedom);
+    const rawPenalty = defenderRoleEffects?.opponentPenalty?.[actionType] ?? 1.0;
+    return scaleRoleModifier(rawPenalty, defenderRoleInfluence);
+}
+
 // ============ MATCH PREP MODIFIERS ============
 
+function tryGetRolePresser(defendingTeam: TeamState, roleName: string): PlayerState | null {
+    const rolePool = defendingTeam.players.filter(p => {
+        if (p.tacticalPosition === null) return false;
+        const defensiveRole = p.defensiveRolePreset || p.playerRole || null;
+        return defensiveRole === roleName;
+    });
+
+    if (rolePool.length === 0) return null;
+    return rolePool[Math.floor(Math.random() * rolePool.length)];
+}
+
+function getPressureTriggerChance(presser: PlayerState): number {
+    const pressureProfile = (
+        (presser.attributes.aggression || 0) +
+        (presser.attributes.bravery || 0) +
+        (presser.attributes.tackling || 0) +
+        (presser.attributes.positioning || 0)
+    ) / 4;
+
+    // 50% - 80% as requested
+    return clampRate(0.5 + (Math.max(0, Math.min(20, pressureProfile)) / 20) * 0.3);
+}
+
 /**
- * Feature 1: Key Player Neutralization
- * Reduces target player's action effectiveness
- * Trade-off: Team flow reduction (-10% per player, max -30%)
+ * Feature 1: Key Player Neutralization (Zone + Role Aware)
+ * - Defensive zone: no dedicated pressure
+ * - Middle zone: BALL_WINNING_MIDFIELDER attempts pressure
+ * - Attacking zone: MAN_MARKER attempts pressure
+ *
+ * Pressure is probabilistic (50%-80%) so target can still find space at times.
+ * Trade-off: defending role users spend extra condition when pressure is triggered.
  */
 function applyNeutralizationEffect(
     player: PlayerState,
     prepConfig: MatchPrepConfig | null,
+    defendingTeam: TeamState | undefined,
+    zone: 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING',
     weights: Record<ActionType, number>
-): { modifiedWeights: Record<ActionType, number>; flowPenalty: number } {
-    if (!prepConfig?.neutralization) {
-        return { modifiedWeights: weights, flowPenalty: 0 };
+): Record<ActionType, number> {
+    if (!prepConfig?.neutralization || !defendingTeam) {
+        return weights;
     }
 
     const { targetPlayerIds, intensity } = prepConfig.neutralization;
-    const isTargeted = targetPlayerIds.includes(player.id);
-
-    if (!isTargeted) {
-        return { modifiedWeights: weights, flowPenalty: 0 };
+    if (!targetPlayerIds.includes(player.id)) {
+        return weights;
     }
 
-    // Apply penalties based on intensity
-    const penaltyMultiplier = intensity === 'TIGHT' ? 0.70 : 0.85; // TIGHT: -30%, MODERATE: -15%
+    // As requested: no dedicated man-mark pressure in defensive third
+    if (zone === 'DEFENSIVE') {
+        return weights;
+    }
 
-    return {
-        modifiedWeights: {
-            PASS_SHORT: weights.PASS_SHORT * penaltyMultiplier,
-            PASS_LONG: weights.PASS_LONG * penaltyMultiplier,
-            DRIBBLE: weights.DRIBBLE * penaltyMultiplier,
-            SHOOT: weights.SHOOT * penaltyMultiplier
-        },
-        flowPenalty: targetPlayerIds.length * 0.10 // -10% per targeted player
-    };
+    const requiredRole = zone === 'MIDDLE' ? 'BALL_WINNING_MIDFIELDER' : 'MAN_MARKER';
+    const presser = tryGetRolePresser(defendingTeam, requiredRole);
+    if (!presser) return weights;
+
+    const triggerChance = getPressureTriggerChance(presser);
+    if (Math.random() >= triggerChance) return weights;
+
+    const intensityAmp = intensity === 'TIGHT' ? 0.9 : 1.0;
+    const modifiedWeights: Record<ActionType, number> = zone === 'MIDDLE'
+        ? {
+            PASS_SHORT: weights.PASS_SHORT * 0.85 * intensityAmp,
+            PASS_LONG: weights.PASS_LONG * 0.82 * intensityAmp,
+            DRIBBLE: weights.DRIBBLE * 0.80 * intensityAmp,
+            SHOOT: weights.SHOOT * 0.90 * intensityAmp
+        }
+        : {
+            PASS_SHORT: weights.PASS_SHORT * 0.90 * intensityAmp,
+            PASS_LONG: weights.PASS_LONG * 0.88 * intensityAmp,
+            DRIBBLE: weights.DRIBBLE * 0.78 * intensityAmp,
+            SHOOT: weights.SHOOT * 0.75 * intensityAmp
+        };
+
+    // Trade-off: extra condition drain for role users when pressure is executed
+    presser.condition = Math.max(0, presser.condition - (requiredRole === 'MAN_MARKER' ? 0.18 : 0.14));
+    const rolePool = defendingTeam.players.filter(p => {
+        if (p.tacticalPosition === null) return false;
+        const defensiveRole = p.defensiveRolePreset || p.playerRole || null;
+        return defensiveRole === requiredRole;
+    });
+    for (const teammate of rolePool) {
+        if (teammate.id === presser.id) continue;
+        teammate.condition = Math.max(0, teammate.condition - 0.03);
+    }
+
+    return modifiedWeights;
 }
 
 /**
@@ -189,6 +282,7 @@ function calculateActionWeights(
     isAttacking: boolean,
     teamTactics?: any,
     opponentPrepConfig?: MatchPrepConfig | null,
+    defendingTeam?: TeamState,
     ownPrepConfig?: MatchPrepConfig | null,
     justWonPossession?: boolean
 ): Record<ActionType, number> {
@@ -199,29 +293,25 @@ function calculateActionWeights(
     const passingBuff = teamTactics ? getPassingStyleBuff(teamTactics.passing) : { shortPass: 1.0, longPass: 1.0 };
     const creativeBuff = teamTactics ? getCreativeFreedomBuff(teamTactics.creative_freedom) : { shooting: 1.0, dribble: 1.0, riskTaking: 1.0 };
 
-    // Get player role effects (in possession uses attacking preset)
-    const activeRole = getActiveRolePreset(player, true);
-    const roleEffects = activeRole ? getRoleEffects(activeRole) : null;
-    const roleInfluence = getRoleInfluenceByCreativeFreedom(teamTactics?.creative_freedom);
-    const roleModifiersRaw = roleEffects?.actionModifiers || {};
-    const roleModifiers: Record<string, number> = Object.fromEntries(
-        Object.entries(roleModifiersRaw).map(([key, value]) => [key, scaleRoleModifier(value as number, roleInfluence)])
-    );
+    const passShortRoleMod = getRoleActionModifier(player, true, teamTactics, 'PASS_SHORT');
+    const passLongRoleMod = getRoleActionModifier(player, true, teamTactics, 'PASS_LONG');
+    const dribbleRoleMod = getRoleActionModifier(player, true, teamTactics, 'DRIBBLE');
+    const shootRoleMod = getRoleActionModifier(player, true, teamTactics, 'SHOOT');
 
     const weights = {
-        PASS_SHORT: player.attributes.passing * 0.5 * passingBuff.shortPass * (roleModifiers.PASS_SHORT || 1.0),
-        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3 * passingBuff.longPass * (roleModifiers.PASS_LONG || 1.0),
-        DRIBBLE: player.attributes.dribbling * 0.4 * creativeBuff.dribble * (roleModifiers.DRIBBLE || 1.0),
+        PASS_SHORT: player.attributes.passing * 0.5 * passingBuff.shortPass * passShortRoleMod,
+        PASS_LONG: (player.attributes.passing + player.attributes.vision) * 0.3 * passingBuff.longPass * passLongRoleMod,
+        DRIBBLE: player.attributes.dribbling * 0.4 * creativeBuff.dribble * dribbleRoleMod,
         SHOOT: 0
     };
 
     // Shooting zones: 0-10 = penalty area (tightened), 10-25 = long shots (reduced), >25 = no shooting
     if (distanceToGoal <= 10) {
         // Penalty area only - full shooting weight
-        weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting * (roleModifiers.SHOOT || 1.0);
+        weights.SHOOT = player.attributes.shooting * 1.0 * creativeBuff.shooting * shootRoleMod;
     } else if (distanceToGoal <= 25) {
         // Long shot zone - much reduced weight
-        weights.SHOOT = player.attributes.shooting * 0.2 * creativeBuff.shooting * (roleModifiers.SHOOT || 1.0);
+        weights.SHOOT = player.attributes.shooting * 0.2 * creativeBuff.shooting * shootRoleMod;
     }
     // Beyond 25 yards: SHOOT weight stays at 0 (no shooting)
 
@@ -231,22 +321,13 @@ function calculateActionWeights(
         weights[key as ActionType] *= conditionFactor;
     });
 
-    // === MATCH PREP HOOK 1: Neutralization ===
-    // Opponent tries to neutralize this player
+    // === MATCH PREP HOOK 1: Neutralization (Zone + Role Aware) ===
+    // Opponent tries to pressure this key player based on zone + defensive roles.
     let finalWeights = { ...weights };
-    let flowPenalty = 0;
 
     if (opponentPrepConfig) {
-        const neutralizationResult = applyNeutralizationEffect(player, opponentPrepConfig, finalWeights);
-        finalWeights = neutralizationResult.modifiedWeights;
-        flowPenalty = neutralizationResult.flowPenalty;
-    }
-
-    // Apply team flow penalty globally (affects all players)
-    if (flowPenalty > 0) {
-        Object.keys(finalWeights).forEach(key => {
-            finalWeights[key as ActionType] *= (1 - flowPenalty);
-        });
+        const currentZone = getZoneFromPosition(ballPosition, isAttacking);
+        finalWeights = applyNeutralizationEffect(player, opponentPrepConfig, defendingTeam, currentZone, finalWeights);
     }
 
     // === MATCH PREP HOOK 3: Transition Rules ===
@@ -393,11 +474,15 @@ function executePassShort(
     trackFieldTouch(stats, zone);
 
     const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
+    const attackerRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'PASS_SHORT');
+    const pressDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const defenderPenalty = getDefenderOpponentPenalty(pressDefender, defendingTeam.tactics, 'PASS_SHORT');
+    const effectivePassScore = passScore * attackerRoleMod * defenderPenalty;
     const defenseScore = Math.random() * 10; // Increased from 8 for more interceptions
 
     const skillBonus = player.attributes.passing > 15 ? 1.15 : 1.0;
-    const success = (passScore * skillBonus) > defenseScore;
-    const expectedSuccessRate = clampRate((passScore * skillBonus) / ((passScore * skillBonus) + defenseScore + 0.0001));
+    const success = (effectivePassScore * skillBonus) > defenseScore;
+    const expectedSuccessRate = clampRate((effectivePassScore * skillBonus) / ((effectivePassScore * skillBonus) + defenseScore + 0.0001));
 
     let isBackwardPass: boolean | null = null;
     let movement: number | null = null;
@@ -458,8 +543,11 @@ function executePassShort(
         expectedSuccessRate,
         metadata: JSON.stringify({
             passScore,
+            effectivePassScore,
             defenseScore,
             skillBonus,
+            attackerRoleMod,
+            defenderPenalty,
             isBackwardPass,
             movement,
             targetPosition
@@ -511,6 +599,9 @@ function executePassLong(
     const distancePenalty = 1.0 - Math.pow(distanceRatio, 1.5) * 0.45; // 0.55 to 1.0 range
 
     const basePassScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
+    const attackerRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'PASS_LONG');
+    const pressDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const defenderPenalty = getDefenderOpponentPenalty(pressDefender, defendingTeam.tactics, 'PASS_LONG');
     
     // Apply distance penalty to pass score (lower attributes = bigger impact from distance)
     // High skill players (passing+vision > 30) suffer less from distance
@@ -519,7 +610,7 @@ function executePassLong(
     const distanceImpact = 0.5 + (skillLevel * 0.5); // 0.5 to 1.0 (high skill = less distance penalty)
     const effectiveDistancePenalty = distancePenalty + ((1.0 - distancePenalty) * distanceImpact);
     
-    const passScore = basePassScore * effectiveDistancePenalty;
+    const passScore = basePassScore * effectiveDistancePenalty * attackerRoleMod * defenderPenalty;
     const defenseScore = Math.random() * 14;
 
     const skillBonus = (player.attributes.passing > 15 && player.attributes.vision > 15) ? 1.1 : 1.0; // Reduced from 1.2
@@ -548,6 +639,8 @@ function executePassLong(
             passDistance: passDistance.toFixed(2),
             distancePenalty: distancePenalty.toFixed(2),
             effectiveDistancePenalty: effectiveDistancePenalty.toFixed(2),
+            attackerRoleMod,
+            defenderPenalty,
             attributeSum,
             targetPosition: Number(targetPosition.toFixed(2))
         })
@@ -720,7 +813,8 @@ function executeShoot(
     awayTeam: TeamState,
     attackingTeam: TeamState,
     defendingTeam: TeamState,
-    isHomeAttacking: boolean
+    isHomeAttacking: boolean,
+    defendingPrepConfig?: MatchPrepConfig | null
 ): void {
     const stats = matchState.playerStats[player.id];
     const teamStats = isHomeAttacking ? matchState.teamStats.home : matchState.teamStats.away;
@@ -743,6 +837,10 @@ function executeShoot(
     const shootScore = calculateActionScore('shoot', player.attributes, 'attacker', player.condition)
         * getMentalityBuff(attackingTeam.tactics.mentality).shooting
         * positionFactor;
+    const attackerShootRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'SHOOT');
+    const shotDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const defenderShootPenalty = getDefenderOpponentPenalty(shotDefender, defendingTeam.tactics, 'SHOOT');
+    const effectiveShootScore = shootScore * attackerShootRoleMod * defenderShootPenalty;
 
     // GK save effectiveness increases with distance (easier saves from far)
     const saveEffectiveness = distanceToGoal < 20 ? 1.0 : (distanceToGoal < 10 ? 0.9 : 1.1);
@@ -752,8 +850,27 @@ function executeShoot(
 
     // Apply variance
     const variance = minute >= 80 ? 0.35 : 0.2;
-    let finalShoot = shootScore * (1 - variance / 2 + Math.random() * variance);
+    let finalShoot = effectiveShootScore * (1 - variance / 2 + Math.random() * variance);
     let finalSave = saveScore * (1 - variance / 2 + Math.random() * variance);
+
+    // Man Marker encounter on key-targeted shooter in ATTACKING zone
+    let markerEncountered = false;
+    let markerId: string | null = null;
+    if (
+        defendingPrepConfig?.neutralization?.targetPlayerIds?.includes(player.id) &&
+        shootZone === 'ATTACKING'
+    ) {
+        const marker = tryGetRolePresser(defendingTeam, 'MAN_MARKER');
+        if (marker) {
+            const encounterChance = getPressureTriggerChance(marker);
+            if (Math.random() < encounterChance) {
+                markerEncountered = true;
+                markerId = marker.id;
+                finalShoot *= 0.85; // -15% immediate shooting effectiveness when tightly marked
+                marker.condition = Math.max(0, marker.condition - 0.12); // trade-off for intense pressure
+            }
+        }
+    }
 
     // Miracle/blunder chances
     const miracleChance = minute >= 80 ? 0.03 : 0.02;
@@ -799,7 +916,7 @@ function executeShoot(
             isSuccessful: true,
             expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
             targetPlayerId: gk?.id,
-            metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, miracle, blunder })
+            metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, miracle, blunder, markerEncountered, markerId, attackerShootRoleMod, defenderShootPenalty, shotDefenderId: shotDefender?.id || null })
         });
 
         // Potential assist
@@ -846,7 +963,7 @@ function executeShoot(
                 isSuccessful: true,
                 expectedSuccessRate: clampRate(finalSave / (finalShoot + finalSave + 0.0001)),
                 targetPlayerId: player.id,
-                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave })
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, markerEncountered, markerId, attackerShootRoleMod, defenderShootPenalty, shotDefenderId: shotDefender?.id || null })
             });
 
             pushActionLog(matchState, {
@@ -860,7 +977,7 @@ function executeShoot(
                 isSuccessful: false,
                 expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
                 targetPlayerId: gk.id,
-                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: true })
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: true, markerEncountered, markerId, attackerShootRoleMod, defenderShootPenalty, shotDefenderId: shotDefender?.id || null })
             });
         } else {
             matchState.events.push({
@@ -882,7 +999,7 @@ function executeShoot(
                 isSuccessful: false,
                 expectedSuccessRate: clampRate(finalShoot / (finalShoot + finalSave + 0.0001)),
                 targetPlayerId: gk?.id,
-                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: false })
+                metadata: JSON.stringify({ distanceToGoal, finalShoot, finalSave, onTarget: false, markerEncountered, markerId, attackerShootRoleMod, defenderShootPenalty, shotDefenderId: shotDefender?.id || null })
             });
         }
 
@@ -1350,6 +1467,7 @@ export function simulateMatch(
                 isHomeAttacking, 
                 attackingTeam.tactics,
                 defendingPrepConfig,  // Opponent's prep (for neutralization)
+                defendingTeam,
                 attackingPrepConfig,  // Own prep (for transition rules)
                 justWonPossession
             );
@@ -1367,7 +1485,7 @@ export function simulateMatch(
                     executeDribble(ball, ball.carrier, matchState, homeTeam, awayTeam, attackingTeam, defendingTeam, isHomeAttacking);
                     break;
                 case 'SHOOT':
-                    executeShoot(ball, ball.carrier, minute, matchState, homeTeam, awayTeam, attackingTeam, defendingTeam, isHomeAttacking);
+                    executeShoot(ball, ball.carrier, minute, matchState, homeTeam, awayTeam, attackingTeam, defendingTeam, isHomeAttacking, defendingPrepConfig);
                     break;
             }
 
@@ -1497,20 +1615,23 @@ function getCarrierByPosition(team: TeamState, ballPosition: number, isAttacking
 }
 
 function getRandomPlayer(team: TeamState, positions: string[]): PlayerState | undefined {
-    const candidates = team.players.filter(p => positions.includes(p.position));
+    // Strictly use on-pitch players only (tacticalPosition !== null)
+    const activePlayers = team.players.filter(p => p.tacticalPosition !== null);
 
-    // 2. Filter by Tactical Position (Prioritize Playing 11)
-    const starters = candidates.filter(p => p.tacticalPosition !== null);
-
-    if (starters.length > 0) {
-        if (Math.random() < 0.95) { // Higher chance for tactical players
-            return starters[Math.floor(Math.random() * starters.length)];
-        }
+    // Primary selection: active players matching requested positions
+    const activeCandidates = activePlayers.filter(p => positions.includes(p.position));
+    if (activeCandidates.length > 0) {
+        return activeCandidates[Math.floor(Math.random() * activeCandidates.length)];
     }
 
-    // Fallback
-    if (candidates.length === 0) return team.players[Math.floor(Math.random() * team.players.length)];
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    // Fallback: any active player (keeps simulation running even with odd formations)
+    if (activePlayers.length > 0) {
+        return activePlayers[Math.floor(Math.random() * activePlayers.length)];
+    }
+
+    // Emergency fallback only when no active player exists (should not happen)
+    if (team.players.length === 0) return undefined;
+    return team.players[Math.floor(Math.random() * team.players.length)];
 }
 
 function updateFitness(team: TeamState) {

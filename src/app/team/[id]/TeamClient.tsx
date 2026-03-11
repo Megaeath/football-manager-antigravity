@@ -133,7 +133,7 @@ export default function TeamClient({
 }) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'marketValue'>('pos');
+    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'age' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
     const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance' | 'transfer'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
@@ -189,12 +189,14 @@ export default function TeamClient({
         const withExp = calculatePlayerPower({
             attributes: attrs,
             targetPosition: targetPos,
+            naturalPosition: p.naturalPosition,
             condition: p.condition,
             exp: p.exp || 0
         });
         const withoutExp = calculatePlayerPower({
             attributes: attrs,
             targetPosition: targetPos,
+            naturalPosition: p.naturalPosition,
             condition: p.condition,
             exp: 0
         });
@@ -242,6 +244,7 @@ export default function TeamClient({
             return calculatePlayerPower({
                 attributes: attrs,
                 targetPosition: targetPos,
+                naturalPosition: p.naturalPosition,
                 condition: p.condition,
                 exp: p.exp || 0
             }).powerWithExp;
@@ -475,7 +478,10 @@ export default function TeamClient({
                                     <button onClick={() => handleSort('mental')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Mental</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
+                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Suitability</button>
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('age')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>อายุ</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('marketValue')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Market Value</button>
@@ -543,6 +549,7 @@ export default function TeamClient({
                                     case 'tactical': return dir * (a.tactical - b.tactical);
                                     case 'mental': return dir * (a.mental - b.mental);
                                     case 'power': return dir * (a.power - b.power);
+                                    case 'age': return dir * (num(a.p.age) - num(b.p.age));
                                     case 'marketValue': return dir * (a.marketValue - b.marketValue);
                                     case 'name':
                                     default:
@@ -600,6 +607,7 @@ export default function TeamClient({
                                         {power > noExpPower && <span style={{ color: '#2e7d32', fontSize: '0.8rem' }}>⬆️</span>}
                                         {power < basePowerNoFitness && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
                                     </td>
+                                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>{p.age}</td>
                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>
                                         {(marketValue / 1000000).toFixed(1)}M
                                     </td>

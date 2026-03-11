@@ -117,12 +117,26 @@ function autoSelectLineup(team: any) {
             .map((p: any) => ({
                 playerId: p.id,
                 position: slot.id,
-                suitability: calculatePlayerPower({
-                    attributes: mapAttributes(p),
-                    targetPosition: slotBase,
-                    condition: p.condition,
-                    exp: p.exp || 0
-                }).powerWithExp
+                suitability: (() => {
+                    const basePower = calculatePlayerPower({
+                        attributes: mapAttributes(p),
+                        targetPosition: slotBase,
+                        naturalPosition: p.naturalPosition,
+                        condition: p.condition,
+                        exp: p.exp || 0
+                    }).powerWithExp;
+
+                    // DMC specific preference: choose midfield connectors over center-backs/full-backs
+                    if (slotBase === 'DMC') {
+                        const nat = p.naturalPosition;
+                        if (nat === 'DMC') return basePower + 18;
+                        if (nat === 'MC' || nat === 'AMC') return basePower + 12;
+                        if (nat === 'DMR' || nat === 'DML') return basePower + 8;
+                        if (nat === 'DC' || nat === 'DR' || nat === 'DL') return basePower - 15;
+                    }
+
+                    return basePower;
+                })()
             }))
             .sort((a: any, b: any) => b.suitability - a.suitability)[0];
 

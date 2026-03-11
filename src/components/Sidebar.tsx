@@ -71,15 +71,15 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     // Sidebar content component
     const SidebarContent = () => (
         <>
-            <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <h1 style={{ fontSize: '1.25rem', margin: 0, color: 'white', letterSpacing: '1px' }}>FM TEXT ⚽</h1>
+            <div style={{ padding: '16px 14px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <h1 style={{ fontSize: '1.1rem', margin: 0, color: 'white', letterSpacing: '0.6px' }}>FM TEXT ⚽</h1>
             </div>
 
             <nav style={{
-                padding: '16px',
+                padding: '10px 12px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px',
+                gap: '5px',
                 flex: 1,
                 overflowY: 'auto'
             }}>
@@ -99,17 +99,19 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '12px',
-                                padding: '12px 16px',
-                                borderRadius: '8px',
+                                gap: '10px',
+                                padding: '9px 12px',
+                                borderRadius: '7px',
                                 background: isActive ? 'var(--primary)' : 'transparent',
                                 color: isActive ? 'white' : 'var(--sidebar-text)',
                                 fontWeight: isActive ? '600' : '400',
                                 transition: 'all 0.2s ease',
-                                position: 'relative'
+                                position: 'relative',
+                                fontSize: '0.92rem',
+                                lineHeight: 1.2
                             }}
                         >
-                            <span style={{ fontSize: '1.2rem' }}>{item.icon}</span>
+                            <span style={{ fontSize: '1.05rem' }}>{item.icon}</span>
                             {item.name}
                             {showBadge && (
                                 <span style={{
@@ -133,7 +135,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 })}
             </nav>
 
-            <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
+            <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
                 v0.1.0 Alpha Build
             </div>
         </>

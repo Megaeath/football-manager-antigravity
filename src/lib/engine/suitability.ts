@@ -1,8 +1,8 @@
 import { PlayerAttributes, Position } from './types';
 
 export function calculateSuitability(attributes: PlayerAttributes, targetPosition: string): number {
-    let score = 0;
     const weights: Record<string, number> = {};
+    let defaultWeight = 0.5;
 
     // Define weights based on target position - these are relative importances, not absolute
     if (targetPosition === 'GK') {
@@ -24,11 +24,18 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.crossing = 1;
         weights.passing = 1;
     } else if (['DMC', 'DM'].includes(targetPosition)) {
-        weights.tackling = 3;
-        weights.stamina = 2;
+        // Defensive Midfielder = ball-winner + deep playmaker bridge
+        // Balance toward midfield intelligence/build-up, not pure center-back profile
+        weights.tackling = 2.5;
+        weights.passing = 2.5;
+        weights.vision = 2;
+        weights.teamwork = 2;
         weights.positioning = 2;
-        weights.passing = 2;
-        weights.strength = 1;
+        weights.composure = 1.5;
+        weights.stamina = 1.5;
+        weights.aggression = 1;
+        weights.strength = 0.75;
+        defaultWeight = 0.2;
     } else if (['MC', 'CM'].includes(targetPosition)) {
         weights.passing = 3;
         weights.vision = 3;
@@ -70,7 +77,7 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
 
     allAttributeKeys.forEach(stat => {
         const attrValue = attributes[stat] || 0;
-        const weight = weights[stat] || 0.5; // Default weight for non-position attributes
+        const weight = weights[stat] || defaultWeight; // Default weight for non-position attributes
         weightedSum += attrValue * weight;
         totalWeight += weight;
         if (attrValue > 0) attributeCount++;
@@ -78,6 +85,78 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
 
     if (totalWeight === 0) return 50;
 
+    const baseScore = (weightedSum / totalWeight / 20) * 100;
+
+    // --- Role profile correction ---
+    // Helps prevent ball-winning/connector midfielders from being rated as better DC than MC.
+    const midfieldProfile = (
+        (attributes.passing || 0) +
+        (attributes.vision || 0) +
+        (attributes.teamwork || 0) +
+        (attributes.composure || 0) +
+        (attributes.stamina || 0) +
+        (attributes.positioning || 0)
+    ) / 6;
+
+    const defenderProfile = (
+        (attributes.tackling || 0) +
+        (attributes.heading || 0) +
+        (attributes.strength || 0) +
+        (attributes.bravery || 0) +
+        (attributes.positioning || 0)
+    ) / 5;
+
+    let adjustedBaseScore = baseScore;
+    const profileDelta = midfieldProfile - defenderProfile;
+
+    if (['MC', 'CM', 'DMC', 'DM', 'AMC'].includes(targetPosition)) {
+        // Midfielders get a lift when midfield traits exceed defender traits
+        adjustedBaseScore += profileDelta * 0.9;
+    } else if (['DC', 'CD'].includes(targetPosition)) {
+        // DC gets a mild penalty when player is clearly midfield-oriented
+        adjustedBaseScore -= Math.max(0, profileDelta) * 0.9;
+    }
+
+    // DMC should remain close to midfield profile (link play), not purely defender profile.
+    if (['DMC', 'DM'].includes(targetPosition)) {
+        const bridgeWeights: Record<keyof PlayerAttributes, number> = {
+            handling: 0,
+            tackling: 1.5,
+            passing: 3,
+            shooting: 0,
+            heading: 0,
+            dribbling: 1,
+            crossing: 0,
+            setPieces: 0,
+            throw: 0,
+            aggression: 1,
+            positioning: 2,
+            vision: 2.5,
+            bravery: 0.5,
+            leadership: 0.5,
+            teamwork: 2.5,
+            composure: 2,
+            pace: 0,
+            acceleration: 0,
+            stamina: 2,
+            strength: 1,
+            agility: 0,
+            balance: 0
+        };
+
+        let bridgeSum = 0;
+        let bridgeWeightTotal = 0;
+        for (const stat of allAttributeKeys) {
+            const w = bridgeWeights[stat] || 0;
+            if (w <= 0) continue;
+            bridgeSum += (attributes[stat] || 0) * w;
+            bridgeWeightTotal += w;
+        }
+
+        const bridgeScore = bridgeWeightTotal > 0 ? (bridgeSum / bridgeWeightTotal / 20) * 100 : adjustedBaseScore;
+        return Math.round(adjustedBaseScore * 0.7 + bridgeScore * 0.3);
+    }
+
     // Return as percentage where 20 = 100%
-    return Math.round((weightedSum / totalWeight / 20) * 100);
+    return Math.round(adjustedBaseScore);
 }

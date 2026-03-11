@@ -141,7 +141,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     transferHistory?: TransferHistoryItem[]
 }) {
     const [loading, setLoading] = useState(false);
-    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power'>('pos');
+    const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power' | 'age'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
     const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep' | 'transfer'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
@@ -327,6 +327,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
             const getGroup = (pos?: string | null) => {
                 const p = pos || '';
                 if (p.startsWith('GK')) return 'GK';
+                if (p.startsWith('DMC') || p === 'DM') return 'MF';
                 if (p.startsWith('D')) return 'DF';
                 if (p.startsWith('M') || p.startsWith('A')) return 'MF';
                 return 'FW';
@@ -342,6 +343,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                         const playerPower = calculatePlayerPower({
                             attributes: p.rawAttributes,
                             targetPosition: slotBase,
+                            naturalPosition: p.naturalPosition,
                             condition: p.condition,
                             exp: p.exp
                         }).powerWithExp;
@@ -353,10 +355,20 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                         const groupDiff = Math.abs(posGroupOrder[slotGroup] - posGroupOrder[playerGroup]);
                         const penalty = groupDiff === 0 ? 0 : 40 * groupDiff; // 40 points penalty per group distance
 
+                        // DMC specific preference: favor midfield profiles over defenders
+                        let dmcBonus = 0;
+                        if (slotBase === 'DMC') {
+                            const nat = p.naturalPosition;
+                            if (nat === 'DMC') dmcBonus = 18;
+                            else if (nat === 'MC' || nat === 'AMC') dmcBonus = 12;
+                            else if (nat === 'DMR' || nat === 'DML') dmcBonus = 8;
+                            else if (nat === 'DC' || nat === 'DR' || nat === 'DL') dmcBonus = -15;
+                        }
+
                         return {
                             playerId: p.id,
                             position: slot.id,
-                            suitability: playerPower - penalty
+                            suitability: playerPower - penalty + dmcBonus
                         };
                     })
                     .sort((a, b) => b.suitability - a.suitability)[0];
@@ -409,12 +421,14 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         const withExp = calculatePlayerPower({
             attributes: p.rawAttributes,
             targetPosition: targetPos,
+            naturalPosition: p.naturalPosition,
             condition: p.condition,
             exp: p.exp
         });
         const withoutExp = calculatePlayerPower({
             attributes: p.rawAttributes,
             targetPosition: targetPos,
+            naturalPosition: p.naturalPosition,
             condition: p.condition,
             exp: 0
         });
@@ -470,6 +484,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
             return calculatePlayerPower({
                 attributes: p.rawAttributes,
                 targetPosition: targetPos,
+                naturalPosition: p.naturalPosition,
                 condition: p.condition,
                 exp: p.exp
             }).powerWithExp;
@@ -801,7 +816,10 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                     <button onClick={() => handleSort('exp')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>EXP</button>
                                 </th>
                                 <th style={{ padding: '6px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Power</button>
+                                    <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Suitability</button>
+                                </th>
+                                <th style={{ padding: '6px', textAlign: 'center' }}>
+                                    <button onClick={() => handleSort('age')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Age</button>
                                 </th>
                                 <th style={{ padding: '6px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>💎 Market Value</button>
@@ -878,6 +896,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                         case 'mental': return dir * (a.mental - b.mental);
                                         case 'exp': return dir * (num(a.p.exp) - num(b.p.exp));
                                         case 'power': return dir * (a.power - b.power);
+                                        case 'age': return dir * (num(a.p.age) - num(b.p.age));
                                         case 'name':
                                         default:
                                             return dir * a.p.name.localeCompare(b.p.name);
@@ -951,6 +970,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             {expBoostedPower > noExpPower && <span style={{ color: '#2e7d32', fontSize: '0.8rem' }}>⬆️</span>}
                                             {power < basePowerNoFitness && <span style={{ color: '#c62828', fontSize: '0.8rem' }}>⬇️</span>}
                                         </td>
+                                        <td style={{ padding: '6px', textAlign: 'center', fontWeight: 600 }}>{p.age}</td>
                                         <td style={{ padding: '6px', textAlign: 'center' }}>
                                             <span style={{ background: '#fbbf24', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>
                                                 ${(getMarketValue(p) / 1000000).toFixed(1)}M
@@ -963,7 +983,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
                     {/* Mobile Card List */}
                     <div className="flex flex-col gap-3 md:hidden">
-                        <div className="mb-2 text-xs text-gray-500 uppercase font-semibold">POS NAME MIN RATING FIT POWER</div>
+                        <div className="mb-2 text-xs text-gray-500 uppercase font-semibold">POS NAME MIN RATING FIT SUITABILITY AGE</div>
                         {sortedPlayers
                             .map(p => {
                                 const breakdown = getPowerBreakdown(p);
@@ -979,6 +999,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 if (sortKey === 'name') return sortDir === 'asc' ? a.p.name.localeCompare(b.p.name) : b.p.name.localeCompare(a.p.name);
                                 if (sortKey === 'fit') return sortDir === 'asc' ? a.p.condition - b.p.condition : b.p.condition - a.p.condition;
                                 if (sortKey === 'power') return sortDir === 'asc' ? a.power - b.power : b.power - a.power;
+                                if (sortKey === 'age') return sortDir === 'asc' ? a.p.age - b.p.age : b.p.age - a.p.age;
                                 return 0;
                             })
                             .map(({ p, power }) => (
@@ -1011,7 +1032,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                         <div><span className="text-gray-500">Apps:</span> <span className="font-semibold">{p.apps}</span></div>
                                         <div><span className="text-gray-500">Rating:</span> <span className="font-semibold" style={{ color: p.avgRating >= 7.0 ? 'var(--success)' : 'inherit' }}>{p.avgRating > 0 ? p.avgRating.toFixed(2) : '-'}</span></div>
                                         <div><span className="text-gray-500">Fit:</span> <span className="font-semibold" style={{ color: p.condition < 80 ? '#c62828' : '#2e7d32' }}>{Math.round(p.condition)}%</span></div>
-                                        <div><span className="text-gray-500">Power:</span> <span className="font-semibold" style={{ color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit' }}>{power}</span></div>
+                                        <div><span className="text-gray-500">Suitability:</span> <span className="font-semibold" style={{ color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit' }}>{power}</span></div>
+                                        <div><span className="text-gray-500">Age:</span> <span className="font-semibold">{p.age}</span></div>
                                         <div><span className="text-gray-500">G/A:</span> <span className="font-semibold">{p.goals}/{p.assists}</span></div>
                                     </div>
                                 </div>
