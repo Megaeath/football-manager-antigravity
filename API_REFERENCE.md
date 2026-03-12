@@ -121,6 +121,100 @@
 
 ---
 
+## 🏋️ Training APIs
+
+### 22. `GET /api/training`
+**ตัวอักษร**: Training State (User Team)
+
+**สิ่งที่ทำ**: ดึงสถานะระบบฝึกซ้อมของทีมผู้เล่น (facility, slots, weekly status, attribute decimals)
+
+**Input**: ไม่มี
+
+**Output**:
+```json
+{
+  "team": {
+    "id": "team_1",
+    "trainingFacilityLevel": 2,
+    "facility": { "level": 2, "weeklyFee": 60000, "maxGain": 0.15 },
+    "nextFacility": { "level": 3, "upgradeCost": 7500000 },
+    "canAffordNextWeek": true
+  },
+  "slots": [
+    { "slotIndex": 1, "playerId": "p1", "focusAttribute": "passing", "isActive": true, "lastGain": 0.12 }
+  ],
+  "players": [
+    {
+      "id": "p1",
+      "name": "...",
+      "effectiveAttributes": { "passing": 14.35 }
+    }
+  ],
+  "weekly": {
+    "currentWeekKey": 2891,
+    "lastStatus": "APPLIED",
+    "lastChargedFee": 60000
+  }
+}
+```
+
+**Calls**:
+- `getTrainingState()`
+
+---
+
+### 23. `PATCH /api/training/slots/[slotIndex]`
+**ตัวอักษร**: Update Training Slot (Auto-save)
+
+**สิ่งที่ทำ**: ตั้งค่าผู้เล่นและ attribute ใน slot (1-5) แบบทันทีเมื่อเปลี่ยน dropdown
+
+**Input**:
+```json
+{
+  "playerId": "player_1",
+  "focusAttribute": "shooting"
+}
+```
+
+**Output**:
+```json
+{
+  "success": true,
+  "slot": {
+    "slotIndex": 1,
+    "playerId": "player_1",
+    "focusAttribute": "shooting",
+    "isActive": true
+  }
+}
+```
+
+**Calls**:
+- `updateTrainingSlot()`
+
+---
+
+### 24. `POST /api/training/facility/upgrade`
+**ตัวอักษร**: Upgrade Training Facility
+
+**สิ่งที่ทำ**: อัปเกรด facility เลเวล + หักเงินทันที + บันทึก financial event
+
+**Input**: ไม่มี
+
+**Output**:
+```json
+{
+  "success": true,
+  "level": 3,
+  "upgradeCost": 7500000
+}
+```
+
+**Calls**:
+- `upgradeTrainingFacility()`
+
+---
+
 ### 2. `GET /api/simulate`
 **ตัวอักษร**: Simulation Test Route
 
@@ -723,4 +817,4 @@ High-Level Flow:
 5. **If function exists but not exposed**: Add API route, don't rewrite function
 6. **If function overlaps with existing**: Consolidate logic first
 
-Last updated: March 2026
+Last updated: March 2026 (includes Training APIs)

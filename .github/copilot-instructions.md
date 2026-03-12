@@ -77,10 +77,10 @@ The `/match` page provides deep player performance analysis with interactive vis
 - **Mental**: aggression, positioning, vision, bravery, leadership, teamwork, composure
 - **Physical**: pace, acceleration, stamina, strength, agility, balance
 
-**Experience Multiplier** (`applyExpToStat`):
-- EXP caps at 1000 total (league-wide across all seasons)
-- Multiplier: `(100 + exp / 5) / 100` → scales attributes up to +20%
-- Applied per-player based on `player.exp` field before each match
+**Experience Multiplier** (`getExpBonus`, `getExpMultiplier`):
+- EXP is clamped to `[-1000, 1000]`
+- Uses 1.8-rule tiering (`0..179 => +0`, `180..279 => +2`, ... `980..1000 => +10`)
+- Applied through `getEffectiveAttributes()` before each match
 
 **Condition/Fitness**:
 - Range: 0-100% (affects all action weights in match engine)
@@ -129,6 +129,21 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Base: (overall * 10,000) + (age factor * 5,000,000)
 - Modifiers: popularity, recent performance, remaining contract weeks
 - Used for transfer market AI bids (`aiMarketService.ts`)
+
+### 6. Training System (Facility + Weekly Processing)
+
+Training is a user-team feature (Phase 1) with dedicated state and weekly processing.
+
+- Team field: `Team.trainingFacilityLevel` (Lv.1-Lv.9)
+- Slot model: `TrainingAssignment` (max 5 slots/team)
+- Decimal accumulation: `PlayerTrainingFraction` (remainder + lifetimeGain)
+- Weekly idempotency: `TrainingWeeklyLedger` (`@@unique([teamId, weekKey])`)
+
+Execution behavior:
+1. On week boundary (`advanceDay()`), call `processWeeklyTraining(userTeamId, weekKey)`
+2. If funds are insufficient for weekly fee, training is skipped (`SKIPPED_FUNDS`) and no gain is applied
+3. If funds are sufficient, weekly fee is charged once and active slots roll random gain (`0.10..maxGain`)
+4. Base attributes remain integers; decimal progress is stored in fraction table and shown in training UI analytics
 
 ---
 
@@ -189,13 +204,14 @@ export async function updateTacticalPosition(playerId: string, teamId: string, p
 
 ### Experience Decay System
 
-Runs at **month boundary**. See `processAgeBasedExpDecay()`:
-- Players 30+ lose 5% EXP annually
-- Players 35+ lose 10% EXP annually
-- Losers get -20% multiplier (below age 30)
-- Winners/Star players exempt
+Current behavior:
+- Legacy monthly decay path is disabled (kept only as month marker guard)
+- Match EXP is applied per match with age efficiency in `processMatch()`
+- Season-end correction is applied in `applySeasonExpAdjustments()`:
+  - age efficiency + seasonal cap + award/relegation bonuses + annual decay
+  - correction delta is written to `player.exp`
 
-**Trigger**: Check `GlobalGameSettings.lastExpDecayMonth` on game time advance.
+**Trigger**: `startNewSeason()` calls `applySeasonExpAdjustments()`.
 
 ---
 
@@ -239,6 +255,12 @@ npx prisma migrate  # List/create migrations
 3. Add to migration if schema changes needed
 4. Update `seasonAwards.ts` if affects standings/rewards
 
+**Add/modify training mechanic**:
+1. Update constants in `src/lib/constants/training.ts`
+2. Update processing logic in `src/lib/services/training.ts`
+3. If weekly timing changes, update `advanceDay()` hook in `src/lib/services/gameTime.ts`
+4. Keep API surface aligned in `API_REFERENCE.md`
+
 ---
 
 ## Key Files by Purpose
@@ -248,6 +270,7 @@ npx prisma migrate  # List/create migrations
 | **Match Engine** | `match.ts`, `playerPower.ts`, `formulas.ts` |
 | **Financial System** | `financial.ts`, `market.ts` (bidding) |
 | **Experience & Progression** | `experience.ts`, `financial.ts` (decay) |
+| **Training System** | `training.ts` (service), `constants/training.ts`, `app/training/*` |
 | **Services (Long-running)** | `matchSimulator.ts`, `aiMarketService.ts`, `seasonAwards.ts` |
 | **Database** | `schema.prisma`, `prisma.ts` (singleton client) |
 | **UI State & Forms** | `TacticsForm.tsx`, `SquadClient.tsx`, `PlayerModal.tsx` |
@@ -309,4 +332,4 @@ When modifying this file:
 - [API_REFERENCE.md](../API_REFERENCE.md) with the new endpoint/function
 - [DOCUMENTATION_GUIDE.md](../DOCUMENTATION_GUIDE.md) if it changes the decision tree
 
-Last updated: March 2026
+Last updated: March 2026 (Training + EXP updates)

@@ -359,11 +359,11 @@ function getMentalityBuff(mentality: string) {
         case 'ALL_OUT_ATTACK':
             return { shooting: 1.0, dribble: 1.5, tackling: 0.7, save: 1.0, attackChance: 1.5, fatigue: 1.3 };
         case 'ATTACKING':
-            return { shooting: 1.0, dribble: 1.3, tackling: 0.8, save: 1., attackChance: 1.25, fatigue: 1.2 };
+            return { shooting: 1.0, dribble: 1.3, tackling: 0.8, save: 1.0, attackChance: 1.25, fatigue: 1.2 };
         case 'ULTRA_DEFENSIVE':
-            return { shooting: 1.0, dribble: 0.7, tackling: 1.4, save: 1.3, attackChance: 0.8, fatigue: 1.3 };
+            return { shooting: 1.0, dribble: 0.7, tackling: 1.4, save: 1.0, attackChance: 0.8, fatigue: 1.3 };
         case 'DEFENSIVE':
-            return { shooting: 1.0, dribble: 0.8, tackling: 1.2, save: 1.2, attackChance: 0.9, fatigue: 1.2 };
+            return { shooting: 1.0, dribble: 0.8, tackling: 1.2, save: 1.0, attackChance: 0.9, fatigue: 1.2 };
         default:
             return { shooting: 1.0, dribble: 1.0, tackling: 1.0, save: 1.0, attackChance: 1.0, fatigue: 1.0 };
     }

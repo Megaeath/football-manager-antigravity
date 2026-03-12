@@ -43,6 +43,14 @@ export async function GET(request: NextRequest) {
         const maintenanceCost = stadiumCapacity * 0.5;
         const reputation = team.reputation || 50;
 
+        // Get training facility level and weekly fee
+        const trainingFacilityLevel = team.trainingFacilityLevel || 1;
+        const trainingFeeMap: Record<number, number> = {
+          1: 20000, 2: 25000, 3: 30000, 4: 35000, 5: 42000,
+          6: 50000, 7: 60000, 8: 75000, 9: 90000
+        };
+        const weeklyTrainingFee = trainingFeeMap[trainingFacilityLevel] || 20000;
+
         // Calculate attendance: 60% base + up to 35% from reputation
         const attendanceRate = 0.60 + (reputation / 100) * 0.35;
 
@@ -84,7 +92,7 @@ export async function GET(request: NextRequest) {
         const jerseySales = 500 * (averagePopularity / 100) * team.players.length;
 
         const totalIncome = sponsorship + ticketSales + jerseySales + seasonRewards + playerSales;
-        const totalExpenses = totalWages + maintenanceCost + playerPurchases;
+        const totalExpenses = totalWages + maintenanceCost + playerPurchases + weeklyTrainingFee;
         const netBalance = totalIncome - totalExpenses;
 
         // FFP Status
@@ -109,12 +117,23 @@ export async function GET(request: NextRequest) {
             ffpMessage = `Healthy: Wages are ${wagePercentage.toFixed(1)}% of revenue. Stable financial position.`;
         }
 
+        // Calculate facility upgrade information
+        const FACILITY_UPGRADE_COSTS = [0, 5000000, 7500000, 15000000, 30000000, 60000000, 120000000, 240000000, 480000000];
+        const nextFacilityLevel = trainingFacilityLevel < 9 ? trainingFacilityLevel + 1 : null;
+        const nextUpgradeCost = nextFacilityLevel ? FACILITY_UPGRADE_COSTS[nextFacilityLevel - 1] : 0;
+
         return NextResponse.json({
             teamId: team.id,
             teamName: team.name,
             balance: team.balance,
             reputation: team.reputation,
             stadiumCapacity: team.stadiumCapacity,
+            training: {
+                facilityLevel: trainingFacilityLevel,
+                weeklyFee: Math.round(weeklyTrainingFee),
+                nextUpgradeCost: nextUpgradeCost,
+                isMaxLevel: trainingFacilityLevel === 9
+            },
             weeklyData: {
                 income: totalIncome,
                 expenses: totalExpenses,
@@ -127,7 +146,8 @@ export async function GET(request: NextRequest) {
                     playerSales: Math.round(playerSales),
                     wages: Math.round(totalWages),
                     maintenance: Math.round(maintenanceCost),
-                    playerPurchases: Math.round(playerPurchases)
+                    playerPurchases: Math.round(playerPurchases),
+                    trainingWeekly: Math.round(weeklyTrainingFee)
                 }
             },
             ffp: {

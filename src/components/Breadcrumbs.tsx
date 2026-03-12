@@ -20,7 +20,8 @@ export default function Breadcrumbs() {
         'stats': 'สถิติผู้เล่น',
         'table': 'ตารางคะแนน',
         'team': 'ข้อมูลทีม',
-        'player': 'ข้อมูลนักเตะ'
+        'player': 'ข้อมูลนักเตะ',
+        'training': 'การฝึกซ้อม'
     };
 
     return (

@@ -12,6 +12,7 @@
 - **เข้าใจการจำลองแข่งขัน (match engine)** → copilot-instructions.md: "Match Simulation Pipeline"
 - **เข้าใจระบบประสบการณ์ (EXP/Level)** → copilot-instructions.md: "Experience Decay System"
 - **เข้าใจระบบการเงิน** → copilot-instructions.md: "Data Flow: Financial & Reputation"
+- **เข้าใจระบบฝึกซ้อม (Training Facility/Slots)** → TRAINING.md + copilot-instructions.md
 - **เข้าใจกลวิธี (tactics)** → TACTICAL_GUIDE.md
 
 ---
@@ -25,6 +26,7 @@
 - **ดัดแปลง match engine** → copilot-instructions.md: "Common Tasks: Fix match simulation bug"
 - **เพิ่มกลวิธีใหม่** → TACTICAL_GUIDE.md + copilot-instructions.md
 - **เข้าใจ Player Power calculation** → POWER_CALCULATION_EXPLANATION.md
+- **เพิ่ม/แก้ระบบฝึกซ้อม** → TRAINING.md + API `/api/training/*`
 
 ---
 
@@ -34,7 +36,8 @@
 | Document | Purpose |
 |----------|---------|
 | **.github/copilot-instructions.md** | ♻️ **ให้ AI agents อ่านก่อนพัฒนา** - Essential knowledge about architecture, conventions, patterns |
-| **API_REFERENCE.md** | 📍 **ก่อนสร้าง API ใหม่** - Complete list of all 19 endpoints with input/output + what functions they call |
+| **API_REFERENCE.md** | 📍 **ก่อนสร้าง API ใหม่** - Complete list of all endpoints with input/output + what functions they call |
+| **TRAINING.md** | 🏋️ **ระบบฝึกซ้อมพิเศษ** - Facility levels, weekly fee, slot rules, decimal behavior |
 | **TACTICAL_GUIDE.md** | ⚽ **สำหรับเข้าใจกลวิธี** - How each tactic affects match outcomes |
 | **POWER_CALCULATION_EXPLANATION.md** | 📊 **สำหรับ player power formula** - Weighted average calculation examples |
 | **IMPLEMENTATION_COMPLETE.md** | ✅ **Historical record** - What was implemented in Phase 14 |
@@ -58,6 +61,9 @@
     │
     ├─ "ต้องเพิ่มกลวิธี?"
     │  └─ YES → ดู TACTICAL_GUIDE.md + IMPLEMENTATION_COMPLETE.md
+    │
+    ├─ "ต้องแก้ระบบ training/facility?"
+    │  └─ YES → ดู TRAINING.md + API_REFERENCE.md หมวด Training APIs
     │
     └─ "ต้องแก้ไข contract/financial/EXP?"
        └─ YES → ตรวจ API_REFERENCE.md ว่า endpoint มีหรือยัง
@@ -90,8 +96,8 @@ npx prisma db seed  # Reset seed data
 ---
 
 ## 📝 **Last Updated**
-- March 3, 2026
-- API Reference: 19 total endpoints documented
+- March 12, 2026
+- API Reference: includes Training APIs (`/api/training`, `/api/training/slots/[slotIndex]`, `/api/training/facility/upgrade`)
 - Tactical System: 6 dimensions (formation, mentality, passing, tackling, attacking_focus, creative_freedom)
 - Match Engine: ~1000 lines, handles 2,700 minute iterations
 
@@ -112,7 +118,7 @@ npx prisma db seed  # Reset seed data
 │   │   ├── engine/                  ← Core simulation logic
 │   │   └── services/                ← Long-running services
 │   ├── app/
-│   │   ├── api/                     ← 19 endpoints
+│   │   ├── api/                     ← endpoints (including Training APIs)
 │   │   └── actions.ts               ← Server actions
 │   └── components/                  ← React UI
 └── prisma/

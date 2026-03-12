@@ -526,24 +526,9 @@ export async function processAgeBasedExpDecay(): Promise<void> {
         return;
     }
 
-    const playersToDecay = await prisma.player.findMany({
-        where: {
-            isRetired: false,
-            age: { gte: 31 }
-        },
-        select: { id: true, name: true, age: true, exp: true }
-    });
-
-    for (const player of playersToDecay) {
-        // Progressive decay: -10 at 31, -15 at 32, -20 at 33, etc.
-        // Formula: -(10 + (age - 31) * 5)
-        const decayAmount = -(10 + (player.age - 31) * 5);
-        const newExp = (player.exp || 0) + decayAmount;
-        await prisma.player.update({
-            where: { id: player.id },
-            data: { exp: newExp }
-        });
-    }
+    // Legacy monthly decay is disabled.
+    // EXP decay is now applied in seasonal processing (startNewSeason -> applySeasonExpAdjustments)
+    // using age table rules from experience.ts.
 
     // Update the last decay month
     await prisma.globalGameSettings.update({

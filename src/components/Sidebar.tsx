@@ -65,6 +65,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         { name: 'การเงิน', href: '/finances', icon: '💰' },
         { name: 'สัญญา', href: '/contracts', icon: '📄' },
         { name: 'จำลองการแข่ง', href: '/match', icon: '⚽' },
+        { name: 'การฝึกซ้อม', href: '/training', icon: '🏋️' },
         { name: 'ตั้งค่า', href: '/settings', icon: '⚙️' },
     ];
 

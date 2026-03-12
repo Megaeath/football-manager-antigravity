@@ -10,6 +10,12 @@ interface FinancialData {
     balance: number;
     reputation: number;
     stadiumCapacity: number;
+    training: {
+        facilityLevel: number;
+        weeklyFee: number;
+        nextUpgradeCost: number;
+        isMaxLevel: boolean;
+    };
     weeklyData: {
         income: number;
         expenses: number;
@@ -23,6 +29,7 @@ interface FinancialData {
             wages: number;
             maintenance: number;
             playerPurchases: number;
+            trainingWeekly: number;
         };
     };
     ffp: {
@@ -417,6 +424,10 @@ export default function FinancesPage() {
                                 <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.maintenance)}</div>
                             </div>
                             <div className="accounting-row">
+                                <div className="accounting-label">🏋️ Training Weekly Fee</div>
+                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.trainingWeekly)}</div>
+                            </div>
+                            <div className="accounting-row">
                                 <div className="accounting-label">🤝 Player Purchases</div>
                                 <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.playerPurchases)}</div>
                             </div>
@@ -487,6 +498,39 @@ export default function FinancesPage() {
                             <div>⚠️ Warning: 50-70%</div>
                             <div>⚠️ Danger: 70-90%</div>
                             <div>⚠️ Critical: &gt;90%</div>
+                        </div>
+                    </div>
+
+                    {/* Training Facility Status */}
+                    <div className="card" style={{ marginBottom: '2rem' }}>
+                        <div className="card-title">🏋️ Training Facility</div>
+                        <div className="stadium-info">
+                            <div className="info-item">
+                                <div className="info-label">Facility Level</div>
+                                <div className="info-value">Lv.{data.training.facilityLevel}/9</div>
+                            </div>
+                            <div className="info-item">
+                                <div className="info-label">Weekly Fee</div>
+                                <div className="info-value">{formatCurrency(data.training.weeklyFee)}</div>
+                            </div>
+                            {!data.training.isMaxLevel && (
+                                <>
+                                    <div className="info-item">
+                                        <div className="info-label">Next Level</div>
+                                        <div className="info-value">Lv.{data.training.facilityLevel + 1}</div>
+                                    </div>
+                                    <div className="info-item">
+                                        <div className="info-label">Upgrade Cost</div>
+                                        <div className="info-value">{formatCurrency(data.training.nextUpgradeCost)}</div>
+                                    </div>
+                                </>
+                            )}
+                            {data.training.isMaxLevel && (
+                                <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="info-label">Status</div>
+                                    <div className="info-value">🌟 Maximum Level Reached</div>
+                                </div>
+                            )}
                         </div>
                     </div>
 

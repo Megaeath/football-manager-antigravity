@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { applyAgeEfficiency, calculateMatchExp, getAnnualDecay, getSeasonalExpCap } from '@/lib/engine/experience';
 
 const LEAGUE_PRIZE_POOL = 30000000;
 const TV_RIGHTS_SHARE = 5000000;
@@ -47,7 +48,7 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
             teamId: { in: teamIds },
             match: { season, isPlayed: true }
         },
-        _sum: { goals: true },
+        _sum: { goals: true, assists: true },
         _avg: { rating: true },
         _count: { id: true }
     });
@@ -63,12 +64,16 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         .map(s => ({
             ...s,
             goals: s._sum.goals || 0,
+            assists: s._sum.assists || 0,
             avgRating: s._avg.rating ? Number(s._avg.rating) : 0,
             matches: s._count.id || 0,
             player: playerMap.get(s.playerId)
         }))
         .filter(s => s.player)
         .sort((a, b) => (b.goals - a.goals) || (b.avgRating - a.avgRating));
+
+    const assistLeaders = [...goalLeaders]
+        .sort((a, b) => (b.assists - a.assists) || (b.avgRating - a.avgRating));
 
     const ratingLeaders = goalLeaders
         .filter(s => s.matches >= 5)
@@ -123,6 +128,7 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         .sort((a, b) => b.count - a.count);
 
     const goldenBoot = goalLeaders[0];
+    const topAssist = assistLeaders[0];
     const playerOfSeason = ratingLeaders[0] || goalLeaders[0];
     const goldenGlove = cleanSheetLeaders[0];
 
@@ -177,6 +183,7 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         standings,
         awards: {
             goldenBoot: goldenBoot?.player ? { playerId: goldenBoot.playerId, playerName: goldenBoot.player?.name, goals: goldenBoot.goals, teamId: goldenBoot.teamId } : null,
+            topAssist: topAssist?.player ? { playerId: topAssist.playerId, playerName: topAssist.player?.name, assists: topAssist.assists, teamId: topAssist.teamId } : null,
             goldenGlove: goldenGlove ? { playerId: goldenGlove.player.id, playerName: goldenGlove.player.name, cleanSheets: goldenGlove.count, teamId: goldenGlove.teamId } : null,
             playerOfSeason: playerOfSeason?.player ? { playerId: playerOfSeason.playerId, playerName: playerOfSeason.player?.name, avgRating: playerOfSeason.avgRating, teamId: playerOfSeason.teamId } : null
         },
@@ -229,6 +236,122 @@ export async function applySeasonRewards(season: number, year: number) {
                     amount: totalReward,
                     description: `Season ${season} Rewards (${breakdown})`
                 }
+            });
+        }
+    }
+}
+
+export async function applySeasonExpAdjustments(season: number, year: number) {
+    const leagues = await prisma.league.findMany();
+
+    for (const league of leagues) {
+        const { standings, awards } = await calculateSeasonAwards(league.id, season, year);
+        const teamIds = standings.map(s => s.id);
+        if (teamIds.length === 0) continue;
+
+        const matches = await prisma.match.findMany({
+            where: { season, isPlayed: true, OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] },
+            select: { id: true, homeScore: true, awayScore: true, homeTeamId: true, awayTeamId: true, motmPlayerId: true }
+        });
+        const matchMap = new Map(matches.map(m => [m.id, m]));
+
+        const stats = await prisma.playerMatchStats.findMany({
+            where: { matchId: { in: matches.map(m => m.id) }, teamId: { in: teamIds } },
+            select: {
+                matchId: true,
+                playerId: true,
+                teamId: true,
+                minutes: true,
+                rating: true,
+                goals: true,
+                assists: true,
+                yellowCards: true,
+                redCards: true
+            }
+        });
+
+        const playerIds = Array.from(new Set(stats.map(s => s.playerId)));
+        const players = await prisma.player.findMany({
+            where: { id: { in: playerIds } },
+            select: { id: true, age: true, exp: true, naturalPosition: true, isRetired: true }
+        });
+        const playerMap = new Map(players.map(p => [p.id, p]));
+
+        const rawByPlayer = new Map<string, number>();
+        const participantByTeam = new Map<string, Set<string>>();
+
+        for (const s of stats) {
+            const player = playerMap.get(s.playerId);
+            if (!player || player.isRetired) continue;
+            const m = matchMap.get(s.matchId);
+            if (!m || m.homeScore === null || m.awayScore === null) continue;
+
+            const cleanSheet = (s.teamId === m.homeTeamId && m.awayScore === 0) || (s.teamId === m.awayTeamId && m.homeScore === 0);
+            const isMotm = m.motmPlayerId === s.playerId;
+
+            const gain = calculateMatchExp({
+                playerId: s.playerId,
+                minutes: s.minutes,
+                rating: s.rating,
+                goals: s.goals,
+                assists: s.assists,
+                yellowCards: s.yellowCards,
+                redCards: s.redCards,
+                position: player.naturalPosition,
+                cleanSheet,
+                isMotm
+            }).totalGain;
+
+            rawByPlayer.set(s.playerId, (rawByPlayer.get(s.playerId) || 0) + gain);
+
+            if (s.minutes > 0) {
+                if (!participantByTeam.has(s.teamId)) participantByTeam.set(s.teamId, new Set());
+                participantByTeam.get(s.teamId)!.add(s.playerId);
+            }
+        }
+
+        const seasonalBonusByPlayer = new Map<string, number>();
+        const addBonus = (playerId: string | null | undefined, amount: number) => {
+            if (!playerId) return;
+            seasonalBonusByPlayer.set(playerId, (seasonalBonusByPlayer.get(playerId) || 0) + amount);
+        };
+
+        addBonus((awards as any).playerOfSeason?.playerId, 20);
+        addBonus((awards as any).goldenBoot?.playerId, 15);
+        addBonus((awards as any).topAssist?.playerId, 15);
+
+        const championTeamId = standings[0]?.id;
+        const championPlayers = championTeamId ? Array.from(participantByTeam.get(championTeamId) || []) : [];
+        for (const pid of championPlayers) addBonus(pid, 10);
+
+        const relegatedTeams = standings.slice(-Math.min(3, standings.length)).map(s => s.id);
+        for (const relegatedTeamId of relegatedTeams) {
+            const relegatedPlayers = Array.from(participantByTeam.get(relegatedTeamId) || []);
+            for (const pid of relegatedPlayers) addBonus(pid, -30);
+        }
+
+        for (const [playerId, rawSeason] of rawByPlayer.entries()) {
+            const player = playerMap.get(playerId);
+            if (!player || player.isRetired) continue;
+
+            let adjustedSeason = applyAgeEfficiency(rawSeason, player.age);
+            if (adjustedSeason > 0) {
+                adjustedSeason = Math.min(adjustedSeason, getSeasonalExpCap(player.age));
+            }
+
+            const annualDecay = getAnnualDecay(player.age);
+            const seasonalBonus = seasonalBonusByPlayer.get(playerId) || 0;
+
+            // Injury rule (4+ months) is not applied here because there is no injury duration model yet.
+            const desiredSeasonNet = adjustedSeason + seasonalBonus - annualDecay;
+
+            // Raw per-match EXP has already been applied during season.
+            const correctionDelta = Math.round(desiredSeasonNet - rawSeason);
+            if (correctionDelta === 0) continue;
+
+            await prisma.player.update({
+                where: { id: playerId },
+                data: { exp: (player.exp || 0) + correctionDelta }
             });
         }
     }

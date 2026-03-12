@@ -47,6 +47,7 @@ model Team {
   tackling         String @default("NORMAL")
   attacking_focus  String @default("MIXED")
   creative_freedom String @default("NORMAL")
+  trainingFacilityLevel Int @default(1)
 
   // Financial & Reputation
   balance         Int @default(5000000) // Current cash balance
@@ -66,6 +67,8 @@ model Team {
   news           News[]
   transfersFrom  TransferHistory[] @relation("TransferFrom")
   transfersTo    TransferHistory[] @relation("TransferTo")
+  trainingAssignments TrainingAssignment[]
+  trainingLedgers     TrainingWeeklyLedger[]
 }
 
 model Player {
@@ -161,6 +164,50 @@ model Player {
   PlayerReputation PlayerReputation[]
   bids             Bid[]
   transferHistory  TransferHistory[]
+  trainingAssignments TrainingAssignment[]
+  trainingFractions PlayerTrainingFraction[]
+}
+
+model TrainingAssignment {
+  id             String   @id @default(cuid())
+  teamId         String
+  playerId       String?
+  slotIndex      Int
+  focusAttribute String?
+  isActive       Boolean  @default(false)
+  lastGain       Float    @default(0)
+  updatedAt      DateTime @updatedAt
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@unique([teamId, slotIndex])
+  @@index([teamId, playerId])
+}
+
+model PlayerTrainingFraction {
+  id          String @id @default(cuid())
+  playerId    String
+  attribute   String
+  remainder   Float  @default(0)
+  lifetimeGain Float @default(0)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, attribute])
+}
+
+model TrainingWeeklyLedger {
+  id          String   @id @default(cuid())
+  teamId      String
+  weekKey     Int
+  status      String
+  chargedFee  Int      @default(0)
+  processedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, weekKey])
 }
 
 model Match {

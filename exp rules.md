@@ -1,68 +1,86 @@
-# PROMPT: Football Player Evolution System (The 1.8 Rule)
+# Football Player Evolution System (Implemented Reference - March 2026)
 
-You are an AI specialized in Sports Management Logic. Your task is to process player data and calculate their "Evolution Multiplier" based on the following strict rules and logic:
+This document reflects what is currently implemented in code.
 
-## 1. Core Logic: The 1.8 Rule
+## 1) Core EXP Tier Logic (1.8 Rule in code)
 
-- **Base Multiplier:** 0 EXP = x1.0 (Base Stats)
-- **Scaling:** Every 100 EXP = +0.1 Multiplier.
-- **Level-Up Threshold:** Use the "1.8 Rule" (Round up to the next level when reaching .8 of a hundred).
-  - 0 - 179 EXP = x1.0
-  - 180 - 279 EXP = x1.2
-  - 280 - 379 EXP = x1.3
-  - 380 - 479 EXP = x1.4
-  - (Continue this pattern)
-- **Max Limit:** Maximum EXP = 1,000 (x2.0 Multiplier).
+- Base: `EXP = 0` => `x1.0`
+- Cap: clamped to `[-1000, 1000]`
+- Tiering uses the 1.8 threshold behavior in code:
+  - `0..179` => tier `0` => bonus `+0`
+  - `180..279` => tier `2` => bonus `+2`
+  - `280..379` => tier `3` => bonus `+3`
+  - ...
+  - `980..1000` => tier `10` => bonus `+10` (`x2.0`)
 
-## 2. EXP Gains & Penalties (Per Match)
+Applied through:
 
-### Positive Gains (+)
+- `getExpBonus(exp)`
+- `getExpMultiplier(exp)`
+- `getEffectiveAttributes()` in power calculation
 
-- **Starter:** +1 EXP | **Substitute:** +0.5 EXP
-- **Man of the Match (MOTM):** +5 EXP
-- **Match Rating (9.0+):** +3 EXP
-- **Match Rating (7.5 - 8.9):** +1.5 EXP
-- **Goals/Assists:** +1 per action (Max +3 per match)
-- **Clean Sheet (GK/DF only):** +1.5 EXP
+## 2) Match EXP Gains/Penalties
 
-### Negative Penalties (-)
+Per match EXP is calculated by `calculateMatchExp()` with:
 
-- **Match Rating (< 5.0):** -5 EXP
-- **Match Rating (5.1 - 5.5):** -2 EXP
-- **Red Card:** -10 EXP
-- **Yellow Card:** -2 EXP
-- **Own Goal:** -5 EXP
-- **Concede Penalty:** -3 EXP
+- Starter `>=45 min`: `+1`
+- Sub `>0 min`: `+0.5`
+- MOTM: `+5`
+- Rating `>=9.0`: `+3`
+- Rating `>=7.5`: `+1.5`
+- Goals + Assists: `+1` each (max `+3`)
+- Clean sheet (GK/DF): `+1.5`
+- Rating `<5.0`: `-5`
+- Rating `<=5.5`: `-2`
+- Red card: `-10`
+- Yellow card: `-2` each
+- Own goal: `-5` each (supported by function input)
+- Penalty conceded: `-3` each (supported by function input)
 
-## 3. Seasonal Bonuses & Penalties
+Then match EXP is age-adjusted and persisted:
 
-- **Player of the Year:** +20 EXP
-- **Top Scorer/Assist Provider:** +15 EXP
-- **League Champion:** +10 EXP
-- **Team Relegated:** -30 EXP
+- Age efficiency is applied per match via `applyAgeEfficiency()`
+- Result is rounded to integer before writing to `player.exp` (Int field)
 
-## 4. Age & Capacity Constraints (The Filter)
+## 3) Seasonal Bonuses/Penalties (Enabled)
 
-After summing up total Gains/Penalties, apply the Age Multiplier and check the Seasonal Cap:
+At season rollover, `applySeasonExpAdjustments()` applies:
 
-| Age Range | Efficiency | Seasonal Cap (Max Gain/Year) | Annual Decay (Loss) |
+- Player of the Season: `+20`
+- Golden Boot (Top Scorer): `+15`
+- Top Assist: `+15`
+- League Champion squad participants: `+10`
+- Relegated teams (bottom 3) participants: `-30`
+
+## 4) Age Constraints + Seasonal Cap + Annual Decay (Enabled)
+
+Season adjustment uses this table:
+
+| Age Range | Efficiency | Seasonal Cap (positive net) | Annual Decay |
 | :--- | :--- | :--- | :--- |
-| 16 - 21 | 100% | +80 EXP | 0 |
-| 22 - 28 | 70% | +50 EXP | 0 |
-| 29 - 33 | 40% | +20 EXP | -40 EXP |
-| 34+ | 10% | +10 EXP | -80 EXP |
+| 16 - 21 | 100% | +80 | 0 |
+| 22 - 28 | 70% | +50 | 0 |
+| 29 - 33 | 40% | +20 | 40 |
+| 34+ | 10% | +10 | 80 |
 
-## 5. Calculation Process (The 9-Step Flow)
+Flow at season close:
 
-1. Sum all **Match Gains** for the season.
-2. Subtract all **Match Penalties** (Discipline & Bad Ratings).
-3. Add **Seasonal Bonuses** (Awards/Champions).
-4. Apply **Age Efficiency %** to the net result.
-5. **Check Seasonal Cap:** If net gain > Cap, reduce to Cap limit.
-6. **Apply Annual Decay:** If age 29+, subtract the decay value.
-7. **Injury Check:** If out for 4+ months, -15 EXP and -5% of Total Accumulated EXP.
-8. **Update Total Accumulated EXP:** Add/Subtract from previous season's total.
-9. **Calculate Final Multiplier:** Use the 1.8 Rule to determine the Multiplier for the next season.
+1. Recompute season raw EXP from match stats.
+2. Apply age efficiency.
+3. Cap positive net by seasonal cap.
+4. Add seasonal bonuses/penalties.
+5. Subtract annual decay.
+6. Compute delta vs raw match EXP already applied during season.
+7. Apply correction delta to `player.exp`.
 
----
-**Instruction for AI:** When I provide player match data or seasonal stats, you must process it according to these 9 steps and output the result in a clear table format showing Total EXP and the New Multiplier.
+## 5) Injury Rule Status
+
+- Rule "out 4+ months => -15 EXP and -5% accumulated EXP" is **not enabled yet**.
+- Reason: current schema has no injury-duration tracking model.
+
+## 6) Runtime Trigger Points
+
+- Match-time EXP: in `processMatch()` after each played match.
+- Seasonal EXP corrections: in `startNewSeason()` via `applySeasonExpAdjustments()`.
+- Legacy monthly EXP decay function is disabled (to avoid double-decay).
+

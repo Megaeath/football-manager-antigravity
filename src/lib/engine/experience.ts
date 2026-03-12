@@ -11,13 +11,8 @@
  * @returns Multiplier value (1.0 - 2.0)
  */
 export function getExpMultiplier(exp: number): number {
-  // Clamp to [-1000, 1000] to support negative EXP penalties
-  const clampedExp = Math.min(Math.max(exp, -1000), 1000);
-  
-  // Simple calculation: every 100 EXP = +0.1 multiplier
-  // 0-99 = 1.0, 100-199 = 1.1, 200-299 = 1.2, 300-399 = 1.3, etc.
-  const hundreds = Math.trunc(clampedExp / 100);
-  return 1.0 + (hundreds * 0.1);
+  const tiers = getExpTiersBy18Rule(exp);
+  return 1.0 + (tiers * 0.1);
 }
 
 /**
@@ -28,11 +23,29 @@ export function getExpMultiplier(exp: number): number {
  * @returns Flat bonus to add to each stat (0-10)
  */
 export function getExpBonus(exp: number): number {
-  // Simple calculation: every 100 EXP = +1 bonus
-  // 0-99 = +0, 100-199 = +1, 200-299 = +2, 300-399 = +3, etc.
-  // -100..-199 = -1, -200..-299 = -2, etc.
+  return getExpTiersBy18Rule(exp);
+}
+
+/**
+ * "1.8 Rule" EXP tiering used by this project:
+ * - 0..179 => 0 tier
+ * - 180..279 => 2 tiers
+ * - 280..379 => 3 tiers
+ * - ...
+ * - 980..1000 => 10 tiers
+ *
+ * Supports negative values symmetrically.
+ */
+function getExpTiersBy18Rule(exp: number): number {
   const clampedExp = Math.min(Math.max(exp, -1000), 1000);
-  return Math.trunc(clampedExp / 100);
+  const sign = clampedExp < 0 ? -1 : 1;
+  const absExp = Math.abs(clampedExp);
+
+  if (absExp < 180) return 0;
+
+  // 180 starts at tier 2, then +1 tier per additional 100 EXP.
+  const positiveTiers = Math.floor((absExp - 80) / 100) + 1;
+  return sign * Math.min(10, positiveTiers);
 }
 
 /**
@@ -74,6 +87,8 @@ export function calculateMatchExp(stats: {
   position?: string;
   cleanSheet?: boolean;
   isMotm?: boolean;
+  ownGoals?: number;
+  penaltiesConceded?: number;
 }): MatchExpGain {
   let baseGain = 0;
   let performanceGain = 0;
@@ -124,6 +139,14 @@ export function calculateMatchExp(stats: {
   }
   if (stats.yellowCards > 0) {
     penaltyLoss += 2 * stats.yellowCards;
+  }
+
+  // Optional penalties (if tracked by simulation pipeline)
+  if ((stats.ownGoals || 0) > 0) {
+    penaltyLoss += 5 * (stats.ownGoals || 0);
+  }
+  if ((stats.penaltiesConceded || 0) > 0) {
+    penaltyLoss += 3 * (stats.penaltiesConceded || 0);
   }
 
   const totalGain = baseGain + performanceGain + actionGain - penaltyLoss;

@@ -2,8 +2,9 @@ import prisma from '@/lib/prisma';
 import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
-import { applySeasonRewards } from './seasonAwards';
+import { applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
 import { processBiddingRules, processAcceptedTransfers } from '../engine/market';
+import { processWeeklyTraining } from './training';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -264,11 +265,12 @@ export async function advanceDay() {
     const weekChanged = nextWeek !== currentWeek || nextDate.getUTCMonth() !== settings.currentDate.getUTCMonth();
 
     if (weekChanged) {
+        const weekKey = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7));
         // Process weekly finances for all teams
         const allTeams = await prisma.team.findMany();
         for (const team of allTeams) {
             try {
-                await processWeeklyFinances(team.id, Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7)));
+                await processWeeklyFinances(team.id, weekKey);
                 await processInactivePlayerPopularityDecay(team.id);
                 // Auto-renew contracts for AI teams (if not user team)
                 const settings = await getGameTime();
@@ -277,6 +279,15 @@ export async function advanceDay() {
                 }
             } catch (error) {
                 console.error(`Failed to process financials for team ${team.id}:`, error);
+            }
+        }
+
+        // Training Phase 1: process user team only
+        if (settings.userTeamId) {
+            try {
+                await processWeeklyTraining(settings.userTeamId, weekKey);
+            } catch (error) {
+                console.error(`Failed to process weekly training for team ${settings.userTeamId}:`, error);
             }
         }
 
@@ -357,6 +368,9 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
 
     // 2. Apply End-of-Season Rewards
     await applySeasonRewards(currentSeason, currentYear);
+
+    // 2.1 Apply end-of-season EXP rules (age efficiency, seasonal cap, bonuses/penalties, annual decay)
+    await applySeasonExpAdjustments(currentSeason, currentYear);
 
     // 3. Reset Player Season Stats
     await prisma.player.updateMany({

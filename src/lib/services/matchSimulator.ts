@@ -2,7 +2,7 @@ import prisma from '@/lib/prisma';
 import { simulateMatch } from '../engine/match';
 import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes, MatchPrepConfig } from '../engine/types';
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
-import { calculateMatchExp } from '../engine/experience';
+import { applyAgeEfficiency, calculateMatchExp } from '../engine/experience';
 import { calculatePlayerPower, getEffectiveAttributes, toPlayerAttributes } from '../engine/playerPower';
 
 const FORMATIONS: Record<string, { id: string }[]> = {
@@ -487,10 +487,11 @@ export async function processMatch(matchId: string) {
                 isMotm: isMotm
             });
             
-                // Calculate exp increment - allow negative EXP (for age-based decay penalties)
-                // System supports -1000 to +1000 range for getExpBonus/getExpMultiplier
+                // Apply age-efficiency to match EXP and round to integer for persisted Int field
+                const adjustedGain = applyAgeEfficiency(expGain.totalGain, player.age);
+                const gainToApply = Math.round(adjustedGain);
                 const currentExp = player.exp || 0;
-                const newExp = currentExp + expGain.totalGain;
+                const newExp = currentExp + gainToApply;
             
             // Update player stats including EXP
             await (tx.player as any).update({
