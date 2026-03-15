@@ -5,6 +5,7 @@ import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopular
 import { applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
 import { processBiddingRules, processAcceptedTransfers } from '../engine/market';
 import { processWeeklyTraining } from './training';
+import { processAllAITeamsWeeklyTraining, upgradeAITeamFacilities } from './aiTrainingService';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -282,13 +283,20 @@ export async function advanceDay() {
             }
         }
 
-        // Training Phase 1: process user team only
+        // Training: process user team
         if (settings.userTeamId) {
             try {
                 await processWeeklyTraining(settings.userTeamId, weekKey);
             } catch (error) {
                 console.error(`Failed to process weekly training for team ${settings.userTeamId}:`, error);
             }
+        }
+
+        // Training: process all AI teams (init slots + weekly gain, parallel)
+        try {
+            await processAllAITeamsWeeklyTraining(weekKey, settings.userTeamId);
+        } catch (error) {
+            console.error('[AI Training] Failed weekly processing:', error);
         }
 
     }
@@ -545,6 +553,14 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
 
         console.log(`[StartNewSeason] Added ${addedCount} youth to ${team.name} (Ranking: ${ranking}) - ${talentedCount} talented, ${normalCount} normal`);
+    }
+
+    // 6.5 AI Training: upgrade facilities based on season-end reputation + balance
+    console.log('[StartNewSeason] Step 6.5: AI Training Facility Upgrades');
+    try {
+        await upgradeAITeamFacilities(settings.userTeamId);
+    } catch (error) {
+        console.error('[StartNewSeason] Failed AI training facility upgrades:', error);
     }
 
     // 7. AI Role & Tactical Position Auto-Assignment

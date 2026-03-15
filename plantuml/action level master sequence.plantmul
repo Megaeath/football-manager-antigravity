@@ -1,0 +1,170 @@
+@startuml
+title Action Master Logic (executePassShort/Long/Dribble/Shoot + Set Pieces)
+
+participant "Tick Dispatcher" as TD
+participant "Action Function" as AF
+participant "DefPicker\ngetDefensiveActionPlayer()" as DP
+participant "Formula\ncalculateActionScore()" as FS
+participant "Role/Tactic Modifiers" as MOD
+participant "SetPiece Exec" as SP
+participant "BallState" as BALL
+participant "MatchState\nstats/events/logs" as MS
+
+== PASS_SHORT ==
+TD -> AF: executePassShort(...)
+AF -> MS: passesAttempted++, touch++
+AF -> FS: short_pass attacker score
+AF -> DP: pick PRESS defender by zone+distance
+AF -> MOD: attackerRoleMod + defenderPenalty
+AF -> AF: success = (effectivePassScore*skillBonus) > defenseScore
+alt success
+  AF -> MS: passesCompleted++
+  AF -> BALL: move +/- (backward 30% else forward)
+  AF -> BALL: carrier = getCarrierByPosition(...)
+else fail
+  AF -> DP: pick INTERCEPTION defender
+  AF -> BALL: possession flip + carrier=interceptor
+  AF -> MS: log INTERCEPTION
+end
+AF -> MS: log PASS_SHORT result
+alt fail and random < 0.2
+  AF -> SP: executeThrowIn(...)
+end
+AF -> AF: applyActionDrain(LOW)
+
+== PASS_LONG ==
+TD -> AF: executePassLong(...)
+AF -> MS: crossesAttempted++, touch++
+AF -> AF: passDistance=2..5\ncompute distancePenalty
+AF -> FS: long_pass attacker score
+AF -> DP: pick PRESS defender
+AF -> MOD: attackerRoleMod + defenderPenalty
+AF -> AF: success = (passScore*skillBonus) > defenseScore
+AF -> MS: log PASS_LONG
+alt success
+  AF -> MS: crossesCompleted++
+  AF -> BALL: position=targetPosition
+  AF -> BALL: carrier = getCarrierByPosition(...)
+else fail
+  AF -> BALL: position=targetPosition, possession flip
+  AF -> DP: pick INTERCEPTION defender
+  AF -> BALL: carrier=interceptor
+  AF -> MS: log INTERCEPTION
+end
+AF -> AF: applyActionDrain(LOW)
+
+== DRIBBLE ==
+TD -> AF: executeDribble(...)
+AF -> DP: pick TACKLE defender by zone+distance
+alt no defender
+  AF --> TD: return
+else defender found
+  AF -> MS: dribblesAttempted++, defender.tacklesAttempted++
+  AF -> FS: dribble attacker score
+  AF -> FS: dribble defender score
+  AF -> MOD: mentality/tackling buff + role penalty
+  AF -> AF: success compare with variance
+  AF -> MS: log DRIBBLE
+  alt success
+    AF -> MS: dribblesWon++
+    AF -> BALL: advance 1..3
+  else fail
+    AF -> MS: defender.tacklesWon++, log TACKLE
+    AF -> BALL: possession flip + carrier=defender
+    AF -> BALL: pushBack 2..5
+  end
+  AF -> AF: drain attacker(HIGH) + defender(MEDIUM)
+  alt fail and random < 0.15 and foul gate passes
+    AF -> MS: defender.fouls++, log FOUL
+    alt distanceToGoal < 25
+      AF -> SP: executeFreeKickShort(...)
+    else
+      AF -> SP: executeFreeKickLong(...)
+    end
+  end
+end
+
+== SHOOT ==
+TD -> AF: executeShoot(...)
+AF -> MS: shots++, touch++
+AF -> AF: pick defending GK
+AF -> AF: distanceToGoal + positionFactor
+AF -> FS: shoot attacker score
+AF -> DP: pick BLOCK defender
+AF -> MOD: attacker role mod + defender penalty
+AF -> FS: save score (GK)
+AF -> AF: apply variance + miracle/blunder rules
+alt finalShoot > finalSave
+  AF -> MS: goal + events + log SHOOT(GOAL)
+  AF -> AF: maybe assign assist (random)
+  AF -> BALL: reset center + possession swap + kickoff carrier
+else no goal
+  AF -> AF: isOnTarget random > 0.4
+  alt on target
+    AF -> MS: gk.saves++, shotsOnTarget++, log SAVE + SHOOT(SAVED)
+  else off target
+    AF -> MS: event MISS + log SHOOT(OFF_TARGET)
+  end
+  AF -> BALL: possession swap
+  alt on target and random < 0.15
+    AF -> SP: executeCornerKick(...)
+  else
+    AF -> DP: pick RECOVERY defender
+    AF -> BALL: carrier=defender, ball to own-side start (10/90)
+  end
+end
+AF -> AF: drain shooter(HIGH) + gk(LOW)
+
+== SET PIECES ==
+group executeFreeKickShort
+  SP -> SP: choose taker (top setPieces+shooting)
+  SP -> FS: free_kick_short score
+  SP -> MS: freeKicks++, log PASS_SHORT(setPiece)
+  alt success
+    SP -> AF: executeShoot(...)
+  else fail
+    SP -> BALL: possession flip
+    SP -> DP: RECOVERY defender carrier
+  end
+end
+
+group executeFreeKickLong
+  SP -> SP: choose taker (top setPieces+passing+crossing)
+  SP -> FS: free_kick_long score
+  SP -> MS: freeKicks++, log PASS_LONG(setPiece)
+  alt success
+    SP -> BALL: advance 20 + new carrier
+  else fail
+    SP -> BALL: possession flip
+    SP -> DP: RECOVERY defender carrier
+  end
+end
+
+group executeCornerKick
+  SP -> SP: choose taker (top setPieces+crossing)
+  SP -> FS: corner score
+  SP -> MS: corners++, log PASS_LONG(setPiece)
+  alt success
+    SP -> AF: optional header attempt by target(FWC/DC/MC)
+    alt header goal
+      SP -> MS: goal + assist + event
+      SP -> BALL: center reset + possession flip
+    end
+  end
+  alt ball not reset to center
+    SP -> BALL: defending GK takes possession
+  end
+end
+
+group executeThrowIn
+  SP -> SP: choose taker (top throw)
+  SP -> FS: throw_in score
+  SP -> MS: throws++, log PASS_SHORT(setPiece)
+  alt success
+    SP -> BALL: carrier from MC/MR/ML/FWC
+  else fail
+    SP -> BALL: possession flip
+    SP -> DP: RECOVERY defender carrier
+  end
+end
+@enduml

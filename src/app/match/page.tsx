@@ -227,13 +227,7 @@ function MatchContent() {
 
     useEffect(() => {
         fetchData();
-    }, [queryMatchId]); // Re-fetch when matchId changes
-    
-    // Also fetch on mount to ensure initial data load
-    useEffect(() => {
-        console.log('[MOUNT] Match page mounted, calling fetchData');
-        fetchData().catch(err => console.error('[MOUNT] Error in fetchData:', err));
-    }, []);
+    }, [queryMatchId]); // Initial mount + re-fetch when matchId changes
 
     useEffect(() => {
         const fetchActionAnalytics = async () => {
@@ -273,6 +267,7 @@ function MatchContent() {
 
     const nextProcess = async () => {
         setLoading(true);
+        let keepLoadingUntilRedirect = false;
         try {
             const res = await fetch('/api/game/process', {
                 method: 'POST',
@@ -283,12 +278,16 @@ function MatchContent() {
             if (data.success) {
                 setMatchData(null);
                 // Force a hard reload to ensure fresh data after season transition
+                keepLoadingUntilRedirect = true;
                 window.location.href = '/match';
+                return;
             }
         } catch (e) {
             alert('Next process failed: ' + e);
         } finally {
-            setLoading(false);
+            if (!keepLoadingUntilRedirect) {
+                setLoading(false);
+            }
         }
     };
 
@@ -706,6 +705,33 @@ function MatchContent() {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {loading && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(15, 23, 42, 0.45)',
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backdropFilter: 'blur(2px)'
+                    }}
+                >
+                    <div
+                        style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '1rem 1.25rem',
+                            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+                            fontWeight: 700,
+                            color: 'var(--accent)'
+                        }}
+                    >
+                        ⏳ กำลังประมวลผลการแข่งขัน...
+                    </div>
+                </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:justify-between md:items-flex-end">
                 <div>
                     <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ วันแข่งขัน (Match Day)</h2>
@@ -728,10 +754,7 @@ function MatchContent() {
             {todaysMatches.length === 0 && (
                 <div className="card" style={{ textAlign: 'center', padding: '4rem' }}>
                     <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗓️</div>
-                    <p style={{ marginBottom: '1.5rem', fontWeight: '500', color: 'var(--muted)' }}>ไม่มีการแข่งขันในวันนี้</p>
-                    <button onClick={nextProcess} disabled={loading} className="btn btn-primary">
-                        ข้ามไปยังวันถัดไป
-                    </button>
+                    <p style={{ marginBottom: '0', fontWeight: '500', color: 'var(--muted)' }}>ไม่มีการแข่งขันในวันนี้</p>
                 </div>
             )}
 
@@ -807,6 +830,43 @@ function MatchContent() {
             {/* MATCH RESULTS (IF PLAYED) */}
             {matchData && (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                    {!matchData.isPlayed && (
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '1rem',
+                            padding: '1rem 1.25rem',
+                            borderBottom: '1px solid var(--border)',
+                            background: 'rgba(255, 193, 7, 0.08)'
+                        }} className="flex-col md:flex-row">
+                            <div>
+                                <div style={{ fontWeight: 700, color: '#8a6d3b' }}>⏳ นัดนี้ยังไม่ได้ประมวลผล</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                    หากเป็นแมตช์ค้างเก่า สามารถกดประมวลผลได้จากตรงนี้
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                {((matchData.homeTeam?.id === userTeamId || matchData.awayTeam?.id === userTeamId) && !!matchData.id) && (
+                                    <button
+                                        onClick={() => router.push(`/squad?from=match&matchId=${matchData.id}`)}
+                                        disabled={loading}
+                                        className="btn"
+                                    >
+                                        จัดทีมก่อนแข่ง
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => runSimulation(matchData.id)}
+                                    disabled={loading}
+                                    className="btn btn-primary"
+                                >
+                                    {loading ? 'กำลังประมวลผล...' : '▶️ ประมวลผลแมตช์นี้'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div style={{ justifyContent: 'space-between', alignItems: 'center', background: 'var(--sidebar-bg)', color: '#fff', padding: '1.5rem', textAlign: 'center', gap: '1rem' }} className="flex flex-col md:flex-row md:gap-0 md:p-10">
                         <div style={{ flex: 1 }} className="md:text-left">
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>HOME</div>
@@ -1183,37 +1243,56 @@ function MatchContent() {
                                     const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
-                                    const subInOrder = new Map<string, number>();
-                                    (matchData?.events || [])
-                                        .filter((e: any) => e.type === 'SUB' && e.teamId === teamId && e.playerId)
-                                        .forEach((e: any, idx: number) => subInOrder.set(e.playerId, idx));
+
+                                    // Tactical slot order mirrors formation definition (GK→DR→DC_R→DC_L→DL→MR/MC_R→...→FW)
+                                    const TACTICAL_SLOT_ORDER: Record<string, number> = {
+                                        'GK': 0,
+                                        'DR': 1,
+                                        'DC_R': 2, 'DC': 3, 'DC_L': 4,
+                                        'DL': 5,
+                                        'DMR': 6, 'DMC': 7, 'DML': 8,
+                                        'MR': 10,
+                                        'MC_R': 11, 'MC': 12, 'MC_L': 13,
+                                        'ML': 14,
+                                        'AMR': 15, 'AMC': 16, 'AML': 17,
+                                        'FW_R': 20, 'FW': 21, 'FW_L': 22,
+                                    };
+                                    // Category order for bench/subs by naturalPosition: GK→DF→MF→FW
+                                    const getNaturalPosOrder = (pos: string) => {
+                                        if (pos === 'GK') return 0;
+                                        if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 1;
+                                        if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 2;
+                                        if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 3;
+                                        return 9;
+                                    };
 
                                     return Object.values(matchData.playerStats)
                                         .filter((p: any) => p.teamId === teamId)
                                         .sort((a: any, b: any) => {
                                             const aIsSubIn = subInIds.has(a.playerId);
                                             const bIsSubIn = subInIds.has(b.playerId);
+                                            // Group 0 = starting XI (played, not subbed in)
+                                            // Group 1 = sub-in players (came on during match)
+                                            // Group 2 = unused bench (minutes === 0)
                                             const aGroup = a.minutes === 0 ? 2 : (aIsSubIn ? 1 : 0);
                                             const bGroup = b.minutes === 0 ? 2 : (bIsSubIn ? 1 : 0);
                                             if (aGroup !== bGroup) return aGroup - bGroup;
 
-                                            const getPosOrder = (pos: string) => {
-                                                if (pos === 'GK') return 0;
-                                                if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 1;
-                                                if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 2;
-                                                if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 3;
-                                                return 9;
-                                            };
-
-                                            if (aGroup === 1 && bGroup === 1) {
-                                                const aSubOrder = subInOrder.get(a.playerId) ?? 99;
-                                                const bSubOrder = subInOrder.get(b.playerId) ?? 99;
-                                                if (aSubOrder !== bSubOrder) return aSubOrder - bSubOrder;
+                                            if (aGroup === 0) {
+                                                // Starting XI: sort by tactical slot order (formation position)
+                                                const aTacOrder = a.tacticalPosition != null
+                                                    ? (TACTICAL_SLOT_ORDER[a.tacticalPosition] ?? 50)
+                                                    : getNaturalPosOrder(a.position) * 10 + 50;
+                                                const bTacOrder = b.tacticalPosition != null
+                                                    ? (TACTICAL_SLOT_ORDER[b.tacticalPosition] ?? 50)
+                                                    : getNaturalPosOrder(b.position) * 10 + 50;
+                                                if (aTacOrder !== bTacOrder) return aTacOrder - bTacOrder;
+                                            } else {
+                                                // Subs & bench: sort by natural position category GK→DF→MF→FW
+                                                const aOrder = getNaturalPosOrder(a.position);
+                                                const bOrder = getNaturalPosOrder(b.position);
+                                                if (aOrder !== bOrder) return aOrder - bOrder;
                                             }
-
-                                            const aOrder = getPosOrder(a.position);
-                                            const bOrder = getPosOrder(b.position);
-                                            if (aOrder !== bOrder) return aOrder - bOrder;
                                             return a.name.localeCompare(b.name);
                                         })
                                         .map((p: any) => {

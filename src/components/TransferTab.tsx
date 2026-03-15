@@ -66,7 +66,12 @@ export function TransferTab({
                 const res = await fetch(`/api/finances?teamId=${userTeamId}`);
                 if (res.ok) {
                     const data = await res.json();
-                    setUserBalance(data.balance || 0);
+                    const balance = data.balance || 0;
+                    setUserBalance(balance);
+                    // Cap offer to balance so button is not silently disabled
+                    if (!isFreeAgent) {
+                        setAmount(prev => (prev > balance && balance > 0) ? balance : prev);
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch balance', error);
@@ -75,7 +80,7 @@ export function TransferTab({
             }
         };
         fetchBalance();
-    }, [userTeamId]);
+    }, [userTeamId, isFreeAgent]);
 
     useEffect(() => {
         if (!playerId) return;
@@ -91,10 +96,18 @@ export function TransferTab({
                 const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
+                    const nowTs = Date.now();
 
                     if (playerTeamId === userTeamId) {
-                        // Seller case: any accepted bid blocks management
-                        const deal = data.bids.find((b: any) => b.status === 'ACCEPTED');
+                        // Seller case: only real, still-pending accepted transfers should block management.
+                        // Ignore invalid self-to-self rows and already-expired accepted bids.
+                        const deal = data.bids.find((b: any) => {
+                            const isAccepted = b.status === 'ACCEPTED';
+                            const isSelfTransfer = b.fromTeamId && b.toTeamId && b.fromTeamId === b.toTeamId;
+                            const windowEndsTs = b.windowEnds ? Number(new Date(b.windowEnds).getTime()) : null;
+                            const isExpired = windowEndsTs !== null && Number.isFinite(windowEndsTs) && windowEndsTs < nowTs;
+                            return isAccepted && !isSelfTransfer && !isExpired;
+                        });
                         setAcceptedDeal(deal);
                     } else {
                         // Buyer case: user's own accepted or pending bid blocks management
@@ -371,11 +384,20 @@ export function TransferTab({
                                 min="0"
                                 max={userBalance}
                                 required
-                                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border)' }}
+                                style={{
+                                    width: '100%', padding: '0.75rem', borderRadius: '8px',
+                                    border: `1px solid ${amount > userBalance ? 'var(--error, #ef4444)' : 'var(--border)'}`
+                                }}
                             />
-                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
-                                Max: ${userBalance.toLocaleString()}
-                            </div>
+                            {amount > userBalance ? (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--error, #ef4444)', marginTop: '0.25rem', fontWeight: 'bold' }}>
+                                    ⚠️ Offer exceeds your balance (${userBalance.toLocaleString()}). Please lower the amount.
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+                                    Available balance: ${userBalance.toLocaleString()}
+                                </div>
+                            )}
                         </div>
                     )}
 

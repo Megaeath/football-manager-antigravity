@@ -66,10 +66,10 @@
         },
         "shoot": {
             "attacker_formula": "(shooting * 0.7)+(composure * 0.2)+(acceleration * 0.1)",
-            "defender_formula": "(positioning * 0.8) + (bravery * 0.2)",
+            "defender_formula": "(positioning * 0.5) + (tackling * 0.5)",
             "attacker_bonus": [
                 {
-                    "stat": "shooting",
+                    "stat": "positioning",
                     "threshold": 16,
                     "bonus": 1
                 }

@@ -179,7 +179,8 @@ export async function POST(req: Request) {
         }
 
         if (action === 'next_process') {
-            // 1. Find all unplayed matches for TODAY (UTC Range)
+            // 1. Find all pending unplayed matches up to TODAY (UTC Range)
+            // This prevents skipped fixtures if previous days still have unplayed matches.
             const currentDate = new Date(settings.currentDate);
             const utcYear = currentDate.getUTCFullYear();
             const utcMonth = currentDate.getUTCMonth();
@@ -190,61 +191,46 @@ export async function POST(req: Request) {
 
             console.log('[Process API] Current date:', settings.currentDate);
             console.log('[Process API] Season:', settings.currentSeason);
-            console.log('[Process API] Searching for matches between:', todayRangeStart.toISOString(), 'and', todayRangeEnd.toISOString());
+            console.log('[Process API] Searching pending matches before:', todayRangeEnd.toISOString());
 
-            const matchesToSimulate = await prisma.match.findMany({
+            const pendingMatches = await prisma.match.findMany({
                 where: {
                     date: {
-                        gte: todayRangeStart,
                         lt: todayRangeEnd
                     },
                     isPlayed: false
-                }
+                },
+                orderBy: { date: 'asc' }
             });
 
-            console.log('[Process API] Found', matchesToSimulate.length, 'unplayed matches for today');
+            const overdueCount = pendingMatches.filter(m => m.date < todayRangeStart).length;
+            const todayCount = pendingMatches.length - overdueCount;
+            console.log('[Process API] Found pending matches:', pendingMatches.length, `(overdue=${overdueCount}, today=${todayCount})`);
 
-            // Check if user team is playing today
-            const userMatch = matchesToSimulate.find(m =>
-                m.homeTeamId === userTeamId || m.awayTeamId === userTeamId
-            );
+            // Split user-team matches into overdue vs today.
+            // Important: overdue user matches must be auto-processed to avoid deadlock.
+            const isUserMatch = (m: any) => m.homeTeamId === userTeamId || m.awayTeamId === userTeamId;
+            const userOverdueMatches = pendingMatches.filter((m) => isUserMatch(m) && m.date < todayRangeStart);
+            const userTodayMatch = pendingMatches.find((m) => isUserMatch(m) && m.date >= todayRangeStart && m.date < todayRangeEnd);
 
-            // 2. Automation Logic
-            // If user team is NOT playing today, simulate all and advance immediately
-            if (!userMatch) {
-                for (const match of matchesToSimulate) {
-                    // Auto-select tactics for AI teams
-                    await autoSelectTacticsForAITeams(match, userTeamId);
-                    const result = await processMatch(match.id);
+            // Process queue now:
+            // - all AI-only matches
+            // - all overdue user matches (auto-resolve so game cannot get stuck)
+            // Skip only today's user match (if any) for manual play.
+            const matchesToAutoProcess = pendingMatches.filter((m) => {
+                if (userTodayMatch && m.id === userTodayMatch.id) return false;
+                return true;
+            });
 
-                    // Process financial updates only when the match was newly simulated
-                    if (result) {
-                        try {
-                            await processMatchFinancials(match.id);
-                        } catch (error) {
-                            console.error('Failed to process match financials:', error);
-                        }
-                    }
-                }
-                const updatedSettings = await advanceDay();
-                return NextResponse.json({
-                    success: true,
-                    currentDate: updatedSettings.currentDate,
-                    simulatedCount: matchesToSimulate.length,
-                    autoAdvanced: true
-                });
-            }
-
-            // If user team IS playing, simulate OTHER matches and stop
-            // This is the manual flow where user plays their game first
-            const otherMatches = matchesToSimulate.filter(m => m.id !== userMatch.id);
-            for (const match of otherMatches) {
-                // Auto-select tactics for AI teams
+            let simulatedCount = 0;
+            for (const match of matchesToAutoProcess) {
+                // Auto-select tactics for AI teams (safe for user-overdue auto processing too)
                 await autoSelectTacticsForAITeams(match, userTeamId);
                 const result = await processMatch(match.id);
 
                 // Process financial updates only when the match was newly simulated
                 if (result) {
+                    simulatedCount++;
                     try {
                         await processMatchFinancials(match.id);
                     } catch (error) {
@@ -253,11 +239,27 @@ export async function POST(req: Request) {
                 }
             }
 
+            // If user has a match TODAY, stop here and let user play it manually.
+            if (userTodayMatch) {
+                return NextResponse.json({
+                    success: true,
+                    userMatchId: userTodayMatch.id,
+                    simulatedCount,
+                    overdueProcessedCount: overdueCount,
+                    autoProcessedUserOverdueCount: userOverdueMatches.length,
+                    requiresUserAction: true
+                });
+            }
+
+            // Otherwise advance day as normal.
+            const updatedSettings = await advanceDay();
             return NextResponse.json({
                 success: true,
-                userMatchId: userMatch.id,
-                simulatedCount: otherMatches.length,
-                requiresUserAction: true
+                currentDate: updatedSettings.currentDate,
+                simulatedCount,
+                overdueProcessedCount: overdueCount,
+                autoProcessedUserOverdueCount: userOverdueMatches.length,
+                autoAdvanced: true
             });
         }
 

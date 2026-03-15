@@ -16,7 +16,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             const data = await res.json();
             if (data.currentDate) {
                 const date = new Date(data.currentDate);
-                setGameDate(date.toLocaleDateString('th-TH', {
+                setGameDate(date.toLocaleDateString('th-TH-u-ca-gregory', {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric'

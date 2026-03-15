@@ -8,7 +8,7 @@ export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
 
-    const dateStr = gameDate.toLocaleDateString('th-TH', {
+    const dateStr = gameDate.toLocaleDateString('th-TH-u-ca-gregory', {
         weekday: 'long',
         day: 'numeric',
         month: 'long',

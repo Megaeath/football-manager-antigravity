@@ -11,6 +11,7 @@ import { getClubReputation } from '@/lib/reputation';
 import TacticsTabs from '@/components/TacticsTabs';
 import PlayerRolesReadOnlyTab from '@/components/PlayerRolesReadOnlyTab';
 import TeamFinanceTab from '@/components/TeamFinanceTab';
+import TrainingReadOnlyTab, { type TrainingState } from '@/components/TrainingReadOnlyTab';
 
 interface Player {
     id: string;
@@ -135,9 +136,11 @@ export default function TeamClient({
     const searchParams = useSearchParams();
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'power' | 'age' | 'marketValue'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance' | 'transfer'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'finance' | 'transfer' | 'training'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
     const [transferFilter, setTransferFilter] = useState<'all' | 'in' | 'out'>('all');
+    const [trainingState, setTrainingState] = useState<TrainingState | null>(null);
+    const [trainingLoading, setTrainingLoading] = useState(false);
 
     const openPlayerModal = (playerId: string) => {
         router.push(`/team/${team.id}?playerId=${playerId}`);
@@ -146,10 +149,21 @@ export default function TeamClient({
     // Check for tab query parameter
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles' || tab === 'finance' || tab === 'transfer') {
+        if (tab === 'tactics' || tab === 'matches' || tab === 'squad' || tab === 'roles' || tab === 'finance' || tab === 'transfer' || tab === 'training') {
             setActiveTab(tab as any);
         }
     }, [searchParams]);
+
+    // Fetch training state lazily when the Training tab is opened
+    useEffect(() => {
+        if (activeTab !== 'training') return;
+        if (trainingState || trainingLoading) return;
+        setTrainingLoading(true);
+        fetch(`/api/training?teamId=${team.id}`)
+            .then((r) => r.json())
+            .then((data) => { setTrainingState(data); setTrainingLoading(false); })
+            .catch(() => setTrainingLoading(false));
+    }, [activeTab, team.id, trainingState, trainingLoading]);
 
     const formatCurrency = (num: number) => `$${new Intl.NumberFormat('en-US').format(Math.abs(Math.round(num || 0)))}`;
 
@@ -405,6 +419,21 @@ export default function TeamClient({
                     }}
                 >
                     🔁 Transfer Player ({sortedTransferHistory.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('training')}
+                    style={{
+                        padding: '12px 20px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'training' ? '3px solid var(--primary)' : 'none',
+                        cursor: 'pointer',
+                        fontWeight: activeTab === 'training' ? 'bold' : 'normal',
+                        fontSize: '1rem',
+                        color: activeTab === 'training' ? 'var(--primary)' : 'inherit'
+                    }}
+                >
+                    🏋️ Training
                 </button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {activeTab === 'matches' && (
@@ -731,6 +760,20 @@ export default function TeamClient({
 
             {activeTab === 'finance' && (
                 <TeamFinanceTab teamId={team.id} />
+            )}
+
+            {activeTab === 'training' && (
+                <div>
+                    {trainingLoading && (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>Loading training data…</div>
+                    )}
+                    {!trainingLoading && trainingState && (
+                        <TrainingReadOnlyTab trainingState={trainingState} />
+                    )}
+                    {!trainingLoading && !trainingState && (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>No training data available.</div>
+                    )}
+                </div>
             )}
 
             {activeTab === 'transfer' && (

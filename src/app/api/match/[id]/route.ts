@@ -62,7 +62,7 @@ export async function GET(
                 },
                 playerStats: {
                     include: {
-                        player: { select: { name: true, naturalPosition: true } }
+                        player: { select: { name: true, naturalPosition: true, tacticalPosition: true } }
                     }
                 }
             }
@@ -95,6 +95,7 @@ export async function GET(
                 name: ps.player.name,
                 teamId: ps.teamId,
                 position: ps.player.naturalPosition,
+                               tacticalPosition: ps.player.tacticalPosition ?? null,
                 rating: adjustedRating,
                 minutes: ps.minutes,
                 goals: ps.goals,

@@ -1,0 +1,64 @@
+@startuml
+title Match Engine Master Sequence (simulateMatch)
+
+actor Caller
+participant "MatchEngine\nsimulateMatch()" as ME
+participant "TacticResolver\ngetActiveTacticByScore()" as TR
+participant "CarrierPicker\ngetCarrierByPosition()" as CP
+participant "DefInterruption\ncheckDefensiveInterruption()" as DI
+participant "WeightCalc\ncalculateActionWeights()" as WC
+participant "ActionChooser\nchooseAction()" as AC
+participant "ActionExec\nexecute*" as AE
+participant "Fitness\nupdateFitness()" as UF
+participant "Subs\nattemptSubstitutions()" as SUB
+participant "Finalize\nratings/possession/score" as FIN
+
+Caller -> ME: simulateMatch(homeTeam, awayTeam, matchPrep)
+activate ME
+
+ME -> ME: init matchState\n(init team stats + player stats)
+ME -> ME: set starters minutes = 90
+ME -> ME: init ball {position=50, possession='home', carrier=null}
+
+loop minute = 1..90
+  ME -> TR: resolve home/away active tactic by score
+  TR --> ME: tactics for this minute
+
+  loop tick = 1..12
+    ME -> ME: determine attackingTeam/defendingTeam\n+ prepConfig (attacking/defending)\n+ possession transition flag
+
+    alt ball.carrier is null OR GK safety case
+      ME -> CP: pick carrier by zone/position weights
+      CP --> ME: on-field non-GK carrier
+    end
+
+    ME -> DI: check defensive interruption(ball, defendingTeam, prep)
+    alt interruption triggered
+      DI --> ME: possession flipped + interceptor carrier
+      ME -> ME: continue next tick
+    else no interruption
+      DI --> ME: no change
+      ME -> WC: calculate action weights\n(PASS_SHORT/PASS_LONG/DRIBBLE/SHOOT)
+      WC --> ME: weights
+      ME -> AC: chooseAction(weights)
+      AC --> ME: selected action
+      ME -> AE: execute selected action
+      AE --> ME: updated ball/stats/events/actionLogs
+    end
+
+    ME -> ME: clamp ball boundary (0..100)
+  end
+
+  ME -> UF: updateFitness(home)
+  ME -> UF: updateFitness(away)
+  ME -> SUB: attemptSubstitutions(home)
+  SUB --> ME: homeSubsUsed
+  ME -> SUB: attemptSubstitutions(away)
+  SUB --> ME: awaySubsUsed
+end
+
+ME -> FIN: capture fitnessEnd\nrecompute score from player goals\ncompute possession from passesCompleted\ncalculateRatings()
+FIN --> ME: finalized matchState
+ME --> Caller: matchState(isFinished=true)
+deactivate ME
+@enduml

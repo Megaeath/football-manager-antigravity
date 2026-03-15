@@ -11,6 +11,8 @@ interface BallState {
     carrier: PlayerState | null;
 }
 
+type DefensiveActionKind = 'PRESS' | 'INTERCEPTION' | 'TACKLE' | 'BLOCK' | 'RECOVERY';
+
 function clampRate(rate: number): number {
     return Math.max(0, Math.min(1, rate));
 }
@@ -30,6 +32,129 @@ function trackFieldTouch(stat: EnginePlayerMatchStats, zone: 'DEFENSIVE' | 'MIDD
 
 function pushActionLog(matchState: MatchState, log: PlayerActionLog) {
     matchState.actionLogs.push(log);
+}
+
+function normalizePositionLabel(label: string | null | undefined): string | null {
+    if (!label) return null;
+    const base = label.split('_')[0].toUpperCase();
+    if (base === 'FW') return 'FWC';
+    return base;
+}
+
+function getPlayerLine(player: PlayerState): 'GK' | 'DEFENSE' | 'MIDFIELD' | 'ATTACK' {
+    const normalized = normalizePositionLabel(player.tacticalPosition) || normalizePositionLabel(player.position);
+    if (normalized === 'GK') return 'GK';
+    if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(normalized || '')) return 'DEFENSE';
+    if (['MR', 'ML', 'MC', 'AMC', 'AMR', 'AML'].includes(normalized || '')) return 'MIDFIELD';
+    return 'ATTACK';
+}
+
+function getDistanceToOwnGoal(ballPosition: number, isHomeAttacking: boolean): number {
+    return isHomeAttacking ? 100 - ballPosition : ballPosition;
+}
+
+function getDefensiveZoneWeight(
+    player: PlayerState,
+    distanceToOwnGoal: number,
+    actionKind: DefensiveActionKind
+): number {
+    const line = getPlayerLine(player);
+    if (line === 'GK') return actionKind === 'RECOVERY' ? 0.3 : 0.01;
+
+    if (distanceToOwnGoal <= 18) {
+        if (line === 'DEFENSE') return actionKind === 'BLOCK' ? 2.5 : 2.2;
+        if (line === 'MIDFIELD') return 0.75;
+        return 0.12;
+    }
+
+    if (distanceToOwnGoal <= 40) {
+        if (line === 'DEFENSE') return 1.75;
+        if (line === 'MIDFIELD') return actionKind === 'PRESS' ? 1.35 : 1.15;
+        return 0.35;
+    }
+
+    if (distanceToOwnGoal <= 70) {
+        if (line === 'DEFENSE') return 0.95;
+        if (line === 'MIDFIELD') return 1.55;
+        return actionKind === 'PRESS' ? 1.05 : 0.8;
+    }
+
+    if (line === 'DEFENSE') return 0.45;
+    if (line === 'MIDFIELD') return actionKind === 'PRESS' ? 1.2 : 1.0;
+    return actionKind === 'PRESS' || actionKind === 'INTERCEPTION' ? 1.55 : 0.55;
+}
+
+function getDefensiveActionAttributeWeight(player: PlayerState, actionKind: DefensiveActionKind): number {
+    const attrs = player.attributes;
+
+    switch (actionKind) {
+        case 'TACKLE':
+            return (attrs.tackling * 0.45) + (attrs.positioning * 0.2) + (attrs.strength * 0.2) + (attrs.aggression * 0.1) + (attrs.bravery * 0.05);
+        case 'PRESS':
+            return (attrs.aggression * 0.28) + (attrs.positioning * 0.24) + (attrs.tackling * 0.22) + (attrs.pace * 0.16) + (attrs.stamina * 0.1);
+        case 'BLOCK':
+            return (attrs.positioning * 0.35) + (attrs.tackling * 0.25) + (attrs.bravery * 0.2) + (attrs.strength * 0.2);
+        case 'RECOVERY':
+            return (attrs.positioning * 0.4) + (attrs.passing * 0.15) + (attrs.composure * 0.15) + (attrs.tackling * 0.15) + (attrs.pace * 0.15);
+        case 'INTERCEPTION':
+        default:
+            return (attrs.positioning * 0.4) + (attrs.tackling * 0.22) + (attrs.pace * 0.16) + (attrs.bravery * 0.12) + (attrs.aggression * 0.1);
+    }
+}
+
+function getDefensiveActionPlayer(
+    team: TeamState,
+    positions: string[],
+    ballPosition: number,
+    isHomeAttacking: boolean,
+    actionKind: DefensiveActionKind
+): PlayerState | undefined {
+    const activePlayers = team.players.filter(p => p.tacticalPosition !== null && p.position !== 'GK');
+    if (activePlayers.length === 0) {
+        return team.players.find(p => p.position !== 'GK') || team.players[0];
+    }
+
+    const normalizedPositions = positions.map(pos => normalizePositionLabel(pos)).filter(Boolean) as string[];
+    const candidatePool = activePlayers.filter(player => {
+        const natural = normalizePositionLabel(player.position);
+        const tactical = normalizePositionLabel(player.tacticalPosition);
+        return normalizedPositions.includes(natural || '') || normalizedPositions.includes(tactical || '');
+    });
+
+    const pool = candidatePool.length > 0 ? candidatePool : activePlayers;
+    const distanceToOwnGoal = getDistanceToOwnGoal(ballPosition, isHomeAttacking);
+
+    const weightedCandidates = pool.map(player => {
+        const zoneWeight = getDefensiveZoneWeight(player, distanceToOwnGoal, actionKind);
+        const attributeWeight = getDefensiveActionAttributeWeight(player, actionKind);
+        const conditionWeight = Math.max(0.45, player.condition / 100);
+        const role = getActiveRolePreset(player, false);
+        const roleBoost = role === 'BALL_WINNING_MIDFIELDER' || role === 'MAN_MARKER' || role === 'NO_NONSENSE_DEFENDER'
+            ? 1.12
+            : 1.0;
+        const tacticalBase = normalizePositionLabel(player.tacticalPosition);
+        const slotBoost = distanceToOwnGoal <= 40
+            ? (['DC', 'DR', 'DL', 'DMC'].includes(tacticalBase || '') ? 1.12 : 1.0)
+            : (distanceToOwnGoal >= 70 && ['FWC', 'AMR', 'AML', 'AMC', 'MR', 'ML'].includes(tacticalBase || '') ? 1.1 : 1.0);
+
+        return {
+            player,
+            weight: Math.max(0.01, zoneWeight * ((attributeWeight / 20) + 0.35) * conditionWeight * roleBoost * slotBoost)
+        };
+    });
+
+    const totalWeight = weightedCandidates.reduce((sum, candidate) => sum + candidate.weight, 0);
+    const roll = Math.random() * totalWeight;
+    let cumulative = 0;
+
+    for (const candidate of weightedCandidates) {
+        cumulative += candidate.weight;
+        if (roll <= cumulative) {
+            return candidate.player;
+        }
+    }
+
+    return weightedCandidates[0]?.player;
 }
 
 function getRoleInfluenceByCreativeFreedom(creativeFreedom?: string): number {
@@ -475,7 +600,7 @@ function executePassShort(
 
     const passScore = calculateActionScore('short_pass', player.attributes, 'attacker', player.condition);
     const attackerRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'PASS_SHORT');
-    const pressDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const pressDefender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML'], ball.position, isHomeAttacking, 'PRESS') || null;
     const defenderPenalty = getDefenderOpponentPenalty(pressDefender, defendingTeam.tactics, 'PASS_SHORT');
     const effectivePassScore = passScore * attackerRoleMod * defenderPenalty;
     const defenseScore = Math.random() * 10; // Increased from 8 for more interceptions
@@ -507,7 +632,7 @@ function executePassShort(
         ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking);
     } else {
         // Failed pass - possession changes
-        const interceptor = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'DC']) || null;
+        const interceptor = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML', 'AMC'], ball.position, isHomeAttacking, 'INTERCEPTION') || null;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = interceptor;
 
@@ -600,7 +725,7 @@ function executePassLong(
 
     const basePassScore = calculateActionScore('long_pass', player.attributes, 'attacker', player.condition);
     const attackerRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'PASS_LONG');
-    const pressDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const pressDefender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML'], ball.position, isHomeAttacking, 'PRESS') || null;
     const defenderPenalty = getDefenderOpponentPenalty(pressDefender, defendingTeam.tactics, 'PASS_LONG');
     
     // Apply distance penalty to pass score (lower attributes = bigger impact from distance)
@@ -656,7 +781,7 @@ function executePassLong(
         // Failed long pass - possession changes at target position
         ball.position = targetPosition;
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
-        const interceptor = getRandomPlayer(defendingTeam, ['MC', 'DMC', 'AMC', 'FWC']) || null;
+        const interceptor = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML', 'AMC'], ball.position, isHomeAttacking, 'INTERCEPTION') || null;
         ball.carrier = interceptor;
 
         if (interceptor) {
@@ -692,7 +817,7 @@ function executeDribble(
     isHomeAttacking: boolean
 ): void {
     const stats = matchState.playerStats[player.id];
-    const defender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']);
+    const defender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML'], ball.position, isHomeAttacking, 'TACKLE');
 
     if (!defender) return;
 
@@ -838,7 +963,7 @@ function executeShoot(
         * getMentalityBuff(attackingTeam.tactics.mentality).shooting
         * positionFactor;
     const attackerShootRoleMod = getRoleActionModifier(player, true, attackingTeam.tactics, 'SHOOT');
-    const shotDefender = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL']) || null;
+    const shotDefender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL'], ball.position, isHomeAttacking, 'BLOCK') || null;
     const defenderShootPenalty = getDefenderOpponentPenalty(shotDefender, defendingTeam.tactics, 'SHOOT');
     const effectiveShootScore = shootScore * attackerShootRoleMod * defenderShootPenalty;
 
@@ -1012,7 +1137,7 @@ function executeShoot(
             return;
         }
 
-        const defender = getRandomPlayer(defendingTeam, ['DC', 'DR', 'DL', 'DMC']) || defendingTeam.players[1]; // Avoid GK at index 0
+        const defender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DR', 'DL', 'DMC', 'MC'], ball.position, isHomeAttacking, 'RECOVERY') || defendingTeam.players[1]; // Avoid GK at index 0
         ball.carrier = defender;
         ball.position = isHomeAttacking ? 10 : 90; // Slightly further up field
     }
@@ -1170,7 +1295,7 @@ function executeFreeKickLong(ball: BallState, matchState: MatchState, homeTeam: 
         ball.carrier = getCarrierByPosition(attackingTeam, ball.position, isHomeAttacking) as PlayerState;
     } else {
         ball.possession = isHomeAttacking ? 'away' : 'home';
-        ball.carrier = getRandomPlayer(defendingTeam, ['DC', 'DMC', 'MC']) || null;
+        ball.carrier = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL'], ball.position, isHomeAttacking, 'RECOVERY') || null;
     }
 }
 
@@ -1264,7 +1389,7 @@ function executeThrowIn(ball: BallState, matchState: MatchState, homeTeam: TeamS
         ball.carrier = getRandomPlayer(attackingTeam, ['MC', 'MR', 'ML', 'FWC']) || null;
     } else {
         ball.possession = isHomeAttacking ? 'away' : 'home';
-        ball.carrier = getRandomPlayer(isHomeAttacking ? awayTeam : homeTeam, ['MC', 'DC', 'DR', 'DL']) || null;
+        ball.carrier = getDefensiveActionPlayer(isHomeAttacking ? awayTeam : homeTeam, ['MC', 'DC', 'DR', 'DL', 'DMC'], ball.position, isHomeAttacking, 'RECOVERY') || null;
     }
 }
 
@@ -1293,8 +1418,14 @@ function checkDefensiveInterruption(
     // Counter vulnerability is tracked but not applied in this function (affects opponent flow later)
 
     if (Math.random() < interruptChance) {
-        // Interception! Pick a random defender
-        const interceptor = defenderPool[Math.floor(Math.random() * defenderPool.length)];
+        // Interception! Pick a defender based on zone and proximity to own goal
+        const interceptor = getDefensiveActionPlayer(
+            defendingTeam,
+            ['DC', 'DR', 'DL', 'DMC', 'MC', 'MR', 'ML', 'AMC', 'AMR', 'AML', 'FWC', 'FWR', 'FWL'],
+            ball.position,
+            !isDefendingFromHomePerspective,
+            'INTERCEPTION'
+        ) || defenderPool[Math.floor(Math.random() * defenderPool.length)];
         const interceptorStats = matchState.playerStats[interceptor.id];
         const interceptionZone = getZoneFromPosition(ball.position, isDefendingFromHomePerspective);
         trackFieldTouch(interceptorStats, interceptionZone);

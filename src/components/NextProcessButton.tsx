@@ -1,12 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function NextProcessButton() {
     const [loading, setLoading] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const handleNextProcess = async () => {
         setLoading(true);
+        let keepLoadingUntilRedirect = false;
         try {
             const res = await fetch('/api/game/process', {
                 method: 'POST',
@@ -16,12 +23,14 @@ export default function NextProcessButton() {
 
             if (data?.success) {
                 if (data.requiresUserAction) {
+                    keepLoadingUntilRedirect = true;
                     alert('มีการแข่งขันทีมของคุณในวันนี้! กรุณาดำเนินการต่อที่สนามแข่ง');
                     const matchId = data.userMatchId ? `?matchId=${data.userMatchId}` : '';
                     window.location.href = `/match${matchId}`;
                     return;
                 }
 
+                keepLoadingUntilRedirect = true;
                 window.location.href = '/';
                 return;
             }
@@ -30,18 +39,50 @@ export default function NextProcessButton() {
         } catch (e) {
             alert('Next process failed: ' + e);
         } finally {
-            setLoading(false);
+            if (!keepLoadingUntilRedirect) {
+                setLoading(false);
+            }
         }
     };
 
     return (
-        <button
-            onClick={handleNextProcess}
-            disabled={loading}
-            className="btn btn-primary"
-            style={{ padding: '10px 16px', fontSize: '0.95rem', background: 'var(--accent)' }}
-        >
-            {loading ? 'กำลังประมวลผล...' : '🏁 ไปวันถัดไป (Next Process)'}
-        </button>
+        <>
+            {mounted && loading && createPortal(
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(15, 23, 42, 0.45)',
+                        zIndex: 99999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backdropFilter: 'blur(2px)'
+                    }}
+                >
+                    <div
+                        style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '1rem 1.25rem',
+                            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+                            fontWeight: 700,
+                            color: 'var(--accent)'
+                        }}
+                    >
+                        ⏳ กำลังประมวลผลการแข่งขัน...
+                    </div>
+                </div>,
+                document.body
+            )}
+            <button
+                onClick={handleNextProcess}
+                disabled={loading}
+                className="btn btn-primary"
+                style={{ padding: '10px 16px', fontSize: '0.95rem', background: 'var(--accent)' }}
+            >
+                {loading ? 'กำลังประมวลผล...' : '🏁 ไปวันถัดไป (Next Process)'}
+            </button>
+        </>
     );
 }

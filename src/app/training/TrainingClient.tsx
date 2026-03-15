@@ -238,20 +238,41 @@ export default function TrainingClient() {
               {data.team.canAffordNextWeek ? '✅ Enough funds for next week' : '⚠️ Insufficient funds for next weekly training'}
             </div>
           </div>
-          <button
-            onClick={() => setShowUpgradeModal(true)}
-            disabled={!data.team.nextFacility}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 10,
-              border: '1px solid rgba(34,197,94,.6)',
-              background: data.team.nextFacility ? 'rgba(34,197,94,.2)' : 'rgba(148,163,184,.2)',
-              color: '#e2e8f0',
-              cursor: data.team.nextFacility ? 'pointer' : 'not-allowed'
-            }}
-          >
-            Upgrade Facility
-          </button>
+          {data.team.nextFacility && (
+            <div style={{ textAlign: 'right' }}>
+              {(() => {
+                const canAfford = data.team.balance >= data.team.nextFacility.upgradeCost;
+                return (
+                  <>
+                    {!canAfford && (
+                      <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: 6 }}>
+                        ⚠️ Need ${data.team.nextFacility.upgradeCost.toLocaleString()} — balance ${data.team.balance.toLocaleString()}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setShowUpgradeModal(true)}
+                      disabled={!canAfford}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: `1px solid ${canAfford ? 'rgba(34,197,94,.6)' : 'rgba(239,68,68,.6)'}`,
+                        background: canAfford ? 'rgba(34,197,94,.2)' : 'rgba(148,163,184,.15)',
+                        color: canAfford ? '#e2e8f0' : '#94a3b8',
+                        cursor: canAfford ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      Upgrade Facility
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          {!data.team.nextFacility && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(148,163,184,.2)', background: 'rgba(148,163,184,.1)', color: '#64748b', fontSize: '0.9rem' }}>
+              Max Level
+            </div>
+          )}
         </div>
       </div>
 
@@ -335,10 +356,17 @@ export default function TrainingClient() {
                   Upgrade Lv.{data.team.trainingFacilityLevel} → Lv.{data.team.nextFacility.level}
                 </p>
                 <ul style={{ color: '#94a3b8' }}>
-                  <li>Upgrade Cost: {data.team.nextFacility.upgradeCost.toLocaleString()}</li>
-                  <li>Weekly Fee: {data.team.nextFacility.weeklyFee.toLocaleString()}</li>
-                  <li>Max Gain: +{data.team.nextFacility.maxGain.toFixed(2)}</li>
+                  <li>Upgrade Cost: <strong style={{ color: '#e2e8f0' }}>${data.team.nextFacility.upgradeCost.toLocaleString()}</strong></li>
+                  <li>Your Balance: <strong style={{ color: data.team.balance >= data.team.nextFacility.upgradeCost ? '#86efac' : '#fca5a5' }}>${data.team.balance.toLocaleString()}</strong></li>
+                  <li>After Upgrade: <strong style={{ color: '#e2e8f0' }}>${(data.team.balance - data.team.nextFacility.upgradeCost).toLocaleString()}</strong></li>
+                  <li>New Weekly Fee: {data.team.nextFacility.weeklyFee.toLocaleString()}</li>
+                  <li>New Max Gain: +{data.team.nextFacility.maxGain.toFixed(2)}</li>
                 </ul>
+                {data.team.balance < data.team.nextFacility.upgradeCost && (
+                  <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.5)', color: '#fca5a5', fontSize: '0.9rem' }}>
+                    ⚠️ Insufficient funds. You need ${(data.team.nextFacility.upgradeCost - data.team.balance).toLocaleString()} more.
+                  </div>
+                )}
               </>
             ) : (
               <p style={{ color: '#94a3b8' }}>Facility is already max level.</p>
@@ -354,8 +382,14 @@ export default function TrainingClient() {
               </button>
               <button
                 onClick={handleUpgrade}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #22c55e', background: 'rgba(34,197,94,.25)', color: '#e2e8f0' }}
-                disabled={upgrading || !data.team.nextFacility}
+                style={{
+                  padding: '8px 12px', borderRadius: 8,
+                  border: '1px solid #22c55e',
+                  background: 'rgba(34,197,94,.25)',
+                  color: '#e2e8f0',
+                  opacity: (upgrading || !data.team.nextFacility || data.team.balance < data.team.nextFacility.upgradeCost) ? 0.5 : 1
+                }}
+                disabled={upgrading || !data.team.nextFacility || data.team.balance < data.team.nextFacility.upgradeCost}
               >
                 {upgrading ? 'Upgrading...' : 'Confirm Upgrade'}
               </button>

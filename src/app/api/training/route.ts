@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getTrainingState } from '@/lib/services/training';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const data = await getTrainingState();
+    // ?teamId=xxx lets the UI fetch training state for any team (AI read-only view)
+    const teamId = req.nextUrl.searchParams.get('teamId') || undefined;
+    const data = await getTrainingState(teamId);
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('[GET /api/training] Error:', error);

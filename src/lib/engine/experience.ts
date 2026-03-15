@@ -1,14 +1,15 @@
 /**
  * Experience System for Player Evolution
- * Based on "The 1.8 Rule" - players gain stat bonuses from accumulated EXP
+ * Players gain stat bonuses from accumulated EXP.
  */
 
 /**
- * Calculate the stat multiplier bonus from EXP
+ * Calculate the stat multiplier bonus from EXP.
  * Simple rule: Every 100 EXP = +0.1 multiplier (no rounding up)
- * 
+ * - Caps at ×2.0 at 1000 EXP
+ *
  * @param exp - Total accumulated EXP (0-1000)
- * @returns Multiplier value (1.0 - 2.0)
+ * @returns Multiplier value (1.0 – 2.0)
  */
 export function getExpMultiplier(exp: number): number {
   const tiers = getExpTiersBy18Rule(exp);
@@ -16,23 +17,24 @@ export function getExpMultiplier(exp: number): number {
 }
 
 /**
- * Calculate the flat stat bonus to add to all player attributes
+ * Calculate the flat stat bonus to add to all player attributes.
  * Simple rule: Every 100 EXP = +1 to all stats (no rounding up)
- * 
+ * - Caps at +10 at 1000 EXP
+ *
  * @param exp - Total accumulated EXP (0-1000)
- * @returns Flat bonus to add to each stat (0-10)
+ * @returns Flat bonus to add to each attribute (0–10)
  */
 export function getExpBonus(exp: number): number {
   return getExpTiersBy18Rule(exp);
 }
 
 /**
- * "1.8 Rule" EXP tiering used by this project:
- * - 0..179 => 0 tier
- * - 180..279 => 2 tiers
- * - 280..379 => 3 tiers
+ * EXP tiering:
+ * - 0..99 => 0 tier
+ * - 100..199 => 1 tier
+ * - 200..299 => 2 tiers
  * - ...
- * - 980..1000 => 10 tiers
+ * - 1000 => 10 tiers
  *
  * Supports negative values symmetrically.
  */
@@ -41,10 +43,10 @@ function getExpTiersBy18Rule(exp: number): number {
   const sign = clampedExp < 0 ? -1 : 1;
   const absExp = Math.abs(clampedExp);
 
-  if (absExp < 180) return 0;
+  if (absExp < 100) return 0;
 
-  // 180 starts at tier 2, then +1 tier per additional 100 EXP.
-  const positiveTiers = Math.floor((absExp - 80) / 100) + 1;
+  // Every 100 EXP gives +1 tier.
+  const positiveTiers = Math.floor(absExp / 100);
   return sign * Math.min(10, positiveTiers);
 }
 
