@@ -1243,6 +1243,7 @@ function MatchContent() {
                                     const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
+                                    const teamPlayers = Object.values(matchData.playerStats).filter((p: any) => p.teamId === teamId) as any[];
 
                                     // Tactical slot order mirrors formation definition (GK→DR→DC_R→DC_L→DL→MR/MC_R→...→FW)
                                     const TACTICAL_SLOT_ORDER: Record<string, number> = {
@@ -1257,6 +1258,97 @@ function MatchContent() {
                                         'AMR': 15, 'AMC': 16, 'AML': 17,
                                         'FW_R': 20, 'FW': 21, 'FW_L': 22,
                                     };
+
+                                    const MIRROR_TACTICAL_SLOT: Record<string, string> = {
+                                        DR: 'DL',
+                                        DL: 'DR',
+                                        DMR: 'DML',
+                                        DML: 'DMR',
+                                        DC_R: 'DC_L',
+                                        DC_L: 'DC_R',
+                                        MR: 'ML',
+                                        ML: 'MR',
+                                        MC_R: 'MC_L',
+                                        MC_L: 'MC_R',
+                                        AMR: 'AML',
+                                        AML: 'AMR',
+                                        FW_R: 'FW_L',
+                                        FW_L: 'FW_R',
+                                    };
+
+                                    const normalizePosForDisplay = (pos?: string | null) => {
+                                        if (!pos) return '-';
+                                        if (pos === 'FWC' || pos === 'FWR' || pos === 'FWL') return 'FW';
+                                        if (pos.startsWith('FW_')) return 'FW';
+                                        if (pos.startsWith('DC_')) return 'DC';
+                                        if (pos.startsWith('MC_')) return 'MC';
+                                        return pos;
+                                    };
+
+                                    // Derive match-played tactical slot per player (helps subs show actual played position)
+                                    const playedSlotByPlayerId = new Map<string, string>();
+                                    for (const p of teamPlayers) {
+                                        if (p.tacticalPosition) {
+                                            playedSlotByPlayerId.set(p.playerId, p.tacticalPosition);
+                                        }
+                                    }
+
+                                    const subEvents = (matchData.events || [])
+                                        .filter((e: any) => e.teamId === teamId && e.type === 'SUB')
+                                        .sort((a: any, b: any) => (a.minute || 0) - (b.minute || 0));
+
+                                    for (const e of subEvents) {
+                                        const text = String(e.text || '');
+                                        const m = text.match(/^Substitution:\s(.+?)\soff,\s(.+?)\son\.?$/i);
+                                        if (!m) continue;
+                                        const outName = m[1]?.trim();
+                                        const inPlayerId = e.playerId;
+                                        if (!outName || !inPlayerId) continue;
+
+                                        const outCandidates = teamPlayers.filter(
+                                            (p: any) => p.name === outName && p.playerId !== inPlayerId
+                                        );
+                                        const outPlayer = outCandidates
+                                            .sort((a: any, b: any) => {
+                                                const aScore =
+                                                    (playedSlotByPlayerId.has(a.playerId) ? 100 : 0) +
+                                                    (a.tacticalPosition ? 50 : 0) +
+                                                    (Number(a.minutes || 0));
+                                                const bScore =
+                                                    (playedSlotByPlayerId.has(b.playerId) ? 100 : 0) +
+                                                    (b.tacticalPosition ? 50 : 0) +
+                                                    (Number(b.minutes || 0));
+                                                return bScore - aScore;
+                                            })[0];
+                                        const outPlayerId = outPlayer?.playerId;
+                                        const outSlot = outPlayerId
+                                            ? (playedSlotByPlayerId.get(outPlayerId) || outPlayer?.tacticalPosition || null)
+                                            : null;
+
+                                        if (outSlot) {
+                                            playedSlotByPlayerId.set(inPlayerId, outSlot);
+                                        }
+                                    }
+
+                                    const getPlayedPos = (p: any) => playedSlotByPlayerId.get(p.playerId) || p.tacticalPosition || p.position || '-';
+                                    const getSortPos = (p: any) => {
+                                        const pos = getPlayedPos(p);
+                                        if (activeTab === 'away') {
+                                            return MIRROR_TACTICAL_SLOT[pos] || pos;
+                                        }
+                                        return pos;
+                                    };
+                                    const getPlayerGroup = (p: any) => {
+                                        const isStarter = !!p.tacticalPosition;
+                                        const hasPlayedMinutes = Number(p.minutes || 0) > 0;
+
+                                        // Group 0 = starting XI (initial tactical slot)
+                                        // Group 1 = non-starters who played (subs/re-entry edge cases)
+                                        // Group 2 = unused bench
+                                        if (isStarter) return 0;
+                                        if (hasPlayedMinutes) return 1;
+                                        return 2;
+                                    };
                                     // Category order for bench/subs by naturalPosition: GK→DF→MF→FW
                                     const getNaturalPosOrder = (pos: string) => {
                                         if (pos === 'GK') return 0;
@@ -1266,29 +1358,24 @@ function MatchContent() {
                                         return 9;
                                     };
 
-                                    return Object.values(matchData.playerStats)
-                                        .filter((p: any) => p.teamId === teamId)
+                                    return teamPlayers
                                         .sort((a: any, b: any) => {
-                                            const aIsSubIn = subInIds.has(a.playerId);
-                                            const bIsSubIn = subInIds.has(b.playerId);
-                                            // Group 0 = starting XI (played, not subbed in)
-                                            // Group 1 = sub-in players (came on during match)
-                                            // Group 2 = unused bench (minutes === 0)
-                                            const aGroup = a.minutes === 0 ? 2 : (aIsSubIn ? 1 : 0);
-                                            const bGroup = b.minutes === 0 ? 2 : (bIsSubIn ? 1 : 0);
+                                            const aGroup = getPlayerGroup(a);
+                                            const bGroup = getPlayerGroup(b);
                                             if (aGroup !== bGroup) return aGroup - bGroup;
 
-                                            if (aGroup === 0) {
-                                                // Starting XI: sort by tactical slot order (formation position)
-                                                const aTacOrder = a.tacticalPosition != null
-                                                    ? (TACTICAL_SLOT_ORDER[a.tacticalPosition] ?? 50)
-                                                    : getNaturalPosOrder(a.position) * 10 + 50;
-                                                const bTacOrder = b.tacticalPosition != null
-                                                    ? (TACTICAL_SLOT_ORDER[b.tacticalPosition] ?? 50)
-                                                    : getNaturalPosOrder(b.position) * 10 + 50;
+                                            if (aGroup === 0 || aGroup === 1) {
+                                                // Starters/Sub-ins: sort by actual played tactical slot (GK→DR→DC→...)
+                                                const aPos = getSortPos(a);
+                                                const bPos = getSortPos(b);
+                                                const aTacOrder = TACTICAL_SLOT_ORDER[aPos] ?? (getNaturalPosOrder(aPos) * 10 + 50);
+                                                const bTacOrder = TACTICAL_SLOT_ORDER[bPos] ?? (getNaturalPosOrder(bPos) * 10 + 50);
                                                 if (aTacOrder !== bTacOrder) return aTacOrder - bTacOrder;
+
+                                                // Same slot: more minutes first
+                                                if (a.minutes !== b.minutes) return b.minutes - a.minutes;
                                             } else {
-                                                // Subs & bench: sort by natural position category GK→DF→MF→FW
+                                                // Unused bench: sort by natural position category GK→DF→MF→FW
                                                 const aOrder = getNaturalPosOrder(a.position);
                                                 const bOrder = getNaturalPosOrder(b.position);
                                                 if (aOrder !== bOrder) return aOrder - bOrder;
@@ -1300,6 +1387,7 @@ function MatchContent() {
                                             const isSubOut = subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
+                                            const displayPos = normalizePosForDisplay(getPlayedPos(p));
                                             const didNotPlay = (p.minutes || 0) <= 0;
                                             const displayRating = didNotPlay ? '-' : Number(p.rating || 0).toFixed(1);
                                             const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];
@@ -1398,7 +1486,7 @@ function MatchContent() {
                                                         {/* Mobile Card Header - Position and Name */}
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <div style={{ fontWeight: 'bold', minWidth: '40px' }}>{p.position}</div>
+                                                                <div style={{ fontWeight: 'bold', minWidth: '40px' }}>{displayPos}</div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                                     <button
                                                                         onClick={(e) => {
@@ -1455,7 +1543,7 @@ function MatchContent() {
 
                                                     {/* Desktop Grid View */}
                                                     <div style={{ gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
-                                                        <div style={{ fontWeight: 'bold' }}>{p.position}</div>
+                                                        <div style={{ fontWeight: 'bold' }}>{displayPos}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <button
                                                                 onClick={(e) => {

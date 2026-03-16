@@ -141,7 +141,7 @@ async function generateMonthlyFreeAgentProspects(currentDate: Date, count: numbe
                 name: randomName(),
                 age,
                 naturalPosition: position,
-                retirementAge: randomInt(33, 39),
+                retirementAge: randomInt(31, 33),
                 morale: 100,
                 condition: 100,
                 isRetired: false,
@@ -217,9 +217,14 @@ export async function advanceDay() {
         if (p.condition >= 100) continue;
 
         const staminaFactor = p.stamina / 20;
-        const baseRecovery = 2 + staminaFactor * 2;
-        const variance = Math.random() * 1; // 0 - 4
-        const bonus = Math.random() < 0.15 ? 1 + Math.random() * 1 : 0; // occasional big recovery
+        // Recovery goal (from ~60 condition, over ~5 days between matches):
+        //   stamina=20 → avg ~7.2/day → ~95-100 ✓
+        //   stamina=14 → avg ~6.0/day → ~90 ✓
+        //   stamina=10 → avg ~5.2/day → ~86
+        //   stamina=5  → avg ~4.2/day → ~81
+        const baseRecovery = 2 + staminaFactor * 4; // stamina=0:2, stamina=10:4, stamina=14:4.8, stamina=20:6
+        const variance = Math.random() * 2;          // 0-2
+        const bonus = Math.random() < 0.1 ? 1 + Math.random() * 2 : 0; // 10% chance of 1-3 bonus
         const recovery = baseRecovery + variance + bonus;
 
         const newCondition = Math.min(100, Math.round(p.condition + recovery));
@@ -408,7 +413,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         where: {
             isRetired: false,
             OR: [
-                { age: { gte: 35 } } // Potential retirement starts at 35
+                { age: { gte: 31 } } // Potential retirement starts at 31
             ]
         }
     });
@@ -428,7 +433,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                     name: randomName(),
                     age: youthAge,
                     naturalPosition: player.naturalPosition,
-                    retirementAge: randomInt(30, 40),
+                    retirementAge: randomInt(31, 33),
                     morale: 100,
                     condition: 100,
                     isRetired: false,
@@ -480,19 +485,19 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     }
 
     // Determine number of talented youth based on ranking
-    // Best ranking (1st) = 1 talented + 4 normal
-    // Worst ranking (last) = 4 talented + 1 normal
+    // Best ranking (1st) = 1 talented + 2 normal
+    // Worst ranking (last) = 3 talented + 0 normal
     // Linear progression between ranks
     const getTalentedYouthCount = (ranking: number, totalTeams: number): number => {
-        // Formula: Linear interpolation from 1 (best) to 4 (worst)
-        // rank 1 → 1 talented, rank 20 → 4 talented
+        // Formula: Linear interpolation from 1 (best) to 3 (worst)
+        // rank 1 → 1 talented, rank 20 → 3 talented
         const normalized = (ranking - 1) / (totalTeams - 1); // 0 to 1
-        const talented = Math.round(1 + (normalized * 3)); // 1 to 4
-        return Math.max(1, Math.min(4, talented));
+        const talented = Math.round(1 + (normalized * 2)); // 1 to 3
+        return Math.max(1, Math.min(3, talented));
     };
 
-    // All teams get 5 youth players
-    const YOUTH_PLAYERS_PER_TEAM = 5;
+    // All teams get 3 youth players
+    const YOUTH_PLAYERS_PER_TEAM = 3;
 
     for (const team of allTeams) {
         const teamStanding = standings.find(s => s.teamId === team.id);
@@ -514,7 +519,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                     name: youthName,
                     age: youthAge,
                     naturalPosition: randomPosition,
-                    retirementAge: randomInt(32, 38),
+                    retirementAge: randomInt(31, 33),
                     morale: 100,
                     condition: 100,
                     isRetired: false,
@@ -539,7 +544,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
                     name: youthName,
                     age: youthAge,
                     naturalPosition: randomPosition,
-                    retirementAge: randomInt(32, 38),
+                    retirementAge: randomInt(31, 33),
                     morale: 100,
                     condition: 100,
                     isRetired: false,

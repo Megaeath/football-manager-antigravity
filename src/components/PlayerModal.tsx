@@ -16,6 +16,8 @@ interface PlayerData {
     teamId: string;
     naturalPosition: string;
     age: number;
+    birthDate?: string;
+    retirementAge?: number;
     team: { name: string };
     power: number;
     marketValue?: number;
@@ -731,6 +733,8 @@ export default function PlayerModal() {
                                     <ContractTab
                                         playerId={player.id}
                                         playerName={player.name}
+                                        birthDate={player.birthDate}
+                                        retirementAge={player.retirementAge}
                                         contractStartWeek={player.contractStartWeek || 0}
                                         contractEndWeek={player.contractEndWeek || 52}
                                         weeklyWage={player.weeklyWage || 0}

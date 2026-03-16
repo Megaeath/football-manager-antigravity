@@ -8,6 +8,8 @@ interface ContractTabProps {
     contractStartWeek: number;
     contractEndWeek: number;
     weeklyWage: number;
+    birthDate?: string | Date;
+    retirementAge?: number;
     isUserTeam: boolean;
     onRenew?: () => void;
 }
@@ -18,6 +20,8 @@ export function ContractTab({
     contractStartWeek,
     contractEndWeek,
     weeklyWage,
+    birthDate,
+    retirementAge,
     isUserTeam,
     onRenew
 }: ContractTabProps) {
@@ -54,6 +58,16 @@ export function ContractTab({
     const newWage = Math.round(weeklyWage * 1.25);
     const costForTwoYears = weeklyWage * 104;
     const costForTwoYearsAfterRenewal = newWage * 104;
+    const expectedRetirementDate = birthDate && retirementAge
+        ? new Date(new Date(birthDate).getFullYear() + retirementAge, new Date(birthDate).getMonth(), new Date(birthDate).getDate())
+        : null;
+    const expectedRetirementLabel = expectedRetirementDate
+        ? expectedRetirementDate.toLocaleDateString('th-TH-u-ca-gregory', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        })
+        : null;
 
     return (
         <div style={{
@@ -95,6 +109,17 @@ export function ContractTab({
                         ${weeklyWage.toLocaleString()}
                     </div>
                 </div>
+
+                {expectedRetirementLabel && (
+                    <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>
+                            Expected Retirement Date
+                        </div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#7c3aed' }}>
+                            {expectedRetirementLabel}
+                        </div>
+                    </div>
+                )}
 
                 <div style={{
                     padding: '1rem',

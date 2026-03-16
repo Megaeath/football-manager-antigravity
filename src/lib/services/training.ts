@@ -205,6 +205,24 @@ export async function getTrainingState(teamId?: string | null) {
     orderBy: { slotIndex: 'asc' }
   });
 
+  // Auto-clear slots where assigned player has left the team (transferred/released)
+  const teamPlayerIds = new Set(players.map((p) => p.id));
+  const staleSlots = slotsRaw.filter((s) => s.playerId && !teamPlayerIds.has(s.playerId));
+  if (staleSlots.length > 0) {
+    await db.trainingAssignment.updateMany({
+      where: { id: { in: staleSlots.map((s) => s.id) } },
+      data: { playerId: null, focusAttribute: null, isActive: false, lastGain: 0 }
+    });
+    // Reflect cleared state in slotsRaw
+    staleSlots.forEach((s) => {
+      s.playerId = null;
+      s.focusAttribute = null;
+      s.isActive = false;
+      s.lastGain = 0;
+      s.player = null;
+    });
+  }
+
   const fractions = await db.playerTrainingFraction.findMany({
     where: { playerId: { in: players.map((p) => p.id) } }
   });
@@ -385,6 +403,55 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
     orderBy: { slotIndex: 'asc' }
   });
 
+  // Preload snapshots outside the transaction to minimize time spent under
+  // SQLite write lock and avoid interactive transaction timeout.
+  const activePlayerIds = Array.from(
+    new Set(slots.map((s) => s.playerId).filter((id): id is string => !!id))
+  );
+
+  const players = activePlayerIds.length > 0
+    ? await db.player.findMany({
+        where: { id: { in: activePlayerIds } },
+        select: {
+          id: true,
+          handling: true,
+          tackling: true,
+          passing: true,
+          shooting: true,
+          heading: true,
+          dribbling: true,
+          crossing: true,
+          setPieces: true,
+          throw: true,
+          aggression: true,
+          positioning: true,
+          vision: true,
+          bravery: true,
+          leadership: true,
+          teamwork: true,
+          composure: true,
+          pace: true,
+          acceleration: true,
+          stamina: true,
+          strength: true,
+          agility: true,
+          balance: true
+        }
+      })
+    : [];
+
+  const playerById = new Map(players.map((p) => [p.id, p]));
+
+  const fractions = activePlayerIds.length > 0
+    ? await db.playerTrainingFraction.findMany({
+        where: { playerId: { in: activePlayerIds } }
+      })
+    : [];
+
+  const fractionByPlayerAndAttr = new Map(
+    fractions.map((f) => [`${f.playerId}:${f.attribute}`, f])
+  );
+
   // Option A: insufficient funds => skip all gain this week
   if (team.balance < facility.weeklyFee) {
     await db.$transaction(async (tx) => {
@@ -421,41 +488,13 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
       const focusAttribute = slot.focusAttribute as string;
       if (!isTrainableAttribute(focusAttribute)) continue;
 
-      const player = await tx.player.findUnique({
-        where: { id: playerId },
-        select: {
-          id: true,
-          handling: true,
-          tackling: true,
-          passing: true,
-          shooting: true,
-          heading: true,
-          dribbling: true,
-          crossing: true,
-          setPieces: true,
-          throw: true,
-          aggression: true,
-          positioning: true,
-          vision: true,
-          bravery: true,
-          leadership: true,
-          teamwork: true,
-          composure: true,
-          pace: true,
-          acceleration: true,
-          stamina: true,
-          strength: true,
-          agility: true,
-          balance: true
-        }
-      });
+      const player = playerById.get(playerId);
       if (!player) continue;
 
       const gain = pickRandomGain(facility.maxGain);
 
-      const fraction = await tx.playerTrainingFraction.findUnique({
-        where: { playerId_attribute: { playerId, attribute: focusAttribute } }
-      });
+      const fractionKey = `${playerId}:${focusAttribute}`;
+      const fraction = fractionByPlayerAndAttr.get(fractionKey);
 
       const currentBase = Number(getAttributeValue(player as PlayerTrainingAttributeSnapshot, focusAttribute) || 0);
       const remainder = Number(fraction?.remainder || 0);
@@ -493,6 +532,16 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
         }
       });
 
+      // Keep in-memory snapshot in sync for same player/attribute seen again
+      // in this run (defensive correctness; duplicates are normally prevented).
+      fractionByPlayerAndAttr.set(fractionKey, {
+        id: fraction?.id ?? `tmp:${fractionKey}`,
+        playerId,
+        attribute: focusAttribute,
+        remainder: nextRemainder,
+        lifetimeGain: round2(Number(fraction?.lifetimeGain || 0) + gain),
+      });
+
       await tx.trainingAssignment.update({
         where: { id: slot.id },
         data: { lastGain: gain }
@@ -520,7 +569,7 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
         chargedFee: facility.weeklyFee
       }
     });
-  });
+  }, { timeout: 15000 });
 
   return { skipped: false, reason: null };
 }

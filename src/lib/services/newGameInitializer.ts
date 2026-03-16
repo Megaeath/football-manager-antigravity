@@ -227,7 +227,7 @@ export async function initializeNewGame(userTeamName: string) {
                 name: buildUniqueName(usedNames),
                 age,
                 naturalPosition: p.nat,
-                retirementAge: randomInt(30, 40),
+                retirementAge: randomInt(31, 33),
                 tacticalPosition: tacPos,
                 morale: 100,
                 condition: 100,

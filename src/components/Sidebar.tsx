@@ -13,6 +13,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
     const [incomingBidsCount, setIncomingBidsCount] = useState(0);
     const [expiringContractsCount, setExpiringContractsCount] = useState(0);
+    const [trainingAlertCount, setTrainingAlertCount] = useState(0);
 
     useEffect(() => {
         if (isOpen) {
@@ -39,6 +40,49 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     if (contractsRes.ok) {
                         const contractsData = await contractsRes.json();
                         setExpiringContractsCount(contractsData.totalExpiring || 0);
+                    }
+
+                    // Training alerts:
+                    // 1) Empty/unconfigured slots (needs assignment)
+                    // 2) Slots where focus attribute already reached cap 20 (needs change)
+                    const trainingRes = await fetch('/api/training');
+                    if (trainingRes.ok) {
+                        const trainingData = await trainingRes.json();
+
+                        const slots: Array<{
+                            playerId: string | null;
+                            focusAttribute: string | null;
+                            isActive: boolean;
+                        }> = trainingData?.slots || [];
+
+                        const players: Array<{
+                            id: string;
+                            effectiveAttributes?: Record<string, number>;
+                        }> = trainingData?.players || [];
+
+                        const playerMap = new Map(players.map((p) => [p.id, p]));
+
+                        let emptyOrUnconfigured = 0;
+                        let reachedCap = 0;
+
+                        for (const slot of slots) {
+                            // Slot needs user action if no player, no attribute, inactive,
+                            // OR player has left the team (stale assignment)
+                            const player = slot.playerId ? playerMap.get(slot.playerId) : undefined;
+                            if (!slot.playerId || !slot.focusAttribute || !slot.isActive || (slot.playerId && !player)) {
+                                emptyOrUnconfigured++;
+                                continue;
+                            }
+
+                            const focusedValue = player?.effectiveAttributes?.[slot.focusAttribute] ?? 0;
+
+                            // If focused training stat is already capped, slot should be reassigned
+                            if (focusedValue >= 20) {
+                                reachedCap++;
+                            }
+                        }
+
+                        setTrainingAlertCount(emptyOrUnconfigured + reachedCap);
                     }
                 }
             } catch (error) {
@@ -88,9 +132,16 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
                     const isNews = item.href === '/news';
                     const isContracts = item.href === '/contracts';
-                    const badgeCount = isNews ? incomingBidsCount : isContracts ? expiringContractsCount : 0;
+                    const isTraining = item.href === '/training';
+                    const badgeCount = isNews
+                        ? incomingBidsCount
+                        : isContracts
+                            ? expiringContractsCount
+                            : isTraining
+                                ? trainingAlertCount
+                                : 0;
                     const showBadge = badgeCount > 0;
-                    const badgeBg = isNews ? '#ef4444' : '#f59e0b';
+                    const badgeBg = isNews ? '#ef4444' : isContracts ? '#f59e0b' : '#2563eb';
                     
                     return (
                         <Link
@@ -126,7 +177,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                                     borderRadius: '99px',
                                     minWidth: '20px',
                                     textAlign: 'center',
-                                    boxShadow: isNews ? '0 2px 8px rgba(239, 68, 68, 0.4)' : '0 2px 8px rgba(245, 158, 11, 0.4)'
+                                    boxShadow: isNews
+                                        ? '0 2px 8px rgba(239, 68, 68, 0.4)'
+                                        : isContracts
+                                            ? '0 2px 8px rgba(245, 158, 11, 0.4)'
+                                            : '0 2px 8px rgba(37, 99, 235, 0.4)'
                                 }}>
                                     {badgeCount}
                                 </span>

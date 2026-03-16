@@ -127,16 +127,17 @@ export async function processAllAITeamsWeeklyTraining(
     select: { id: true },
   });
 
-  await Promise.allSettled(
-    aiTeams.map(async (team) => {
-      try {
-        await initAITeamTraining(team.id);
-        await processWeeklyTraining(team.id, weekKey);
-      } catch (err) {
-        console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
-      }
-    }),
-  );
+  // SQLite has coarse file-level write locks. Running all AI teams in parallel can
+  // cause lock contention and socket timeouts (P1008), especially when each team
+  // performs multiple writes in init + weekly processing.
+  for (const team of aiTeams) {
+    try {
+      await initAITeamTraining(team.id);
+      await processWeeklyTraining(team.id, weekKey);
+    } catch (err) {
+      console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
+    }
+  }
 }
 
 /**

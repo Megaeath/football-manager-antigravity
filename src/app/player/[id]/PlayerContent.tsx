@@ -47,6 +47,8 @@ type PlayerType = {
     id: string;
     name: string;
     teamId: string;
+    birthDate?: string | Date;
+    retirementAge?: number;
     contractStartWeek?: number;
     contractEndWeek?: number;
     weeklyWage?: number;
@@ -411,6 +413,8 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                     key={contractRefresh}
                     playerId={player.id}
                     playerName={player.name}
+                    birthDate={player.birthDate}
+                    retirementAge={player.retirementAge}
                     contractStartWeek={player.contractStartWeek || 0}
                     contractEndWeek={player.contractEndWeek || 52}
                     weeklyWage={player.weeklyWage || 0}

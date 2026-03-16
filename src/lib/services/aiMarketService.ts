@@ -232,12 +232,21 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
     // Only release if squad is oversized (>20 players to capture typical squads)
     if (team.players.length <= 20) return;
 
+    const settings = await getGameTime();
+    const currentSeason = settings.currentSeason;
+
     const depthMap = buildPositionDepthMap(team.players, team.formation);
 
     let releasedCount = 0;
     for (const player of team.players) {
         // Don't release if already listed or in process
         if (player.transferStatus === 'LISTED') continue;
+
+        // Protect youth/prospects from being dumped into free agency.
+        if (player.age <= 21) continue;
+
+        // Protect players who just joined this season.
+        if ((player.lastTransferredSeason || 0) >= currentSeason) continue;
 
         const playerPosition = normalizeDepthPosition(player.naturalPosition);
         const currentDepth = getPositionDepth(depthMap, playerPosition);
@@ -427,6 +436,23 @@ async function processAIBuyingLogic(
         include: { team: true }
     });
 
+    const freeAgentIds = freeAgents.map(p => p.id);
+    const freeAgentHistoryRows = freeAgentIds.length > 0
+        ? await prisma.transferHistory.findMany({
+            where: { playerId: { in: freeAgentIds } },
+            orderBy: { date: 'desc' },
+            select: { playerId: true, toTeamId: true, date: true }
+        })
+        : [];
+
+    // Latest known club for each free agent (most recent transfer destination)
+    const freeAgentLatestClub = new Map<string, string>();
+    for (const row of freeAgentHistoryRows) {
+        if (!freeAgentLatestClub.has(row.playerId)) {
+            freeAgentLatestClub.set(row.playerId, row.toTeamId);
+        }
+    }
+
     const freeAgentsWithPower = freeAgents.map(p => ({
         player: p,
         power: calculatePlayerPower({ 
@@ -446,6 +472,8 @@ async function processAIBuyingLogic(
     const targets = allAvailable.filter(lp =>
         lp.player.teamId !== teamId &&
         (lp.player.lastTransferredSeason ?? -1) < currentSeason &&
+        // If player is a free agent, avoid immediate return to their latest previous club.
+        !(lp.player.teamId === null && freeAgentLatestClub.get(lp.player.id) === teamId) &&
         (lp.player.askingPrice || 0) <= maxBudget
     );
 

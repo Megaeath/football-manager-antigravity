@@ -101,7 +101,7 @@ export async function submitBid(
                     amount: 0,
                     signOnBonus,
                     isFreeAgent: true,
-                    status: 'ACCEPTED', // Instant acceptance for free agents
+                    status: 'COMPLETED', // Instant transfer is fully completed immediately
                     createdAt: currentDate,
                     windowEnds: currentDate, // No waiting period
                     season: currentSeason
@@ -314,8 +314,31 @@ export async function processAcceptedTransfers() {
     for (const bid of readyBids) {
         const player = bid.player;
 
+        // If player has already moved in a later season than this bid, this deal is stale.
+        if ((player.lastTransferredSeason || 0) > (bid.season || 0)) {
+            await prisma.bid.update({
+                where: { id: bid.id },
+                data: { status: 'COMPLETED' }
+            });
+            continue;
+        }
+
+        // Free-agent transfers are executed instantly at bid creation time.
+        // If any legacy rows are still ACCEPTED, close them without moving player again.
+        if (bid.isFreeAgent) {
+            await prisma.bid.update({
+                where: { id: bid.id },
+                data: { status: 'COMPLETED' }
+            });
+            continue;
+        }
+
         // Skip if player already moved to the buying team (already executed)
         if (player.teamId === bid.fromTeamId) {
+            await prisma.bid.update({
+                where: { id: bid.id },
+                data: { status: 'COMPLETED' }
+            });
             continue;
         }
 
@@ -328,6 +351,10 @@ export async function processAcceptedTransfers() {
         // Safety: skip if player's current team no longer matches the selling team
         if (!bid.isFreeAgent && player.teamId !== bid.toTeamId) {
             console.log(`[AcceptedTransfer] Skipping ${player.name} — ownership changed since deal was agreed.`);
+            await prisma.bid.update({
+                where: { id: bid.id },
+                data: { status: 'REJECTED' }
+            });
             continue;
         }
 
@@ -390,6 +417,12 @@ export async function processAcceptedTransfers() {
                         date: currentDate,
                         fee: bid.isFreeAgent ? 0 : bid.amount
                     }
+                });
+
+                // Mark executed transfer so it can never be replayed in future days.
+                await tx.bid.update({
+                    where: { id: bid.id },
+                    data: { status: 'COMPLETED' }
                 });
             });
 
@@ -533,8 +566,8 @@ export async function processBiddingRules() {
                     return;
                 }
 
-                // Set winning bid to ACCEPTED
-                await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'ACCEPTED' } });
+                // Window already closed at this stage, so mark as COMPLETED directly.
+                await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'COMPLETED' } });
 
                 // Transfer money if not free agent
                 if (!winningBid.isFreeAgent) {
