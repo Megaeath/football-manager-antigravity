@@ -363,6 +363,28 @@ function MatchContent() {
         );
     };
 
+    const renderCardIcons = (player: any) => {
+        const yellowCards = Number(player?.yellowCards || 0);
+        const redCards = Number(player?.redCards || 0);
+
+        if (yellowCards <= 0 && redCards <= 0) return null;
+
+        return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                {yellowCards > 0 && (
+                    <span title={`Yellow card${yellowCards > 1 ? 's' : ''}: ${yellowCards}`} style={{ fontSize: '0.95em', lineHeight: 1 }}>
+                        🟨{yellowCards > 1 ? `x${yellowCards}` : ''}
+                    </span>
+                )}
+                {redCards > 0 && (
+                    <span title={`Red card${redCards > 1 ? 's' : ''}: ${redCards}`} style={{ fontSize: '0.95em', lineHeight: 1 }}>
+                        🟥{redCards > 1 ? `x${redCards}` : ''}
+                    </span>
+                )}
+            </span>
+        );
+    };
+
     const StatBarChart = ({ label, homeVal, awayVal, isPercentage = false }: { label: string, homeVal: number, awayVal: number, isPercentage?: boolean }) => {
         const homeWin = homeVal > awayVal;
         const awayWin = awayVal > homeVal;
@@ -1016,6 +1038,7 @@ function MatchContent() {
                                 />
                                 <StatRowWithChart label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
                                 <StatRowWithChart label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
+                                <StatRowWithChart label="Red Cards" homeVal={matchData.teamStats.home.redCards} awayVal={matchData.teamStats.away.redCards} inverse />
                                 <StatRowWithChart label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
                                 <StatRowWithChart label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
                                 <StatRowWithChart label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
@@ -1213,7 +1236,7 @@ function MatchContent() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {/* Column Header - Hidden on mobile */}
                                 <div style={{ 
-                                    gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', 
+                                    gridTemplateColumns: '70px 1.6fr repeat(9, minmax(48px, 1fr)) 36px', 
                                     gap: '8px', 
                                     alignItems: 'center', 
                                     fontSize: '0.75rem',
@@ -1235,6 +1258,7 @@ function MatchContent() {
                                     <div style={{ textAlign: 'center' }} title="Crosses completed">CRS</div>
                                     <div style={{ textAlign: 'center' }} title="Dribbles won">DRB</div>
                                     <div style={{ textAlign: 'center' }} title="Tackles won">TCK</div>
+                                    <div style={{ textAlign: 'center' }} title="Fouls committed">FLS</div>
                                     <div></div>
                                 </div>
 
@@ -1499,6 +1523,7 @@ function MatchContent() {
                                                                     </button>
                                                                     {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽</span>}
                                                                     {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️</span>}
+                                                                    {renderCardIcons(p)}
                                                                     {isSubIn && <span title="Subbed On">🔼</span>}
                                                                     {isSubOut && <span title="Subbed Off">🔽</span>}
                                                                     {isMotM && <span title="Man of the Match">🌟</span>}
@@ -1537,12 +1562,16 @@ function MatchContent() {
                                                                 <div style={{ color: 'var(--muted)', fontSize: '0.65rem', textTransform: 'uppercase' }}>TCK</div>
                                                                 <div style={{ fontWeight: 'bold' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
                                                             </div>
+                                                            <div style={{ textAlign: 'center', padding: '4px', background: '#f8fafc', borderRadius: '4px' }}>
+                                                                <div style={{ color: 'var(--muted)', fontSize: '0.65rem', textTransform: 'uppercase' }}>FLS</div>
+                                                                <div style={{ fontWeight: 'bold' }}>{p.fouls ?? 0}</div>
+                                                            </div>
                                                             <div style={{ textAlign: 'center', padding: '4px' }}>{isExpanded ? '▲' : '▼'}</div>
                                                         </div>
                                                     </div>
 
                                                     {/* Desktop Grid View */}
-                                                    <div style={{ gridTemplateColumns: '70px 1.6fr repeat(8, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
+                                                    <div style={{ gridTemplateColumns: '70px 1.6fr repeat(9, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
                                                         <div style={{ fontWeight: 'bold' }}>{displayPos}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <button
@@ -1556,6 +1585,7 @@ function MatchContent() {
                                                             </button>
                                                             {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
                                                             {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
+                                                            {renderCardIcons(p)}
                                                             {isSubIn && <span title="Subbed On">🔼</span>}
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
@@ -1568,6 +1598,7 @@ function MatchContent() {
                                                         <div style={{ textAlign: 'center' }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
                                                         <div style={{ textAlign: 'center' }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
                                                         <div style={{ textAlign: 'center' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
+                                                        <div style={{ textAlign: 'center' }}>{p.fouls ?? 0}</div>
                                                         <div style={{ textAlign: 'center' }}>{isExpanded ? '▲' : '▼'}</div>
                                                     </div>
 

@@ -4,6 +4,19 @@ import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttribu
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
 import { applyAgeEfficiency, calculateMatchExp } from '../engine/experience';
 import { calculatePlayerPower, getEffectiveAttributes, toPlayerAttributes } from '../engine/playerPower';
+import {
+    INJURY_BASE_CHANCE,
+    INJURY_LOW_CONDITION_THRESHOLD,
+    INJURY_LOW_CONDITION_WEIGHT,
+    INJURY_MAX_CHANCE,
+    INJURY_MIN_CHANCE,
+    INJURY_SEVERITY_RANGES,
+    RED_CARD_SUSPENSION_MATCHES,
+    YELLOW_SUSPENSION_THRESHOLD_DEFAULT,
+    clamp,
+    getDurabilityNorm,
+    randomIntInclusive
+} from '../constants/disciplineInjury';
 
 const FORMATIONS: Record<string, { id: string }[]> = {
     '4-4-2': [
@@ -83,16 +96,65 @@ function getFitnessSuitability(attributes: PlayerAttributes, targetPosition: str
     }).powerWithExp;
 }
 
+function isUnavailablePlayer(player: any): boolean {
+    return (player?.suspensionMatchesRemaining || 0) > 0 || (player?.injuryWeeksRemaining || 0) > 0;
+}
+
+function clampChance(v: number): number {
+    return clamp(v, INJURY_MIN_CHANCE, INJURY_MAX_CHANCE);
+}
+
+function rollInjuryForMatch(player: { stamina: number; strength: number }, stat: EnginePlayerMatchStats): { weeks: number; severity: 'MINOR' | 'MODERATE' | 'MAJOR' } | null {
+    const durabilityNorm = getDurabilityNorm(player.stamina, player.strength);
+    const minuteFactor = Math.min(1, (stat.minutes || 0) / 90);
+    if (minuteFactor <= 0) return null;
+
+    const lowConditionFactor = Math.max(0, (INJURY_LOW_CONDITION_THRESHOLD - (stat.fitnessEnd || 100)) / INJURY_LOW_CONDITION_THRESHOLD);
+    const contactIntensity = 1 + Math.min(1, ((stat.tacklesAttempted || 0) + (stat.fouls || 0)) / 12) * 0.6;
+    const durabilityFactor = 1.25 - (0.75 * durabilityNorm);
+
+    const injuryChance = clampChance(
+        INJURY_BASE_CHANCE
+        * minuteFactor
+        * contactIntensity
+        * durabilityFactor
+        * (1 + (INJURY_LOW_CONDITION_WEIGHT * lowConditionFactor))
+    );
+
+    if (Math.random() >= injuryChance) return null;
+
+    // Lower durability shifts probability toward moderate/major injuries.
+    const minorWeight = 0.6 + (0.5 * durabilityNorm);
+    const moderateWeight = 0.35 + (0.2 * (1 - durabilityNorm));
+    const majorWeight = 0.05 + (0.3 * (1 - durabilityNorm));
+    const totalWeight = minorWeight + moderateWeight + majorWeight;
+    const roll = Math.random() * totalWeight;
+
+    let severity: 'MINOR' | 'MODERATE' | 'MAJOR' = 'MINOR';
+    if (roll <= minorWeight) severity = 'MINOR';
+    else if (roll <= (minorWeight + moderateWeight)) severity = 'MODERATE';
+    else severity = 'MAJOR';
+
+    const range = INJURY_SEVERITY_RANGES[severity];
+    const baseWeeks = randomIntInclusive(range.min, range.max);
+    const recoveryFactor = 1.2 - (0.6 * durabilityNorm);
+    const lowFitnessAddon = Math.max(0, (60 - (stat.fitnessEnd || 100)) / 30);
+    const weeks = Math.max(1, Math.round(baseWeeks * recoveryFactor + lowFitnessAddon));
+
+    return { weeks, severity };
+}
+
 function autoSelectLineup(team: any) {
     const slots = FORMATIONS[team.formation] || FORMATIONS['4-4-2'];
     const usedPlayers = new Set<string>();
     const assignments: { playerId: string; position: string }[] = [];
+    const selectablePlayers = team.players.filter((p: any) => !isUnavailablePlayer(p));
 
     for (const slot of slots) {
         const slotBase = slot.id.split('_')[0];
         
         // For GK position, prioritize actual goalkeepers
-        let availablePlayers = team.players.filter((p: any) => !usedPlayers.has(p.id));
+        let availablePlayers = selectablePlayers.filter((p: any) => !usedPlayers.has(p.id));
         
         if (slotBase === 'GK') {
             const goalkeepers = availablePlayers.filter((p: any) => p.naturalPosition === 'GK');
@@ -142,7 +204,9 @@ function mapPlayer(p: any): PlayerState {
         attackingRolePreset: p.attackingRolePreset || p.playerRole || null,
         defensiveRolePreset: p.defensiveRolePreset || p.playerRole || null,
         cards: { yellow: 0, red: 0 },
-        stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 }
+        stats: { goals: p.goals, assists: p.assists, tackles: 0, passes: 0 },
+        isInjured: (p.injuryWeeksRemaining || 0) > 0,
+        isSuspended: (p.suspensionMatchesRemaining || 0) > 0
     };
 }
 
@@ -159,6 +223,7 @@ export async function processMatch(matchId: string) {
 
     const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
     const userTeamId = settings?.userTeamId ?? null;
+    const yellowSuspensionThreshold = Math.max(1, settings?.yellowSuspensionThreshold ?? YELLOW_SUSPENSION_THRESHOLD_DEFAULT);
 
     const homeHasManual = matchDB.homeTeam.id === userTeamId
         && matchDB.homeTeam.players.some((p: any) => p.tacticalPosition);
@@ -169,6 +234,18 @@ export async function processMatch(matchId: string) {
     const awayAssignments = awayHasManual ? [] : autoSelectLineup(matchDB.awayTeam);
 
     await prisma.$transaction(async (tx) => {
+        // Unavailable players (suspended/injured) cannot be in lineup.
+        await tx.player.updateMany({
+            where: {
+                teamId: { in: [matchDB.homeTeam.id, matchDB.awayTeam.id] },
+                OR: [
+                    { suspensionMatchesRemaining: { gt: 0 } },
+                    { injuryWeeksRemaining: { gt: 0 } }
+                ]
+            } as any,
+            data: { tacticalPosition: null }
+        });
+
         if (!homeHasManual) {
             await tx.player.updateMany({
                 where: { teamId: matchDB.homeTeam.id },
@@ -211,6 +288,14 @@ export async function processMatch(matchId: string) {
             const found = awayAssignments.find(a => a.playerId === p.id);
             p.tacticalPosition = found ? found.position : null;
         });
+    }
+
+    // Ensure unavailable players are not active even when manual lineup existed.
+    for (const p of matchDB.homeTeam.players) {
+        if (isUnavailablePlayer(p)) p.tacticalPosition = null;
+    }
+    for (const p of matchDB.awayTeam.players) {
+        if (isUnavailablePlayer(p)) p.tacticalPosition = null;
     }
 
     const homeTeam: TeamState = {
@@ -403,6 +488,7 @@ export async function processMatch(matchId: string) {
             dribblesAttempted: stat.dribblesAttempted,
             dribblesWon: stat.dribblesWon,
             saves: stat.saves,
+            fouls: stat.fouls,
             fitnessEnd: stat.fitnessEnd,
             defensiveThirdTouches: stat.defensiveThirdTouches || 0,
             middleThirdTouches: stat.middleThirdTouches || 0,
@@ -420,9 +506,9 @@ export async function processMatch(matchId: string) {
             } catch (err: any) {
                 const msg = String(err?.message || '');
                 // Backward compatibility: schema/client not migrated yet
-                if (msg.includes('defensiveThirdTouches') || msg.includes('middleThirdTouches') || msg.includes('attackingThirdTouches')) {
+                if (msg.includes('defensiveThirdTouches') || msg.includes('middleThirdTouches') || msg.includes('attackingThirdTouches') || msg.includes('fouls')) {
                     const legacyStatsToCreate = statsToCreate.map((s) => {
-                        const { defensiveThirdTouches, middleThirdTouches, attackingThirdTouches, ...legacy } = s as any;
+                        const { defensiveThirdTouches, middleThirdTouches, attackingThirdTouches, fouls, ...legacy } = s as any;
                         return legacy;
                     });
                     await (tx.playerMatchStats as any).createMany({ data: legacyStatsToCreate });
@@ -461,11 +547,33 @@ export async function processMatch(matchId: string) {
             }
         }
 
+        // Team completed a match => burn one suspension match for already-suspended players.
+        await (tx.player as any).updateMany({
+            where: {
+                teamId: { in: [matchDB.homeTeamId, matchDB.awayTeamId] },
+                suspensionMatchesRemaining: { gt: 0 }
+            },
+            data: {
+                suspensionMatchesRemaining: { decrement: 1 }
+            }
+        });
+
+        const postPlayerEvents: Array<{ minute: number; type: string; text: string; teamId?: string; playerId?: string }> = [];
+
         for (const stat of playerStats) {
             // Calculate EXP gain from match performance
             const player = await tx.player.findUnique({
                 where: { id: stat.playerId },
-                select: { naturalPosition: true, age: true, exp: true }
+                select: {
+                    naturalPosition: true,
+                    age: true,
+                    exp: true,
+                    yellowCardAccumulation: true,
+                    suspensionMatchesRemaining: true,
+                    injuryWeeksRemaining: true,
+                    stamina: true,
+                    strength: true
+                }
             });
             
                 if (!player) continue; // Skip if player not found
@@ -492,6 +600,35 @@ export async function processMatch(matchId: string) {
                 const gainToApply = Math.round(adjustedGain);
                 const currentExp = player.exp || 0;
                 const newExp = currentExp + gainToApply;
+
+            const currentYellowAccumulation = player.yellowCardAccumulation || 0;
+            const updatedYellowAccumulationRaw = currentYellowAccumulation + (stat.yellowCards || 0);
+            const suspensionsFromYellow = Math.floor(updatedYellowAccumulationRaw / yellowSuspensionThreshold);
+            const nextYellowAccumulation = updatedYellowAccumulationRaw % yellowSuspensionThreshold;
+
+            const suspensionsFromRed = (stat.redCards || 0) > 0 ? RED_CARD_SUSPENSION_MATCHES : 0;
+            const suspensionIncrement = suspensionsFromYellow + suspensionsFromRed;
+
+            let injuryWeeksToApply = player.injuryWeeksRemaining || 0;
+            let injurySeverityToApply: 'MINOR' | 'MODERATE' | 'MAJOR' | null = null;
+            if ((player.injuryWeeksRemaining || 0) <= 0) {
+                const injuryResult = rollInjuryForMatch(
+                    { stamina: player.stamina, strength: player.strength },
+                    stat
+                );
+                if (injuryResult) {
+                    injuryWeeksToApply = injuryResult.weeks;
+                    injurySeverityToApply = injuryResult.severity;
+
+                    postPlayerEvents.push({
+                        minute: Math.min(90, Math.max(1, stat.minutes || 1)),
+                        type: 'INJURY',
+                        text: `${stat.name} suffered a ${injuryResult.severity.toLowerCase()} injury and will miss ${injuryResult.weeks} week(s).`,
+                        teamId: stat.teamId,
+                        playerId: stat.playerId
+                    });
+                }
+            }
             
             // Update player stats including EXP
             await (tx.player as any).update({
@@ -510,9 +647,29 @@ export async function processMatch(matchId: string) {
                     freeKicks: { increment: stat.freeKicks || 0 },
                     corners: { increment: stat.corners || 0 },
                     throws: { increment: stat.throws || 0 },
-                        exp: newExp
+                    exp: newExp,
+                    yellowCardAccumulation: nextYellowAccumulation,
+                    suspensionMatchesRemaining: {
+                        increment: suspensionIncrement
+                    },
+                    injuryWeeksRemaining: injuryWeeksToApply,
+                    injurySeverity: injuryWeeksToApply > 0 ? (injurySeverityToApply || (player.injuryWeeksRemaining > 0 ? undefined : null)) : null
                 }
             });
+        }
+
+        if (postPlayerEvents.length > 0) {
+            await tx.matchEvent.createMany({
+                data: postPlayerEvents.map((e) => ({
+                    matchId,
+                    minute: e.minute,
+                    text: e.text,
+                    type: e.type,
+                    teamId: e.teamId,
+                    playerId: e.playerId
+                }))
+            });
+            result.events.push(...postPlayerEvents);
         }
     });
 

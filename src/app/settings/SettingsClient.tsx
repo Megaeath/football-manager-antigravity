@@ -2,19 +2,35 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { resetGameWithSelectedTeam } from '../actions';
+import { resetGameWithSelectedTeam, updateYellowSuspensionThreshold } from '../actions';
 
 type TeamOption = {
     id: string;
     name: string;
 };
 
-export default function SettingsClient({ teams, currentUserTeamName }: { teams: TeamOption[]; currentUserTeamName: string }) {
+export default function SettingsClient({ teams, currentUserTeamName, yellowSuspensionThreshold }: { teams: TeamOption[]; currentUserTeamName: string; yellowSuspensionThreshold: number }) {
     const router = useRouter();
     const [step, setStep] = useState<'idle' | 'confirm' | 'choose'>('idle');
     const [loading, setLoading] = useState(false);
     const [selectedTeamName, setSelectedTeamName] = useState(currentUserTeamName || teams[0]?.name || '');
+    const [yellowThreshold, setYellowThreshold] = useState(yellowSuspensionThreshold || 4);
     const [message, setMessage] = useState('');
+
+    const handleSaveDisciplineSettings = async () => {
+        setLoading(true);
+        setMessage('กำลังบันทึกกฎโทษแบนใบเหลือง...');
+        try {
+            await updateYellowSuspensionThreshold(yellowThreshold);
+            setMessage(`บันทึกแล้ว: ครบ ${yellowThreshold} ใบเหลือง = แบน 1 นัด`);
+            router.refresh();
+        } catch (error) {
+            console.error('Failed to update yellow suspension threshold', error);
+            setMessage('บันทึกกฎโทษแบนไม่สำเร็จ');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleStartNewGame = async () => {
         if (!selectedTeamName) {
@@ -44,6 +60,28 @@ export default function SettingsClient({ teams, currentUserTeamName }: { teams: 
             <p style={{ color: 'var(--muted)' }}>
                 เมนูนี้ใช้สำหรับเริ่มเกมใหม่ทั้งหมด โดยรีเซ็ตข้อมูลฤดูกาลและทีมกลับไปที่ Season 1
             </p>
+
+            <div style={{ marginTop: '1rem', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: '10px', padding: '1rem' }}>
+                <h3 style={{ marginTop: 0, color: '#0369a1' }}>🟨 กฎโทษแบนใบเหลืองสะสม</h3>
+                <p style={{ marginBottom: '0.75rem', color: '#334155' }}>
+                    ตั้งค่าจำนวนใบเหลืองสะสมที่ทำให้นักเตะติดโทษแบนอัตโนมัติ (ค่าแนะนำ: 4)
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                    <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={yellowThreshold}
+                        onChange={(e) => setYellowThreshold(Math.max(1, Math.min(10, Number(e.target.value) || 4)))}
+                        disabled={loading}
+                        style={{ width: '90px', padding: '8px', border: '1px solid var(--border)', borderRadius: '8px' }}
+                    />
+                    <span style={{ color: '#475569', fontSize: '0.9rem' }}>ใบเหลือง = แบน 1 นัด</span>
+                    <button className="btn btn-primary" disabled={loading} onClick={handleSaveDisciplineSettings}>
+                        บันทึกกฎ
+                    </button>
+                </div>
+            </div>
 
             <div style={{ marginTop: '1rem', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: '10px', padding: '1rem' }}>
                 <h3 style={{ marginTop: 0, color: '#b91c1c' }}>🧨 เริ่มเกมใหม่ (New Game)</h3>

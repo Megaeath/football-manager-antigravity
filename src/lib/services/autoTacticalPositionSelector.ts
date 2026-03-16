@@ -98,12 +98,13 @@ function autoSelectLineup(team: any) {
     const slots = FORMATIONS[team.formation] || FORMATIONS['4-4-2'];
     const usedPlayers = new Set<string>();
     const assignments: { playerId: string; position: string }[] = [];
+    const selectablePlayers = team.players.filter((p: any) => (p.suspensionMatchesRemaining || 0) <= 0 && (p.injuryWeeksRemaining || 0) <= 0);
 
     for (const slot of slots) {
         const slotBase = slot.id.split('_')[0];
         
         // For GK position, prioritize actual goalkeepers
-        let availablePlayers = team.players.filter((p: any) => !usedPlayers.has(p.id));
+        let availablePlayers = selectablePlayers.filter((p: any) => !usedPlayers.has(p.id));
         
         if (slotBase === 'GK') {
             const goalkeepers = availablePlayers.filter((p: any) => p.naturalPosition === 'GK');
@@ -169,6 +170,8 @@ export async function autoAssignTacticalPositions(teamId: string): Promise<numbe
                         naturalPosition: true,
                         condition: true,
                         exp: true,
+                        suspensionMatchesRemaining: true,
+                        injuryWeeksRemaining: true,
                         // Technical attributes
                         handling: true,
                         tackling: true,
@@ -211,6 +214,17 @@ export async function autoAssignTacticalPositions(teamId: string): Promise<numbe
 
         // Apply assignments to database
         await prisma.$transaction(async (tx) => {
+            await tx.player.updateMany({
+                where: {
+                    teamId,
+                    OR: [
+                        { suspensionMatchesRemaining: { gt: 0 } },
+                        { injuryWeeksRemaining: { gt: 0 } }
+                    ]
+                } as any,
+                data: { tacticalPosition: null }
+            });
+
             // Clear all existing tactical positions for this team
             await tx.player.updateMany({
                 where: { teamId },

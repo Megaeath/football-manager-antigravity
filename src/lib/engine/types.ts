@@ -50,6 +50,8 @@ export interface PlayerState {
     defensiveRolePreset?: string | null;
     cards: { yellow: number; red: number };
     stats: { goals: number; assists: number; tackles: number; passes: number };
+    isInjured?: boolean;
+    isSuspended?: boolean;
 }
 
 export interface TeamState {

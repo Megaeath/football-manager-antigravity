@@ -192,19 +192,38 @@ export async function advanceDay() {
     const nextDate = new Date(settings.currentDate);
     nextDate.setUTCDate(nextDate.getUTCDate() + 1);
 
-    // 1. Birthday Check
-    const monthDay = `${String(nextDate.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDate.getUTCDate()).padStart(2, '0')}`;
-    const birthdayPlayers: Array<{ id: string; name: string; age: number }> = await prisma.$queryRawUnsafe(
-        `SELECT id, name, age FROM Player WHERE strftime('%m-%d', birthDate) = ? AND isRetired = 0`,
-        monthDay
-    );
+    // 1. Age update (UTC-safe): recalculate from birthDate and correct stale ages.
+    // NOTE: SQLite `strftime` can return NULL for ISO strings like `2011-09-10T00:00:00.000Z`.
+    // We avoid SQL date parsing and compute age in TypeScript using UTC fields.
+    const playersForAgeUpdate = await prisma.player.findMany({
+        where: { isRetired: false },
+        select: { id: true, name: true, age: true, birthDate: true }
+    });
 
-    for (const p of birthdayPlayers) {
+    const getAgeAtDateUTC = (birthDate: Date, atDate: Date): number => {
+        const yearDiff = atDate.getUTCFullYear() - birthDate.getUTCFullYear();
+        const atMonth = atDate.getUTCMonth();
+        const birthMonth = birthDate.getUTCMonth();
+        const atDay = atDate.getUTCDate();
+        const birthDay = birthDate.getUTCDate();
+        const beforeBirthday = atMonth < birthMonth || (atMonth === birthMonth && atDay < birthDay);
+        return Math.max(0, yearDiff - (beforeBirthday ? 1 : 0));
+    };
+
+    for (const p of playersForAgeUpdate) {
+        const correctedAge = getAgeAtDateUTC(p.birthDate, nextDate);
+        if (correctedAge === p.age) continue;
+
         await prisma.player.update({
             where: { id: p.id },
-            data: { age: p.age + 1 }
+            data: { age: correctedAge }
         });
-        console.log(`Birthday! ${p.name} is now ${p.age + 1}`);
+
+        if (correctedAge > p.age) {
+            console.log(`Birthday! ${p.name} is now ${correctedAge}`);
+        } else {
+            console.log(`[AgeCorrection] ${p.name}: ${p.age} -> ${correctedAge}`);
+        }
     }
 
     // 2. Daily Fitness Recovery (based on stamina with randomness)
@@ -272,6 +291,17 @@ export async function advanceDay() {
 
     if (weekChanged) {
         const weekKey = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7));
+
+        // Weekly injury recovery progression
+        await (prisma.player as any).updateMany({
+            where: { injuryWeeksRemaining: { gt: 0 } },
+            data: { injuryWeeksRemaining: { decrement: 1 } }
+        });
+        await (prisma.player as any).updateMany({
+            where: { injuryWeeksRemaining: 0, injurySeverity: { not: null } },
+            data: { injurySeverity: null }
+        });
+
         // Process weekly finances for all teams
         const allTeams = await prisma.team.findMany();
         for (const team of allTeams) {

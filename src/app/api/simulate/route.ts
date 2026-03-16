@@ -141,6 +141,7 @@ export async function GET() {
                 dribblesAttempted: stat.dribblesAttempted,
                 dribblesWon: stat.dribblesWon,
                 saves: stat.saves,
+                fouls: stat.fouls,
                 fitnessEnd: stat.fitnessEnd
             }));
 

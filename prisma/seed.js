@@ -195,7 +195,7 @@ async function main() {
                 morale: 100,
                 condition: 100,
                 isRetired: false,
-                birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
+                birthDate: new Date(Date.UTC(2026 - age, randomInt(0, 11), randomInt(1, 28))),
                 ...stats
             }
         })

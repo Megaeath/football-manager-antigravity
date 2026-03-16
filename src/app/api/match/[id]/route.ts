@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-function calculateAdjustedDisplayRating(ps: any, match: any): number {
+function calculateAdjustedDisplayRating(ps: any, match: any, foulCountOverride?: number): number {
     // Players who did not play should not be performance-rated
     if ((ps.minutes || 0) <= 0) return 6.0;
 
@@ -24,7 +24,7 @@ function calculateAdjustedDisplayRating(ps: any, match: any): number {
     rating -= ((ps.tacklesAttempted || 0) - (ps.tacklesWon || 0)) * 0.1;
     rating -= (ps.yellowCards || 0) * 0.5;
     rating -= (ps.redCards || 0) * 2.0;
-    rating -= (ps.fouls || 0) * 0.1;
+    rating -= ((foulCountOverride ?? ps.fouls) || 0) * 0.1;
 
     if (goalDiff < 0) rating -= Math.min(2.5, Math.abs(goalDiff) * 0.35);
     else if (goalDiff > 0) rating += Math.min(0.8, goalDiff * 0.2);
@@ -68,6 +68,24 @@ export async function GET(
             }
         });
 
+        const foulActionLogs = await (prisma.playerActionLog as any).findMany({
+            where: {
+                matchId: id,
+                actionType: 'FOUL'
+            },
+            select: {
+                playerId: true,
+                teamId: true
+            }
+        }).catch(() => []);
+
+        const foulCountByPlayerId = new Map<string, number>();
+        const foulCountByTeamId = new Map<string, number>();
+        for (const log of foulActionLogs || []) {
+            foulCountByPlayerId.set(log.playerId, (foulCountByPlayerId.get(log.playerId) || 0) + 1);
+            foulCountByTeamId.set(log.teamId, (foulCountByTeamId.get(log.teamId) || 0) + 1);
+        }
+
         // Fetch player names for events
         const eventsWithPlayers = await Promise.all(
             (match?.events || []).map(async (event: any) => {
@@ -89,7 +107,8 @@ export async function GET(
         // Format the response to match what MatchPage expects
         const formattedStats: Record<string, any> = {};
         match.playerStats.forEach((ps: any) => {
-            const adjustedRating = calculateAdjustedDisplayRating(ps, match);
+            const fouls = ps.fouls ?? foulCountByPlayerId.get(ps.playerId) ?? 0;
+            const adjustedRating = calculateAdjustedDisplayRating(ps, match, fouls);
             formattedStats[ps.playerId] = {
                 playerId: ps.playerId,
                 name: ps.player.name,
@@ -108,6 +127,7 @@ export async function GET(
                 crossesCompleted: ps.crossesCompleted,
                 tacklesAttempted: ps.tacklesAttempted,
                 tacklesWon: ps.tacklesWon,
+                fouls,
                 yellowCards: ps.yellowCards,
                 redCards: ps.redCards,
                 fitnessEnd: ps.fitnessEnd,
@@ -157,6 +177,7 @@ export async function GET(
             bucket.passesCompleted += ps.passesCompleted || 0;
             bucket.crossesAttempted += ps.crossesAttempted || 0;
             bucket.crossesCompleted += ps.crossesCompleted || 0;
+            bucket.fouls += ps.fouls ?? foulCountByPlayerId.get(ps.playerId) ?? 0;
             bucket.yellowCards += ps.yellowCards || 0;
             bucket.redCards += ps.redCards || 0;
             bucket.freeKicks += ps.freeKicks || 0;
@@ -167,6 +188,11 @@ export async function GET(
             bucket.dribblesAttempted += ps.dribblesAttempted || 0;
             bucket.dribblesWon += ps.dribblesWon || 0;
         });
+
+        if (derivedTeamStats.home.fouls === 0 && derivedTeamStats.away.fouls === 0) {
+            derivedTeamStats.home.fouls = foulCountByTeamId.get(match.homeTeamId) || 0;
+            derivedTeamStats.away.fouls = foulCountByTeamId.get(match.awayTeamId) || 0;
+        }
 
         // Calculate possession based on passes completed
         const homePassesCompleted = derivedTeamStats.home.passesCompleted;

@@ -20,6 +20,9 @@ type PlayerProps = {
     age: number;
     condition: number;
     morale: number;
+    suspensionMatchesRemaining: number;
+    injuryWeeksRemaining: number;
+    injurySeverity?: string | null;
     tacticalPosition: string | null;
     playerRole?: string | null;
     attackingRolePreset?: string | null;
@@ -285,6 +288,11 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const handleAssign = async (playerId: string, posId: string, currentPosId?: string | null) => {
+        const targetPlayer = players.find(p => p.id === playerId);
+        if (targetPlayer && isPlayerUnavailable(targetPlayer)) {
+            return;
+        }
+
         setLoading(true);
         try {
             if (!posId) {
@@ -315,6 +323,9 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     const handleAutoSelect = async () => {
         setLoading(true);
         try {
+            const eligiblePlayers = sortedPlayers.filter(
+                (p) => (p.suspensionMatchesRemaining || 0) <= 0 && (p.injuryWeeksRemaining || 0) <= 0
+            );
             const usedPlayers = new Set<string>();
             const assignments: { playerId: string; position: string }[] = [];
 
@@ -337,7 +348,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 const slotBase = slot.id.split('_')[0];
                 const slotGroup = getGroup(slotBase);
 
-                const bestPlayer = sortedPlayers
+                const bestPlayer = eligiblePlayers
                     .filter(p => !usedPlayers.has(p.id))
                     .map(p => {
                         const playerPower = calculatePlayerPower({
@@ -399,6 +410,16 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const getPlayerInPos = (posId: string) => players.find(p => p.tacticalPosition === posId);
+    const isPlayerUnavailable = (p: PlayerProps) => (p.suspensionMatchesRemaining || 0) > 0 || (p.injuryWeeksRemaining || 0) > 0;
+    const getAvailabilityBadge = (p: PlayerProps) => {
+        if ((p.suspensionMatchesRemaining || 0) > 0) {
+            return `SUS ${p.suspensionMatchesRemaining}`;
+        }
+        if ((p.injuryWeeksRemaining || 0) > 0) {
+            return `INJ ${p.injuryWeeksRemaining}W`;
+        }
+        return null;
+    };
 
     // Filter and sort players for dropdown
     const sortedPlayers = [...players].sort((a, b) => {
@@ -902,14 +923,17 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             return dir * a.p.name.localeCompare(b.p.name);
                                     }
                                 })
-                                .map(({ p, physical, technical, tactical, mental, expBonus, power, basePowerNoFitness, expBoostedPower, noExpPower }) => (
-                                    <tr key={p.id} style={{ borderBottom: '1px solid #eee', background: p.tacticalPosition ? '#f0f4c3' : 'transparent' }}>
+                                .map(({ p, physical, technical, tactical, mental, expBonus, power, basePowerNoFitness, expBoostedPower, noExpPower }) => {
+                                    const unavailable = isPlayerUnavailable(p);
+                                    const availabilityBadge = getAvailabilityBadge(p);
+                                    return (
+                                    <tr key={p.id} style={{ borderBottom: '1px solid #eee', background: unavailable ? '#fef2f2' : (p.tacticalPosition ? '#f0f4c3' : 'transparent') }}>
                                         <td style={{ padding: '6px' }}>
                                             <select
                                                 value={p.tacticalPosition || ''}
                                                 onChange={(e) => handleAssign(p.id, e.target.value, p.tacticalPosition)}
-                                                disabled={loading}
-                                                style={{ padding: '4px', border: '1px solid #ccc', width: '110px' }}
+                                                disabled={loading || unavailable}
+                                                style={{ padding: '4px', border: '1px solid #ccc', width: '110px', background: unavailable ? '#f3f4f6' : 'white' }}
                                             >
                                                 <option value="">-</option>
                                                 {slots.map(slot => {
@@ -948,6 +972,24 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                                     📤
                                                 </span>
                                             )}
+                                            {availabilityBadge && (
+                                                <span
+                                                    title={availabilityBadge.startsWith('SUS') ? 'Suspended' : 'Injured'}
+                                                    style={{
+                                                        marginLeft: '6px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 700,
+                                                        color: '#991b1b',
+                                                        background: '#fee2e2',
+                                                        border: '1px solid #fecaca',
+                                                        borderRadius: '999px',
+                                                        padding: '1px 6px',
+                                                        verticalAlign: 'middle'
+                                                    }}
+                                                >
+                                                    {availabilityBadge}
+                                                </span>
+                                            )}
                                             {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
                                         </td>
                                         <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
@@ -977,7 +1019,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             </span>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                         </tbody>
                     </table>
 
@@ -1019,6 +1062,11 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                                     className="inline-flex items-center text-sm font-bold text-orange-700 bg-orange-100 border border-orange-300 rounded-full px-1.5 py-0 mt-1"
                                                 >
                                                     📤
+                                                </span>
+                                            )}
+                                            {getAvailabilityBadge(p) && (
+                                                <span className="inline-flex items-center text-[10px] font-bold text-red-700 bg-red-100 border border-red-300 rounded-full px-1.5 py-0.5 mt-1 mr-1">
+                                                    {getAvailabilityBadge(p)}
                                                 </span>
                                             )}
                                             {p.tacticalPosition && <span className="text-xs text-green-600 font-semibold">({p.tacticalPosition})</span>}

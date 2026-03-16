@@ -18,6 +18,7 @@ export default async function SettingsPage() {
         <SettingsClient
             teams={teams}
             currentUserTeamName={currentUserTeamName}
+            yellowSuspensionThreshold={settings?.yellowSuspensionThreshold || 4}
         />
     );
 }

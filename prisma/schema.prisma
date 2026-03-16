@@ -22,6 +22,7 @@ model GlobalGameSettings {
   isConfigured      Boolean  @default(false)
   userTeamId        String?
   lastExpDecayMonth Int      @default(0)
+  yellowSuspensionThreshold Int @default(4)
 }
 
 model SeasonHistory {
@@ -114,6 +115,10 @@ model Player {
   // Dynamic State
   morale           Int     @default(100)
   condition        Int     @default(100) // Match Fitness (0-100)
+  suspensionMatchesRemaining Int @default(0)
+  yellowCardAccumulation Int @default(0)
+  injuryWeeksRemaining Int @default(0)
+  injurySeverity   String?
   tacticalPosition String? // E.g. "GK", "DR", "DC_L", "DC_R", "FW_L", "FW_R" - if null, not starting
 
   // Player Role System
@@ -287,6 +292,7 @@ model PlayerMatchStats {
   dribblesAttempted Int @default(0)
   dribblesWon       Int @default(0)
   saves             Int @default(0) // GK
+  fouls             Int @default(0)
   yellowCards       Int @default(0)
   redCards          Int @default(0)
   freeKicks         Int @default(0)
