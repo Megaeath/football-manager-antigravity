@@ -194,7 +194,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     const savePreset = (key: PresetKey) => {
         const assignments = getCurrentAssignments();
         if (assignments.length === 0) {
-            showPresetFeedback(`Preset ${key}: ไม่มีตัวที่จัดตำแหน่งอยู่`);
+            showPresetFeedback(`Preset ${key}: No players assigned`);
             return;
         }
 
@@ -549,9 +549,9 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 <div className="card" style={{ marginBottom: '1.5rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }} className="md:flex-row md:items-center md:justify-between">
                         <div>
-                            <h3 style={{ margin: 0 }}>พร้อมเริ่มแข่งแล้วใช่ไหม?</h3>
+                            <h3 style={{ margin: 0 }}>Ready to start the match?</h3>
                             <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
-                                คู่แข่ง: <strong>{upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeam.name : upcomingMatch.homeTeam.name}</strong>
+                                Opponent: <strong>{upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeam.name : upcomingMatch.homeTeam.name}</strong>
                             </p>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }} className="md:flex-row">
@@ -564,10 +564,10 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 disabled={loading}
                                 style={{ width: '100%' }}
                             >
-                                🔍 ดูคู่แข่ง
+                                🔍 ดูOpponent
                             </button>
                             <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary" style={{ width: '100%' }}>
-                                {loading ? 'กำลังเริ่มเกม...' : 'เริ่มแข่ง'}
+                                {loading ? 'Starting match...' : 'Start Match'}
                             </button>
                         </div>
                     </div>

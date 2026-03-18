@@ -28,9 +28,9 @@ export default function TacticsForm({ plan, data, onUpdate, readOnly = false }: 
     }[plan];
 
     const planDescription = {
-        normal: 'ใช้เมื่อเกมเสมอกัน - สมดุลระหว่างการโจมตีและการป้องกัน',
-        behind: 'ใช้เมื่อทีมตามไป - เน้นการโจมตีมากขึ้น',
-        leading: 'ใช้เมื่อทีมนำหน้า - เน้นการป้องกัน'
+        normal: 'Used when match is level - Balanced approach',
+        behind: 'Used when team is behind - Attacking focus',
+        leading: 'Used when team is leading - Defensive focus'
     }[plan];
 
     const handleChange = (field: string, value: string) => {

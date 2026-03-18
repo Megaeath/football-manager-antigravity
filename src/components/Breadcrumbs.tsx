@@ -13,13 +13,13 @@ export default function Breadcrumbs() {
     const paths = pathname.split('/').filter(p => p);
 
     const translations: Record<string, string> = {
-        'squad': 'จัดการทีม',
+        'squad': 'Squad',
         'league': 'ระบบลีก',
-        'match': 'จำลองการแข่ง',
-        'fixtures': 'ผลการแข่งขัน',
-        'stats': 'สถิติผู้เล่น',
-        'table': 'ตารางคะแนน',
-        'team': 'ข้อมูลทีม',
+        'match': 'Match',
+        'fixtures': 'Fixtures',
+        'stats': 'Player Stats',
+        'table': 'League Table',
+        'team': 'Team Info',
         'player': 'ข้อมูลนักเตะ',
         'training': 'การฝึกซ้อม'
     };

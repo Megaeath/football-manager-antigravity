@@ -4,6 +4,9 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { MARKET } from '@/lib/constants/uiLabels';
 
 type BidItem = {
     id: string;
@@ -29,7 +32,7 @@ type BidItem = {
 
 export default function MarketCenterPage() {
     return (
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense fallback={<div className="p-4 text-center">Loading...</div>}>
             <MarketCenterContent />
         </Suspense>
     );
@@ -82,11 +85,11 @@ function MarketCenterContent() {
 
     const getStatusStyle = (status: string) => {
         switch (status) {
-            case 'PENDING': return { bg: '#fef3c7', color: '#d97706' };
-            case 'ACCEPTED': return { bg: '#d1fae5', color: '#059669' };
-            case 'REJECTED': return { bg: '#fee2e2', color: '#dc2626' };
-            case 'HIJACKED': return { bg: '#e0e7ff', color: '#4f46e5' };
-            default: return { bg: 'var(--bg)', color: 'var(--muted)' };
+            case 'PENDING': return { bg: 'rgba(251, 191, 36, 0.1)', color: '#d97706' };
+            case 'ACCEPTED': return { bg: 'rgba(16, 185, 129, 0.1)', color: '#059669' };
+            case 'REJECTED': return { bg: 'rgba(239, 68, 68, 0.1)', color: '#dc2626' };
+            case 'HIJACKED': return { bg: 'rgba(99, 102, 241, 0.1)', color: '#4f46e5' };
+            default: return { bg: 'var(--border)', color: 'var(--muted)' };
         }
     };
 
@@ -100,228 +103,199 @@ function MarketCenterContent() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    if (loading) {
+        return (
+            <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5rem' }}>💱 Loading transfer market...</div>
+            </div>
+        );
+    }
+
     return (
-        <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }} className="p-4 md:p-8">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }} className="mb-6 flex-col items-start gap-3 md:mb-8 md:flex-row md:items-center">
-                <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
-                    <span style={{ fontSize: '1.2em' }}>💱</span> Transfer Market Center
-                </h1>
-                <Link href="/news" className="btn" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                    View Market News
-                </Link>
+        <div className="flex flex-col gap-6 md:gap-8">
+            {/* Header */}
+            <div className="hero-gradient">
+                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>💱 {MARKET.TITLE}</h1>
+                <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Track all transfer activity across the league</p>
             </div>
 
-            <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border)' }} className="flex-col items-start gap-3 md:flex-row md:items-center">
-                    <h2 style={{ margin: 0 }}>Active & Recent Deals</h2>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <label style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Season:</label>
-                        <select
-                            value={selectedSeason || currentSeason}
-                            onChange={(e) => handleSeasonChange(parseInt(e.target.value))}
-                            style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)' }}
-                        >
-                            {availableSeasons.map(season => (
-                                <option key={season} value={season}>Season {season}</option>
-                            ))}
-                        </select>
+            {/* Season Selector */}
+            {availableSeasons.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>📅 Select Season</CardTitle>
+                    </CardHeader>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {availableSeasons.map(season => (
+                            <Button
+                                key={season}
+                                variant={selectedSeason === season ? 'primary' : 'ghost'}
+                                size="sm"
+                                onClick={() => handleSeasonChange(season)}
+                            >
+                                Season {season} {season === currentSeason ? '(Current)' : ''}
+                            </Button>
+                        ))}
                     </div>
-                </div>
+                </Card>
+            )}
 
-                {loading ? (
-                    <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading market data...</div>
-                ) : bids.length === 0 ? (
-                    <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No transfers or bids to show.</div>
+            {/* Bids Table */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>📋 Recent Bids ({bids.length})</CardTitle>
+                </CardHeader>
+
+                {bids.length === 0 ? (
+                    <div className="p-lg text-center text-muted" style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+                        No bids found for this season
+                    </div>
                 ) : (
                     <>
-                    <div className="hidden overflow-x-auto md:block" style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--muted)', fontSize: '0.85rem' }}>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Date</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Player</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>From Club</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Bidding Club</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Amount</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Status</th>
-                                    <th style={{ padding: '1rem 0.5rem' }}>Decision Date</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {bids.map((bid) => {
-                                    const styles = getStatusStyle(bid.status);
-                                    return (
-                                        <tr key={bid.id} style={{ borderBottom: '1px solid var(--bg)', transition: 'background 0.2s', ...((bid.fromTeam.id === userTeamId || bid.toTeam?.id === userTeamId) ? { background: 'var(--primary-light)' } : {}) }}>
-                                            <td style={{ padding: '1rem 0.5rem', fontSize: '0.9rem' }}>
-                                                {new Date(bid.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                            </td>
-                                            <td
-                                                style={{ padding: '1rem 0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
-                                                onClick={() => openPlayerModal(bid.player.id)}
-                                            >
-                                                <span style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
-                                                    {bid.player.name}
-                                                </span>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'normal' }}>
-                                                    {bid.player.naturalPosition} {bid.isFreeAgent ? '(Free Agent)' : ''}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'normal', marginTop: '0.25rem' }}>
-                                                    Age {bid.player.age} • Avg {Number(bid.player.avgRating || 0).toFixed(2)} • G {bid.player.goals || 0} • A {bid.player.assists || 0}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem' }}>
-                                                {bid.isFreeAgent || !bid.toTeam ? (
-                                                    '-'
-                                                ) : (
-                                                    <Link
-                                                        href={`/team/${bid.toTeam.id}`}
-                                                        style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 600 }}
+                        {/* Desktop Table */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold' }}>Player</th>
+                                        <th style={{ padding: '12px', textAlign: 'center', width: '80px', fontWeight: 'bold' }}>Pos</th>
+                                        <th style={{ padding: '12px', textAlign: 'center', width: '70px', fontWeight: 'bold' }}>Age</th>
+                                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold' }}>From</th>
+                                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold' }}>To</th>
+                                        <th style={{ padding: '12px', textAlign: 'center', width: '120px', fontWeight: 'bold' }}>Amount</th>
+                                        <th style={{ padding: '12px', textAlign: 'center', width: '100px', fontWeight: 'bold' }}>Status</th>
+                                        <th style={{ padding: '12px', textAlign: 'center', width: '100px', fontWeight: 'bold' }}>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {bids.map((bid) => {
+                                        const statusStyle = getStatusStyle(bid.status);
+                                        return (
+                                            <tr key={bid.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                <td style={{ padding: '12px' }}>
+                                                    <button
+                                                        onClick={() => openPlayerModal(bid.player.id)}
+                                                        style={{ color: 'var(--primary)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: '600' }}
                                                     >
-                                                        {bid.toTeam.name}
-                                                    </Link>
-                                                )}
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem', fontWeight: 'bold' }}>
-                                                <Link
-                                                    href={`/team/${bid.fromTeam.id}`}
-                                                    style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 700 }}
-                                                >
-                                                    {bid.fromTeam.name}
-                                                </Link>
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
-                                                {bid.isFreeAgent ? 'Free Transfer' : `$${bid.amount.toLocaleString()}`}
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem' }}>
-                                                <span style={{
-                                                    padding: '0.25rem 0.75rem',
-                                                    borderRadius: '99px',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 'bold',
-                                                    background: styles.bg,
-                                                    color: styles.color
-                                                }}>
-                                                    {bid.status}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem', fontSize: '0.9rem', color: bid.status === 'PENDING' || bid.status === 'HIJACKED' ? 'var(--text)' : 'var(--muted)' }}>
-                                                {new Date(bid.windowEnds).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                                        {bid.player.name}
+                                                    </button>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                                        ⚡ {bid.player.avgRating > 0 ? bid.player.avgRating.toFixed(2) : '-'} | ⚽ {bid.player.goals} | 🎯 {bid.player.assists}
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                    <span style={{ background: 'var(--border)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '600' }}>
+                                                        {bid.player.naturalPosition}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '12px', textAlign: 'center' }}>{bid.player.age}</td>
+                                                <td style={{ padding: '12px', fontSize: '0.9rem' }}>{bid.fromTeam.name}</td>
+                                                <td style={{ padding: '12px', fontSize: '0.9rem', color: bid.toTeam ? 'var(--foreground)' : 'var(--muted)' }}>
+                                                    {bid.toTeam?.name || 'Free Agent'}
+                                                </td>
+                                                <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: 'var(--primary)' }}>
+                                                    {formatCurrency(bid.amount)}
+                                                </td>
+                                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                    <span style={{
+                                                        background: statusStyle.bg,
+                                                        color: statusStyle.color,
+                                                        padding: '4px 10px',
+                                                        borderRadius: '12px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: '600'
+                                                    }}>
+                                                        {bid.status}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                                    {new Date(bid.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
 
-                    <div className="flex flex-col gap-3 md:hidden">
-                        {bids.map((bid) => {
-                            const styles = getStatusStyle(bid.status);
-                            const isUserRelated = bid.fromTeam.id === userTeamId || bid.toTeam?.id === userTeamId;
-                            return (
-                                <div
-                                    key={bid.id}
-                                    className="rounded-xl border p-3"
-                                    style={{
-                                        borderColor: 'var(--border)',
-                                        background: isUserRelated ? 'var(--primary-light)' : 'var(--card-bg)'
-                                    }}
+                        {/* Mobile Cards */}
+                        <div className="md:hidden flex flex-col gap-3">
+                            {bids.map((bid) => {
+                                const statusStyle = getStatusStyle(bid.status);
+                                return (
+                                    <div key={bid.id} className="card" style={{ padding: '14px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                            <div style={{ fontWeight: '700', fontSize: '1.05rem' }}>{bid.player.name}</div>
+                                            <span style={{
+                                                background: statusStyle.bg,
+                                                color: statusStyle.color,
+                                                padding: '4px 10px',
+                                                borderRadius: '12px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: '600'
+                                            }}>
+                                                {bid.status}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '10px' }}>
+                                            <div>Pos: <strong>{bid.player.naturalPosition}</strong></div>
+                                            <div>Age: <strong>{bid.player.age}</strong></div>
+                                            <div>From: <strong>{bid.fromTeam.name}</strong></div>
+                                            <div>To: <strong>{bid.toTeam?.name || 'Free Agent'}</strong></div>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                                {new Date(bid.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </div>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '1.1rem' }}>
+                                                {formatCurrency(bid.amount)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={currentPage === 1}
+                                    onClick={() => handlePageChange(currentPage - 1)}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                        <div
-                                            style={{ fontWeight: 'bold', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }}
-                                            onClick={() => openPlayerModal(bid.player.id)}
-                                        >
-                                            {bid.player.name}
-                                        </div>
-                                        <span style={{
-                                            padding: '0.25rem 0.65rem',
-                                            borderRadius: '99px',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 'bold',
-                                            background: styles.bg,
-                                            color: styles.color
-                                        }}>
-                                            {bid.status}
-                                        </span>
-                                    </div>
-
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px' }}>
-                                        {bid.player.naturalPosition} {bid.isFreeAgent ? '(Free Agent)' : ''}
-                                    </div>
-
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px' }}>
-                                        Age <strong>{bid.player.age}</strong> • Avg <strong>{Number(bid.player.avgRating || 0).toFixed(2)}</strong> • G <strong>{bid.player.goals || 0}</strong> • A <strong>{bid.player.assists || 0}</strong>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.85rem' }}>
-                                        <div>Date: <strong>{new Date(bid.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
-                                        <div>Decision: <strong>{new Date(bid.windowEnds).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong></div>
-                                        <div>
-                                            From:{' '}
-                                            <strong>
-                                                {bid.isFreeAgent || !bid.toTeam ? (
-                                                    '-'
-                                                ) : (
-                                                    <Link href={`/team/${bid.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
-                                                        {bid.toTeam.name}
-                                                    </Link>
-                                                )}
-                                            </strong>
-                                        </div>
-                                        <div>
-                                            Bidder:{' '}
-                                            <strong>
-                                                <Link href={`/team/${bid.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
-                                                    {bid.fromTeam.name}
-                                                </Link>
-                                            </strong>
-                                        </div>
-                                        <div style={{ gridColumn: '1 / -1' }}>
-                                            Amount: <strong style={{ color: 'var(--primary)' }}>{bid.isFreeAgent ? 'Free Transfer' : `$${bid.amount.toLocaleString()}`}</strong>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                    ← Previous
+                                </Button>
+                                <span style={{ padding: '6px 12px', fontWeight: '600' }}>
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={currentPage === totalPages}
+                                    onClick={() => handlePageChange(currentPage + 1)}
+                                >
+                                    Next →
+                                </Button>
+                            </div>
+                        )}
                     </>
                 )}
+            </Card>
 
-                {!loading && bids.length > 0 && totalPages > 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }} className="flex-wrap">
-                        <button
-                            onClick={() => handlePageChange(currentPage - 1)}
-                            disabled={currentPage === 1}
-                            className="btn"
-                            style={{ 
-                                padding: '0.5rem 1rem',
-                                opacity: currentPage === 1 ? 0.5 : 1,
-                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            ← Previous
-                        </button>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
-                            Page {currentPage} of {totalPages}
-                        </span>
-                        <button
-                            onClick={() => handlePageChange(currentPage + 1)}
-                            disabled={currentPage === totalPages}
-                            className="btn"
-                            style={{ 
-                                padding: '0.5rem 1rem',
-                                opacity: currentPage === totalPages ? 0.5 : 1,
-                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            Next →
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <PlayerModal />
+            {/* Player Modal */}
+            {(() => {
+                const playerId = searchParams.get('playerId');
+                if (playerId) return <PlayerModal />;
+                return null;
+            })()}
         </div>
     );
+}
+
+function formatCurrency(num: number) {
+    if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
+    if (num >= 1000) return `$${(num / 1000).toFixed(1)}K`;
+    return `$${num.toLocaleString()}`;
 }

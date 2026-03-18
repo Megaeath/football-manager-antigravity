@@ -133,8 +133,8 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
                     <h1 style={{ color: 'white', margin: 0, fontSize: '2rem' }}>{player.name}</h1>
                     <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
                         <span className="badge" style={{ background: 'var(--primary)', color: 'white' }}>{player.naturalPosition}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'ศิษย์เก่า/ไร้สังกัด'}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>• อายุ {player.age} ปี</span>
+                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'Free Agent'}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>• {player.age} years old</span>
                     </div>
                 </div>
                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>

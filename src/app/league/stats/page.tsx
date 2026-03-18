@@ -69,10 +69,10 @@ export default async function LeagueStatsPage() {
 
     return (
         <div>
-            <h2 style={{ margin: '0 0 1.5rem 0' }}>📈 สถิติผู้เล่น (Player Stats)</h2>
+            <h2 style={{ margin: '0 0 1.5rem 0' }}>📈 Player Statistics</h2>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))', gap: '2rem' }}>
-                <StatList title="⚽ ดาวซัลโว (Top Scorers)" players={topScorers} statKey="goals" label="ประตู" />
+                <StatList title="⚽ Top Scorers" players={topScorers} statKey="goals" label="Goals" />
                 <StatList title="🎯 จอมส่ง (Top Assists)" players={topAssists} statKey="assists" label="ส่ง" />
                 <StatList title="🟨 ใบเหลือง (Yellow Cards)" players={topYellow} statKey="yellowCards" label="ใบ" />
                 <StatList title="🟥 ใบแดง (Red Cards)" players={topRed} statKey="redCards" label="ใบ" />

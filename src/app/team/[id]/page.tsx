@@ -22,7 +22,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         }
     });
 
-    if (!team) return <div className="card">ไม่พบข้อมูลทีม</div>;
+    if (!team) return <div className="card">Team not found</div>;
 
     const transferHistory = await prisma.transferHistory.findMany({
         where: {

@@ -182,10 +182,10 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                         แอตทริบิวต์
                     </button>
                     <button style={tabStyle('statistics')} onClick={() => setActiveTab('statistics')}>
-                        สถิติ
+                        Statistics
                     </button>
                     <button style={tabStyle('history')} onClick={() => setActiveTab('history')}>
-                        ประวัติย้ายทีม
+                        Transfer History
                     </button>
                     <button style={tabStyle('contract')} onClick={() => setActiveTab('contract')}>
                         สัญญา
@@ -245,14 +245,14 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
 
             {activeTab === 'statistics' && (
                 <div className="card">
-                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>สถิติการเล่นรายฤดูกาล/สโมสร</h3>
+                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Seasonal/Club Statistics</h3>
                     {seasonAnalytics?.seasonSummary && (
                         <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'rgba(var(--primary-rgb), 0.03)' }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>ภาพรวมจาก Raw Actions (Season {seasonAnalytics.season})</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                                 <div style={{ fontSize: '0.85rem' }}>🛡️ กองหลัง: <b>{seasonAnalytics.seasonSummary.zones.defensive}</b></div>
                                 <div style={{ fontSize: '0.85rem' }}>⚙️ กลางสนาม: <b>{seasonAnalytics.seasonSummary.zones.middle}</b></div>
-                                <div style={{ fontSize: '0.85rem' }}>⚽ หน้าประตู: <b>{seasonAnalytics.seasonSummary.zones.attacking}</b></div>
+                                <div style={{ fontSize: '0.85rem' }}>⚽ Attacking Third: <b>{seasonAnalytics.seasonSummary.zones.attacking}</b></div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(100px, 1fr))', gap: '0.5rem' }}>
                                 {['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].map(action => {
@@ -268,7 +268,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                             </div>
                         </div>
                     )}
-                    {analyticsLoading && <div style={{ color: 'var(--muted)', marginBottom: '1rem' }}>กำลังคำนวณ analytics จาก raw actions...</div>}
+                    {analyticsLoading && <div style={{ color: 'var(--muted)', marginBottom: '1rem' }}>Calculating analytics from raw actions...</div>}
                     {statsGrouped.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                             {statsGrouped.map((group: any) => (
@@ -283,7 +283,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                                     }}>
                                         <h4 style={{ margin: 0 }}>ฤดูกาล {group.season} | {group.teamName}</h4>
                                         <div style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 'bold' }}>
-                                            {group.apps} นัด • {group.goals} ประตู • {group.assists} แอสซิสต์ • เรตติ้ง {(group.ratingSum / group.apps).toFixed(2)}
+                                            {group.apps} matches • {group.goals} Goals • {group.assists} Assists • Rating {(group.ratingSum / group.apps).toFixed(2)}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -330,7 +330,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                             ))}
                         </div>
                     ) : (
-                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>ไม่มีสถิติการเล่น</div>
+                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>No match statistics</div>
                     )}
                 </div>
             )}
@@ -338,7 +338,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             {activeTab === 'history' && (
                 <div className="card">
                     {/* Transfer History Section */}
-                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>ประวัติการย้ายทีม</h3>
+                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Transfer History</h3>
                     {player.transferHistory && player.transferHistory.length > 0 ? (
                         <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -368,20 +368,20 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                             </table>
                         </div>
                     ) : (
-                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>ไม่มีประวัติการย้ายทีม</div>
+                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>No transfer history</div>
                     )}
 
                     {/* Seasonal Statistics Section */}
-                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>สถิติตามฤดูกาล</h3>
+                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Statisticsตามฤดูกาล</h3>
                     {statsGrouped && statsGrouped.length > 0 ? (
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                                 <thead>
                                     <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                                         <th style={{ padding: '1rem' }}>ฤดูกาล</th>
-                                        <th style={{ padding: '1rem' }}>ทีม</th>
-                                        <th style={{ padding: '1rem', textAlign: 'center' }}>ลงเล่น</th>
-                                        <th style={{ padding: '1rem', textAlign: 'center' }}>⚽ ประตู</th>
+                                        <th style={{ padding: '1rem' }}>Team</th>
+                                        <th style={{ padding: '1rem', textAlign: 'center' }}>Appearances</th>
+                                        <th style={{ padding: '1rem', textAlign: 'center' }}>⚽ Goals</th>
                                         <th style={{ padding: '1rem', textAlign: 'center' }}>📞 ลูกหวาน</th>
                                         <th style={{ padding: '1rem', textAlign: 'right' }}>คะแนนเฉลี่ย</th>
                                     </tr>
@@ -403,7 +403,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
                             </table>
                         </div>
                     ) : (
-                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>ยังไม่มีสถิติการเล่น</div>
+                        <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>ยังNo match statistics</div>
                     )}
                 </div>
             )}

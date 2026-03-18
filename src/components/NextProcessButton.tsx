@@ -24,7 +24,7 @@ export default function NextProcessButton() {
             if (data?.success) {
                 if (data.requiresUserAction) {
                     keepLoadingUntilRedirect = true;
-                    alert('มีการแข่งขันทีมของคุณในวันนี้! กรุณาดำเนินการต่อที่สนามแข่ง');
+                    alert('You have a match today! Please proceed to the match page');
                     const matchId = data.userMatchId ? `?matchId=${data.userMatchId}` : '';
                     window.location.href = `/match${matchId}`;
                     return;
@@ -70,7 +70,7 @@ export default function NextProcessButton() {
                             color: 'var(--accent)'
                         }}
                     >
-                        ⏳ กำลังประมวลผลการแข่งขัน...
+                        ⏳ Processing match...
                     </div>
                 </div>,
                 document.body
@@ -81,7 +81,7 @@ export default function NextProcessButton() {
                 className="btn btn-primary"
                 style={{ padding: '10px 16px', fontSize: '0.95rem', background: 'var(--accent)' }}
             >
-                {loading ? 'กำลังประมวลผล...' : '🏁 ไปวันถัดไป (Next Process)'}
+                {loading ? 'Processing...' : '🏁 Advance to Next Day'}
             </button>
         </>
     );

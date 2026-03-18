@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { TRAINING } from '@/lib/constants/uiLabels';
 
 type TrainingState = {
   team: {
@@ -32,7 +34,6 @@ type TrainingState = {
     condition: number;
     exp: number;
     effectiveAttributes: Record<string, number>;
-    // All attributes for power calculation
     handling: number;
     tackling: number;
     passing: number;
@@ -64,14 +65,6 @@ type TrainingState = {
     lastChargedFee: number;
     lastProcessedAt: string | null;
   };
-};
-
-const cardStyle: CSSProperties = {
-  background: 'linear-gradient(160deg, rgba(2, 6, 23, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
-  border: '1px solid rgba(148, 163, 184, 0.25)',
-  borderRadius: 14,
-  padding: 16,
-  color: '#e2e8f0'
 };
 
 export default function TrainingClient() {
@@ -111,52 +104,29 @@ export default function TrainingClient() {
     return map;
   }, [data]);
 
-  // Get all players with power calculation, sorted by position
   const playersSorted = useMemo(() => {
     if (!data?.players) return [];
-    
+
     const getPositionOrder = (pos: string) => {
       const first = pos.charAt(0).toUpperCase();
-      if (first === 'G') return 0; // GK
-      if (first === 'D') return 1; // DF, DL, DR, DMC, etc.
-      if (first === 'M' || first === 'A') return 2; // MF, ML, MR, MC, AMC, etc.
-      if (first === 'F') return 3; // FW, FWL, FWR, FWC, etc.
-      return 4; // unknown
+      if (first === 'G') return 0;
+      if (first === 'D') return 1;
+      if (first === 'M' || first === 'A') return 2;
+      if (first === 'F') return 3;
+      return 4;
     };
 
     const withPower = data.players.map((p) => {
-      // Use same calculation as player modal API
       const attrs = toPlayerAttributes({
-        handling: p.handling,
-        tackling: p.tackling,
-        passing: p.passing,
-        shooting: p.shooting,
-        heading: p.heading,
-        dribbling: p.dribbling,
-        crossing: p.crossing,
-        setPieces: p.setPieces,
-        throw: p.throw,
-        aggression: p.aggression,
-        positioning: p.positioning,
-        vision: p.vision,
-        bravery: p.bravery,
-        leadership: p.leadership,
-        teamwork: p.teamwork,
-        composure: p.composure,
-        pace: p.pace,
-        acceleration: p.acceleration,
-        stamina: p.stamina,
-        strength: p.strength,
-        agility: p.agility,
-        balance: p.balance
+        handling: p.handling, tackling: p.tackling, passing: p.passing, shooting: p.shooting,
+        heading: p.heading, dribbling: p.dribbling, crossing: p.crossing, setPieces: p.setPieces,
+        throw: p.throw, aggression: p.aggression, positioning: p.positioning, vision: p.vision,
+        bravery: p.bravery, leadership: p.leadership, teamwork: p.teamwork, composure: p.composure,
+        pace: p.pace, acceleration: p.acceleration, stamina: p.stamina, strength: p.strength,
+        agility: p.agility, balance: p.balance
       });
       const natPos = p.naturalPosition.split('_')[0];
-      const power = calculatePlayerPower({
-        attributes: attrs,
-        targetPosition: natPos,
-        condition: 100,
-        exp: p.exp || 0
-      }).powerWithExp;
+      const power = calculatePlayerPower({ attributes: attrs, targetPosition: natPos, condition: 100, exp: p.exp || 0 }).powerWithExp;
       return { ...p, power };
     });
 
@@ -168,7 +138,6 @@ export default function TrainingClient() {
     });
   }, [data]);
 
-  // Get selected player IDs from all slots
   const selectedPlayerIds = useMemo(() => {
     return new Set((data?.slots || []).map((s) => s.playerId).filter(Boolean) as string[]);
   }, [data]);
@@ -192,7 +161,7 @@ export default function TrainingClient() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Failed to save training slot');
       await fetchState();
-      setMessage(`Slot ${slotIndex} saved`);
+      setMessage(`✅ Slot ${slotIndex} saved successfully`);
     } catch (error: unknown) {
       setMessage(getErrorMessage(error, 'Failed to save training slot'));
     } finally {
@@ -209,7 +178,7 @@ export default function TrainingClient() {
       if (!res.ok) throw new Error(json?.error || 'Failed to upgrade facility');
       setShowUpgradeModal(false);
       await fetchState();
-      setMessage(`Upgraded to level ${json.level}`);
+      setMessage(`✅ Upgraded to Level ${json.level}`);
     } catch (error: unknown) {
       setMessage(getErrorMessage(error, 'Failed to upgrade facility'));
     } finally {
@@ -218,91 +187,143 @@ export default function TrainingClient() {
   };
 
   if (loading) {
-    return <div style={{ padding: 16, color: '#94a3b8' }}>Loading training...</div>;
+    return (
+      <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center' }}>
+        <div style={{ fontSize: '1.5rem' }}>🏋️ Loading training data...</div>
+      </div>
+    );
   }
 
   if (!data) {
-    return <div style={{ padding: 16, color: '#fca5a5' }}>Training data unavailable</div>;
+    return (
+      <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
+        ❌ Training data unavailable
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: 16, display: 'grid', gap: 16 }}>
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <div className="flex flex-col gap-6 md:gap-8">
+      {/* Header */}
+      <div className="hero-gradient">
+        <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🏋️ {TRAINING.TITLE}</h1>
+        <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Develop your players through focused training</p>
+      </div>
+
+      {/* Facility Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🏟️ {TRAINING.FACILITY_LEVEL}</CardTitle>
+        </CardHeader>
+        <div style={{ 
+          padding: '1.5rem', 
+          background: 'var(--primary-light)', 
+          borderRadius: '10px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
           <div>
-            <h2 style={{ margin: 0, color: '#22c55e' }}>Training Facility Lv.{data.team.trainingFacilityLevel}</h2>
-            <div style={{ color: '#94a3b8', marginTop: 8 }}>
-              Weekly Fee: {data.team.facility.weeklyFee.toLocaleString()} | Max Gain: +{data.team.facility.maxGain.toFixed(2)}
+            <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>Current Level</div>
+            <div style={{ fontSize: '3rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+              Lv.{data.team.trainingFacilityLevel}
             </div>
-            <div style={{ color: data.team.canAffordNextWeek ? '#86efac' : '#fca5a5', marginTop: 6 }}>
+            <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+              Weekly Fee: <strong>{formatCurrency(data.team.facility.weeklyFee)}</strong> | Max Gain: <strong>+{data.team.facility.maxGain.toFixed(2)}</strong>
+            </div>
+            <div style={{ fontSize: '0.85rem', color: data.team.canAffordNextWeek ? 'var(--success)' : 'var(--danger)', marginTop: '0.5rem' }}>
               {data.team.canAffordNextWeek ? '✅ Enough funds for next week' : '⚠️ Insufficient funds for next weekly training'}
             </div>
           </div>
-          {data.team.nextFacility && (
+          
+          {data.team.nextFacility ? (
             <div style={{ textAlign: 'right' }}>
               {(() => {
                 const canAfford = data.team.balance >= data.team.nextFacility.upgradeCost;
                 return (
                   <>
                     {!canAfford && (
-                      <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: 6 }}>
-                        ⚠️ Need ${data.team.nextFacility.upgradeCost.toLocaleString()} — balance ${data.team.balance.toLocaleString()}
+                      <div style={{ fontSize: '0.85rem', color: 'var(--danger)', marginBottom: '0.5rem' }}>
+                        Need {formatCurrency(data.team.nextFacility.upgradeCost)} — Balance: {formatCurrency(data.team.balance)}
                       </div>
                     )}
-                    <button
+                    <Button
+                      variant="primary"
                       onClick={() => setShowUpgradeModal(true)}
                       disabled={!canAfford}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        border: `1px solid ${canAfford ? 'rgba(34,197,94,.6)' : 'rgba(239,68,68,.6)'}`,
-                        background: canAfford ? 'rgba(34,197,94,.2)' : 'rgba(148,163,184,.15)',
-                        color: canAfford ? '#e2e8f0' : '#94a3b8',
-                        cursor: canAfford ? 'pointer' : 'not-allowed'
-                      }}
+                      style={{ minWidth: '200px' }}
                     >
-                      Upgrade Facility
-                    </button>
+                      ⬆️ {TRAINING.UPGRADE} ({formatCurrency(data.team.nextFacility.upgradeCost)})
+                    </Button>
                   </>
                 );
               })()}
             </div>
-          )}
-          {!data.team.nextFacility && (
-            <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(148,163,184,.2)', background: 'rgba(148,163,184,.1)', color: '#64748b', fontSize: '0.9rem' }}>
-              Max Level
+          ) : (
+            <div style={{ 
+              padding: '1rem 2rem', 
+              background: 'var(--success)', 
+              color: 'white', 
+              borderRadius: '10px',
+              textAlign: 'center',
+              fontWeight: '600'
+            }}>
+              ✅ {TRAINING.MAX_LEVEL}
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: 12 }}>Training Slots (max 5)</h3>
-        <div style={{ display: 'grid', gap: 12 }}>
+      {/* Training Slots */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📋 {TRAINING.TRAINING_SLOTS} ({data.slots.length}/5)</CardTitle>
+        </CardHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {data.slots.map((slot) => {
             const selectedPlayer = slot.playerId ? playersById.get(slot.playerId) : null;
             const effectiveVal = selectedPlayer && slot.focusAttribute ? selectedPlayer.effectiveAttributes?.[slot.focusAttribute] : null;
 
             return (
-              <div key={slot.id} style={{ border: '1px solid rgba(148,163,184,.2)', borderRadius: 10, padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <strong>Slot {slot.slotIndex}</strong>
-                  <span style={{ color: slot.isActive ? '#86efac' : '#fca5a5' }}>{slot.isActive ? '● Active' : '● Inactive'}</span>
+              <div 
+                key={slot.id} 
+                className="card"
+                style={{ 
+                  padding: '1rem',
+                  border: slot.isActive ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  opacity: slot.isActive ? 1 : 0.7
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Slot {slot.slotIndex}</span>
+                  <span style={{ 
+                    fontSize: '0.75rem', 
+                    padding: '2px 8px', 
+                    borderRadius: '10px',
+                    background: slot.isActive ? 'var(--success)' : 'var(--border)',
+                    color: slot.isActive ? 'white' : 'var(--muted)',
+                    fontWeight: '600'
+                  }}>
+                    {slot.isActive ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
                   <select
                     value={slot.playerId || ''}
                     onChange={(e) => handleSlotChange(slot.slotIndex, { playerId: e.target.value || null })}
                     disabled={savingSlot === slot.slotIndex}
-                    style={{ padding: 8, borderRadius: 8, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+                    className="select"
+                    style={{ width: '100%' }}
                   >
-                    <option value="">-- Select player --</option>
+                    <option value="">-- Select Player --</option>
                     {playersSorted.map((p) => {
                       const isAlreadySelected = selectedPlayerIds.has(p.id) && p.id !== slot.playerId;
                       return (
                         <option key={p.id} value={p.id} disabled={isAlreadySelected}>
-                          {p.name} | {p.naturalPosition} | Age:{p.age} | Power:{p.power}{isAlreadySelected ? ' [IN USE]' : ''}
+                          {p.name} | {p.naturalPosition} | Age:{p.age} | ⚡{p.power}{isAlreadySelected ? ' [IN USE]' : ''}
                         </option>
                       );
                     })}
@@ -312,91 +333,129 @@ export default function TrainingClient() {
                     value={slot.focusAttribute || ''}
                     onChange={(e) => handleSlotChange(slot.slotIndex, { focusAttribute: e.target.value || null })}
                     disabled={savingSlot === slot.slotIndex}
-                    style={{ padding: 8, borderRadius: 8, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+                    className="select"
+                    style={{ width: '100%' }}
                   >
-                    <option value="">-- Select attribute --</option>
+                    <option value="">-- Select Attribute --</option>
                     {data.trainableAttributes.map((attr) => (
                       <option key={attr} value={attr}>{data.trainableAttributeLabels[attr] || attr}</option>
                     ))}
                   </select>
                 </div>
 
-                <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
-                  Last gain: <span style={{ color: '#86efac' }}>+{Number(slot.lastGain || 0).toFixed(2)}</span>
-                  {slot.focusAttribute && effectiveVal !== null ? (
-                    <> | Effective {data.trainableAttributeLabels[slot.focusAttribute] || slot.focusAttribute}: <strong>{Number(effectiveVal).toFixed(2)}</strong></>
-                  ) : null}
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  Last Gain: <span style={{ color: 'var(--success)', fontWeight: '600' }}>+{Number(slot.lastGain || 0).toFixed(2)}</span>
+                  {slot.focusAttribute && effectiveVal !== null && (
+                    <span> | Effective {data.trainableAttributeLabels[slot.focusAttribute] || slot.focusAttribute}: <strong style={{ color: 'var(--foreground)' }}>{Number(effectiveVal).toFixed(2)}</strong></span>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      </Card>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Weekly Status</h3>
-        <div style={{ color: '#94a3b8' }}>
-          Last status: <strong>{data.weekly.lastStatus || 'N/A'}</strong><br />
-          Last charged fee: {Number(data.weekly.lastChargedFee || 0).toLocaleString()}<br />
-          Last processed at: {data.weekly.lastProcessedAt ? new Date(data.weekly.lastProcessedAt).toLocaleString() : '-'}
-        </div>
-      </div>
-
-      {!!message && (
-        <div style={{ ...cardStyle, borderColor: 'rgba(16,185,129,.4)', color: '#bbf7d0' }}>{message}</div>
-      )}
-
-      {showUpgradeModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,.7)', display: 'grid', placeItems: 'center', zIndex: 1000 }}>
-          <div style={{ ...cardStyle, width: 'min(560px, 92vw)' }}>
-            <h3 style={{ marginTop: 0 }}>Confirm Facility Upgrade</h3>
-            {data.team.nextFacility ? (
-              <>
-                <p style={{ color: '#cbd5e1' }}>
-                  Upgrade Lv.{data.team.trainingFacilityLevel} → Lv.{data.team.nextFacility.level}
-                </p>
-                <ul style={{ color: '#94a3b8' }}>
-                  <li>Upgrade Cost: <strong style={{ color: '#e2e8f0' }}>${data.team.nextFacility.upgradeCost.toLocaleString()}</strong></li>
-                  <li>Your Balance: <strong style={{ color: data.team.balance >= data.team.nextFacility.upgradeCost ? '#86efac' : '#fca5a5' }}>${data.team.balance.toLocaleString()}</strong></li>
-                  <li>After Upgrade: <strong style={{ color: '#e2e8f0' }}>${(data.team.balance - data.team.nextFacility.upgradeCost).toLocaleString()}</strong></li>
-                  <li>New Weekly Fee: {data.team.nextFacility.weeklyFee.toLocaleString()}</li>
-                  <li>New Max Gain: +{data.team.nextFacility.maxGain.toFixed(2)}</li>
-                </ul>
-                {data.team.balance < data.team.nextFacility.upgradeCost && (
-                  <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.5)', color: '#fca5a5', fontSize: '0.9rem' }}>
-                    ⚠️ Insufficient funds. You need ${(data.team.nextFacility.upgradeCost - data.team.balance).toLocaleString()} more.
-                  </div>
-                )}
-              </>
-            ) : (
-              <p style={{ color: '#94a3b8' }}>Facility is already max level.</p>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button
-                onClick={() => setShowUpgradeModal(false)}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #475569', background: 'transparent', color: '#e2e8f0' }}
-                disabled={upgrading}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpgrade}
-                style={{
-                  padding: '8px 12px', borderRadius: 8,
-                  border: '1px solid #22c55e',
-                  background: 'rgba(34,197,94,.25)',
-                  color: '#e2e8f0',
-                  opacity: (upgrading || !data.team.nextFacility || data.team.balance < data.team.nextFacility.upgradeCost) ? 0.5 : 1
-                }}
-                disabled={upgrading || !data.team.nextFacility || data.team.balance < data.team.nextFacility.upgradeCost}
-              >
-                {upgrading ? 'Upgrading...' : 'Confirm Upgrade'}
-              </button>
+      {/* Weekly Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📊 {TRAINING.WEEKLY_STATUS}</CardTitle>
+        </CardHeader>
+        <div className="grid-auto-fit-sm" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Current Week</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+              {data.weekly.currentWeekKey}
             </div>
           </div>
+          <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Last Status</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--success)' }}>
+              {data.weekly.lastStatus || 'N/A'}
+            </div>
+          </div>
+          <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Last Fee</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+              {formatCurrency(data.weekly.lastChargedFee)}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Message Display */}
+      {message && (
+        <div className="card" style={{ 
+          padding: '1rem', 
+          borderColor: message.includes('✅') || message.includes('saved') || message.includes('Upgraded') ? 'var(--success)' : 'var(--danger)',
+          background: message.includes('✅') || message.includes('saved') || message.includes('Upgraded') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          color: message.includes('✅') || message.includes('saved') || message.includes('Upgraded') ? 'var(--success)' : 'var(--danger)',
+          fontWeight: '600'
+        }}>
+          {message}
+        </div>
+      )}
+
+      {/* Upgrade Modal */}
+      {showUpgradeModal && data.team.nextFacility && (
+        <div style={{ 
+          position: 'fixed', 
+          inset: 0, 
+          background: 'rgba(0, 0, 0, 0.5)', 
+          display: 'grid', 
+          placeItems: 'center', 
+          zIndex: 1000 
+        }}>
+          <Card style={{ width: 'min(560px, 92vw)', padding: '2rem' }}>
+            <CardHeader>
+              <CardTitle>Confirm Facility Upgrade</CardTitle>
+            </CardHeader>
+            <div style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+              <p style={{ marginBottom: '1rem' }}>
+                Upgrade <strong>Lv.{data.team.trainingFacilityLevel}</strong> → <strong>Lv.{data.team.nextFacility.level}</strong>
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                <li>Upgrade Cost: <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(data.team.nextFacility.upgradeCost)}</strong></li>
+                <li>Your Balance: <strong style={{ color: data.team.balance >= data.team.nextFacility.upgradeCost ? 'var(--success)' : 'var(--danger)' }}>{formatCurrency(data.team.balance)}</strong></li>
+                <li>After Upgrade: <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(data.team.balance - data.team.nextFacility.upgradeCost)}</strong></li>
+                <li>New Weekly Fee: <strong>{formatCurrency(data.team.nextFacility.weeklyFee)}</strong></li>
+                <li>New Max Gain: <strong>+{data.team.nextFacility.maxGain.toFixed(2)}</strong></li>
+              </ul>
+              {data.team.balance < data.team.nextFacility.upgradeCost && (
+                <div style={{ 
+                  padding: '0.75rem', 
+                  borderRadius: '8px', 
+                  background: 'rgba(239, 68, 68, 0.1)', 
+                  border: '1px solid var(--danger)', 
+                  color: 'var(--danger)', 
+                  fontSize: '0.9rem',
+                  marginTop: '1rem'
+                }}>
+                  ⚠️ Insufficient funds. You need {formatCurrency(data.team.nextFacility.upgradeCost - data.team.balance)} more.
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
+              <Button variant="ghost" size="sm" onClick={() => setShowUpgradeModal(false)} disabled={upgrading}>
+                Cancel
+              </Button>
+              <Button 
+                variant="primary" 
+                size="sm" 
+                onClick={handleUpgrade}
+                disabled={upgrading || data.team.balance < data.team.nextFacility.upgradeCost}
+              >
+                {upgrading ? '⏳ Upgrading...' : '✅ Confirm Upgrade'}
+              </Button>
+            </div>
+          </Card>
         </div>
       )}
     </div>
   );
+}
+
+function formatCurrency(num: number) {
+  if (num >= 1000000) return `$${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `$${(num / 1000).toFixed(0)}K`;
+  return `$${num.toLocaleString()}`;
 }

@@ -97,20 +97,20 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     }, []);
 
     const navItems = [
-        { name: 'หน้าหลัก', href: '/', icon: '🏠' },
-        { name: 'จัดการทีม', href: '/squad', icon: '📋' },
-        { name: 'ตารางการแข่งขัน', href: '/fixtures', icon: '📅' },
-        { name: 'ระบบลีก', href: '/league', icon: '🏆' },
-        { name: 'ตลาดซื้อขาย', href: '/market', icon: '💱' },
-        { name: 'ข่าวสาร', href: '/news', icon: '📰' },
-        { name: 'สรุปฤดูกาล', href: '/season-summary', icon: '🏅' },
-        { name: 'อันดับนักเตะ', href: '/rankings', icon: '📊' },
-        { name: 'ค้นหานักเตะ', href: '/players', icon: '🔍' },
-        { name: 'การเงิน', href: '/finances', icon: '💰' },
-        { name: 'สัญญา', href: '/contracts', icon: '📄' },
-        { name: 'จำลองการแข่ง', href: '/match', icon: '⚽' },
-        { name: 'การฝึกซ้อม', href: '/training', icon: '🏋️' },
-        { name: 'ตั้งค่า', href: '/settings', icon: '⚙️' },
+        { name: 'Home', href: '/', icon: '🏠' },
+        { name: 'Squad', href: '/squad', icon: '📋' },
+        { name: 'Fixtures', href: '/fixtures', icon: '📅' },
+        { name: 'League', href: '/league', icon: '🏆' },
+        { name: 'Market', href: '/market', icon: '💱' },
+        { name: 'News', href: '/news', icon: '📰' },
+        { name: 'Season Summary', href: '/season-summary', icon: '🏅' },
+        { name: 'Rankings', href: '/rankings', icon: '📊' },
+        { name: 'Players', href: '/players', icon: '🔍' },
+        { name: 'Finances', href: '/finances', icon: '💰' },
+        { name: 'Contracts', href: '/contracts', icon: '📄' },
+        { name: 'Match', href: '/match', icon: '⚽' },
+        { name: 'Training', href: '/training', icon: '🏋️' },
+        { name: 'Settings', href: '/settings', icon: '⚙️' },
     ];
 
     // Sidebar content component

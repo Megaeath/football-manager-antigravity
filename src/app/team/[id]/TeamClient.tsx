@@ -312,7 +312,7 @@ export default function TeamClient({
                     <div>
                         <h1 style={{ color: 'white', margin: 0, fontSize: '2rem' }}>{team.name}</h1>
                         <div style={{ marginTop: '8px', color: 'rgba(255,255,255,0.7)' }}>
-                            {team.location} • ก่อตั้ง {team.founded}
+                            {team.location} • Founded {team.founded}
                         </div>
                         {(() => {
                             const rep = getClubReputation(team.reputation || 0);
@@ -458,7 +458,7 @@ export default function TeamClient({
                 {/* Squad */}
                 <div className="card">
                     <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>ทีมเตะ ({team.players.length} คน)</span>
+                        <span>Squad ({team.players.length} players)</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span
                                 className="badge"
@@ -474,25 +474,25 @@ export default function TeamClient({
                         <thead>
                             <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)', color: 'var(--muted)' }}>
                                 <th style={{ padding: '12px' }}>
-                                    <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ตำแหน่ง</button>
+                                    <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Pos</button>
                                 </th>
                                 <th style={{ padding: '12px' }}>
-                                    <button onClick={() => handleSort('name')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ชื่อ</button>
+                                    <button onClick={() => handleSort('name')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Name</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>เล่น</button>
+                                    <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Apps</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('goals')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ประตู</button>
+                                    <button onClick={() => handleSort('goals')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Gls</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('assists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>แอส</button>
+                                    <button onClick={() => handleSort('assists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Ast</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('rating')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>เรต</button>
+                                    <button onClick={() => handleSort('rating')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Rat</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('fit')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ฟิต</button>
+                                    <button onClick={() => handleSort('fit')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Fit</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('physical')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Physical</button>
@@ -510,7 +510,7 @@ export default function TeamClient({
                                     <button onClick={() => handleSort('power')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Suitability</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
-                                    <button onClick={() => handleSort('age')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>อายุ</button>
+                                    <button onClick={() => handleSort('age')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Age</button>
                                 </th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('marketValue')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Market Value</button>

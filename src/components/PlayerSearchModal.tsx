@@ -78,7 +78,7 @@ export default function PlayerSearchModal({ playerId, isOpen, onClose }: PlayerS
             }}>
                 {loading ? (
                     <div style={{ padding: '2rem', textAlign: 'center' }}>
-                        <div>กำลังโหลด...</div>
+                        <div>Loading...</div>
                     </div>
                 ) : player ? (
                     <>

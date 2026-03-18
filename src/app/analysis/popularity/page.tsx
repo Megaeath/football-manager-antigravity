@@ -53,7 +53,7 @@ export default function PopularityAnalysisPage() {
     if (loading) {
         return (
             <div style={{ padding: '2rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem' }}>🔄 กำลังโหลด...</div>
+                <div style={{ fontSize: '1.5rem' }}>🔄 Loading...</div>
             </div>
         );
     }
@@ -86,9 +86,9 @@ export default function PopularityAnalysisPage() {
                 borderRadius: '12px',
                 marginBottom: '2rem'
             }}>
-                <h1 style={{ margin: 0, fontSize: '2rem' }}>📊 ความดังของนักเตะตามตำแหน่ง</h1>
+                <h1 style={{ margin: 0, fontSize: '2rem' }}>📊 Player Popularity by Position</h1>
                 <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>
-                    วิเคราะห์ความสมดุลของความดังในแต่ละตำแหน่ง - {new Date(data.timestamp).toLocaleDateString('th-TH')}
+                    Analyzing popularity balance across positions - {new Date(data.timestamp).toLocaleDateString('th-TH')}
                 </p>
             </div>
 
@@ -100,7 +100,7 @@ export default function PopularityAnalysisPage() {
                         <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{data.summary.totalPlayers}</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>ความดังเฉลี่ยทั้งหมด</div>
+                        <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: '0.5rem' }}> Average Popularityทั้งหมด</div>
                         <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>
                             {data.summary.avgPopularityAllPositions.toFixed(1)}
                         </div>
@@ -110,7 +110,7 @@ export default function PopularityAnalysisPage() {
 
             {/* Position Comparison Table */}
             <div className="card" style={{ padding: '1.5rem', marginBottom: '2rem', overflowX: 'auto' }}>
-                <h2 style={{ marginTop: 0 }}>🎯 สรุปความดังตามตำแหน่ง</h2>
+                <h2 style={{ marginTop: 0 }}>🎯 Popularity Summary by Position</h2>
                 <table style={{
                     width: '100%',
                     borderCollapse: 'collapse',
@@ -118,12 +118,12 @@ export default function PopularityAnalysisPage() {
                 }}>
                     <thead>
                         <tr style={{ background: 'var(--border)', fontWeight: 'bold' }}>
-                            <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid var(--primary)' }}>ตำแหน่ง</th>
+                            <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid var(--primary)' }}>Position</th>
                             <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>จำนวน</th>
                             <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>เฉลี่ย</th>
                             <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>ค่ามัธยฐาน</th>
-                            <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>ถ่วงน้ำหนัก</th>
-                            <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>ช่วง</th>
+                            <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>Weighted</th>
+                            <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--primary)' }}>Range</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,12 +185,12 @@ export default function PopularityAnalysisPage() {
                         }}>
                             <thead>
                                 <tr style={{ background: 'var(--border)', fontWeight: 'bold', borderBottom: '2px solid var(--primary)' }}>
-                                    <th style={{ padding: '10px', textAlign: 'left' }}>ชื่อ</th>
-                                    <th style={{ padding: '10px', textAlign: 'center' }}>ทีม</th>
+                                    <th style={{ padding: '10px', textAlign: 'left' }}>Name</th>
+                                    <th style={{ padding: '10px', textAlign: 'center' }}>Team</th>
                                     <th style={{ padding: '10px', textAlign: 'center' }}>ความดัง</th>
-                                    <th style={{ padding: '10px', textAlign: 'center' }}>อายุ</th>
+                                    <th style={{ padding: '10px', textAlign: 'center' }}>Age</th>
                                     <th style={{ padding: '10px', textAlign: 'center' }}>เกม</th>
-                                    <th style={{ padding: '10px', textAlign: 'center' }}>ประตู/แอสซิสต์</th>
+                                    <th style={{ padding: '10px', textAlign: 'center' }}>Goals/Assists</th>
                                     <th style={{ padding: '10px', textAlign: 'center' }}>คะแนนเฉลี่ย</th>
                                 </tr>
                             </thead>
@@ -241,16 +241,16 @@ export default function PopularityAnalysisPage() {
                 <h3 style={{ marginTop: 0 }}>📖 คำอธิบาย</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
                     <div>
-                        <strong>ความดังเฉลี่ย:</strong> ค่าเฉลี่ยความดังของทั้งตำแหน่ง
+                        <strong> Average Popularity:</strong> ค่าเฉลี่ยความดังของทั้งPosition
                     </div>
                     <div>
                         <strong>ค่ามัธยฐาน:</strong> ค่าตรงกลางของความดัง (50% ต่ำกว่า, 50% สูงกว่า)
                     </div>
                     <div>
-                        <strong>ถ่วงน้ำหนัก:</strong> คำนวณโดยพิจารณาจำนวนเกมที่เล่น (สำคัญมากขึ้น)
+                        <strong>Weighted:</strong> Calculated based on matches played (สำคัญมากขึ้น)
                     </div>
                     <div>
-                        <strong>ช่วง:</strong> ค่าต่ำสุด-สูงสุดของความดังในตำแหน่ง
+                        <strong>Range:</strong> ค่าต่ำสุด-สูงสุดของความดังในPosition
                     </div>
                 </div>
             </div>

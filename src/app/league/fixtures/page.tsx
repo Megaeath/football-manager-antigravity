@@ -33,7 +33,7 @@ export default async function LeagueFixturesPage({
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2 style={{ margin: 0 }}>📅 ผลการแข่งขัน (Fixtures & Results)</h2>
+                <h2 style={{ margin: 0 }}>📅 Fixtures & Results</h2>
 
                 <TeamSelector teams={teams} currentTeamId={teamId} />
             </div>
@@ -41,7 +41,7 @@ export default async function LeagueFixturesPage({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {matches.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '3rem', background: '#f9f9f9', borderRadius: '8px', color: '#999' }}>
-                        ไม่พบข้อมูลการแข่งขัน
+                        No matches found
                     </div>
                 )}
 

@@ -56,7 +56,7 @@ type MatchActionAnalytics = {
 
 export default function MatchPage() {
     return (
-        <Suspense fallback={<div className="card">กำลังโหลดสนามแข่ง...</div>}>
+        <Suspense fallback={<div className="card">Loading match...</div>}>
             <MatchContent />
         </Suspense>
     );
@@ -431,14 +431,14 @@ function MatchContent() {
 
         const segments = side === 'away'
             ? [
-                { key: 'attacking', label: 'หน้าประตู', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' },
+                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' },
                 { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
                 { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' }
             ]
             : [
                 { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
                 { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
-                { key: 'attacking', label: 'หน้าประตู', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
+                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
             ];
 
         return (
@@ -651,7 +651,7 @@ function MatchContent() {
         return `ปริมาณรวมเด่นที่ ${toLabel(bestTotal)} แต่ประสิทธิภาพต่อครั้งเด่นที่ ${toLabel(bestAvg)} เหมาะกับการผสมจังหวะ`; 
     };
 
-    if (!gameInfo) return <div className="card">กำลังโหลดข้อมูล...</div>;
+    if (!gameInfo) return <div className="card">Loadingข้อมูล...</div>;
 
     const userTeamId = gameInfo.userTeamId;
     const userMatch = todaysMatches.find(m => m.homeTeam.id === userTeamId || m.awayTeam.id === gameInfo.userTeamId);
@@ -750,13 +750,13 @@ function MatchContent() {
                             color: 'var(--accent)'
                         }}
                     >
-                        ⏳ กำลังประมวลผลการแข่งขัน...
+                        ⏳ Processing match...
                     </div>
                 </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:justify-between md:items-flex-end">
                 <div>
-                    <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ วันแข่งขัน (Match Day)</h2>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ Match Day</h2>
                     <p style={{ color: 'var(--muted)', marginTop: '4px', fontSize: '0.9rem' }} className="md:text-base">
                         {new Date(gameInfo.currentDate).toLocaleDateString('th-TH', {
                             weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
@@ -766,8 +766,8 @@ function MatchContent() {
 
                 {showNextProcess && (
                     <button onClick={nextProcess} disabled={loading} className="btn btn-primary md:w-auto md:py-3 md:px-6 md:text-base" style={{ padding: '10px 16px', fontSize: '0.9rem', background: 'var(--accent)', width: '100%' }}>
-                        {loading ? 'กำลังประมวลผล...' :
-                            unplayedMatches.length > 0 ? '⏩ จำลองทีมอื่นและไปวันถัดไป' : '🏁 ไปยังวันถัดไป (Next Process)'}
+                        {loading ? 'Processing...' :
+                            unplayedMatches.length > 0 ? '⏩ Simulate other teams and advance' : '🏁 Advance to next day'}
                     </button>
                 )}
             </div>
@@ -776,7 +776,7 @@ function MatchContent() {
             {todaysMatches.length === 0 && (
                 <div className="card" style={{ textAlign: 'center', padding: '4rem' }}>
                     <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗓️</div>
-                    <p style={{ marginBottom: '0', fontWeight: '500', color: 'var(--muted)' }}>ไม่มีการแข่งขันในวันนี้</p>
+                    <p style={{ marginBottom: '0', fontWeight: '500', color: 'var(--muted)' }}>No matches today</p>
                 </div>
             )}
 
@@ -788,7 +788,7 @@ function MatchContent() {
                     {isUserPlayingToday && !userMatchPlayed && (
                         <div className="card" style={{ border: '2px solid var(--primary)', background: 'rgba(var(--primary-rgb), 0.02)' }}>
                             <h3 style={{ marginBottom: '1.5rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span>⭐ นัดสำคัญของคุณ</span>
+                                <span>⭐ Your Important Match</span>
                             </h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', border: '1px solid var(--border)', borderRadius: '12px', background: 'white' }} className="md:flex-row md:gap-0">
                                 <div style={{ flex: 1, textAlign: 'right', width: '100%' }} className="md:w-auto">{formatTeamName(userMatch?.homeTeam.name || '', userMatch?.homeTeam.id || '')}</div>
@@ -801,7 +801,7 @@ function MatchContent() {
                                         className="btn btn-primary md:w-auto"
                                         style={{ padding: '10px 24px', width: '100%' }}
                                     >
-                                        จัดทีมก่อนเริ่มแข่ง
+                                        Configure team before match
                                     </button>
                                 </div>
                             </div>
@@ -863,7 +863,7 @@ function MatchContent() {
                             background: 'rgba(255, 193, 7, 0.08)'
                         }} className="flex-col md:flex-row">
                             <div>
-                                <div style={{ fontWeight: 700, color: '#8a6d3b' }}>⏳ นัดนี้ยังไม่ได้ประมวลผล</div>
+                                <div style={{ fontWeight: 700, color: '#8a6d3b' }}>⏳ This match not yet processed</div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
                                     หากเป็นแมตช์ค้างเก่า สามารถกดประมวลผลได้จากตรงนี้
                                 </div>
@@ -875,7 +875,7 @@ function MatchContent() {
                                         disabled={loading}
                                         className="btn"
                                     >
-                                        จัดทีมก่อนแข่ง
+                                        Configure team
                                     </button>
                                 )}
                                 <button
@@ -883,7 +883,7 @@ function MatchContent() {
                                     disabled={loading}
                                     className="btn btn-primary"
                                 >
-                                    {loading ? 'กำลังประมวลผล...' : '▶️ ประมวลผลแมตช์นี้'}
+                                    {loading ? 'Processing...' : '▶️ Process this match'}
                                 </button>
                             </div>
                         </div>

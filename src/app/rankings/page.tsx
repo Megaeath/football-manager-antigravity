@@ -139,14 +139,14 @@ export default async function RankingsPage({
     });
 
     const tabs = [
-        { id: 'goals', name: 'ดาวซัลโว', icon: '⚽' },
-        { id: 'assists', name: 'จอมแอสซิสต์', icon: '👟' },
-        { id: 'passing', name: 'ความแม่นยำ', icon: '🎯' },
-        { id: 'crossing', name: 'จอมเปิดบอล', icon: '📐' },
-        { id: 'dribbling', name: 'ยอดคลิกเลี้ยง', icon: '🏃' },
-        { id: 'tackles', name: 'การสกัดกั้น', icon: '🛡️' },
-        { id: 'motm', name: 'ยอดเยี่ยม', icon: '🌟' },
-        { id: 'cards', name: 'ระเบียบวินัย', icon: '🟨' },
+        { id: 'goals', name: 'Top Scorers', icon: '⚽' },
+        { id: 'assists', name: 'Assists', icon: '👟' },
+        { id: 'passing', name: 'Passing', icon: '🎯' },
+        { id: 'crossing', name: 'Crossing', icon: '📐' },
+        { id: 'dribbling', name: 'Dribbling', icon: '🏃' },
+        { id: 'tackles', name: 'Tackles', icon: '🛡️' },
+        { id: 'motm', name: 'MOTM', icon: '🌟' },
+        { id: 'cards', name: 'Cards', icon: '🟨' },
     ];
 
     return <RankingsClient stats={sortedStats} tabs={tabs} currentSeason={currentSeason} selectedSeason={selectedSeason} activeTab={activeTab} />;

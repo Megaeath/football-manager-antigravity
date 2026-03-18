@@ -3,6 +3,9 @@ import SeasonSelector from '@/components/SeasonSelector';
 import TeamFilter from '@/components/TeamFilter';
 import { getGameTime } from '@/lib/services/gameTime';
 import Link from 'next/link';
+import { formatDateLong } from '@/lib/dateFormat';
+import { Card, CardHeader } from '@/components/ui/Card';
+import { FIXTURES, MATCH, LEAGUE } from '@/lib/constants/uiLabels';
 
 export default async function FixturesPage({
     searchParams
@@ -47,61 +50,135 @@ export default async function FixturesPage({
     });
 
     return (
-        <div className="flex flex-col gap-6 md:gap-8" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h1 className="text-3xl md:text-5xl" style={{ margin: 0 }}>📅 ตารางการแข่งขัน</h1>
+        <div className="flex flex-col gap-6 md:gap-8">
+            {/* Header */}
+            <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between">
+                <h1 className="text-3xl md:text-5xl font-bold" style={{ margin: 0 }}>📅 {FIXTURES.TITLE}</h1>
                 <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
             </div>
 
             <TeamFilter teams={teams} selectedTeamId={selectedTeamId} selectedSeason={selectedSeason} />
 
+            {/* Match Cards */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 {Object.keys(groupedMatches).length === 0 ? (
-                    <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
-                        ไม่มีโปรแกรมการแข่งขันในฤดูกาลนี้
-                    </div>
+                    <Card>
+                        <div className="text-center py-xl" style={{ padding: '3rem', color: 'var(--muted)' }}>
+                            {FIXTURES.NO_MATCHES}
+                        </div>
+                    </Card>
                 ) : (
                     Object.entries(groupedMatches).map(([date, dateMatches]) => (
                         <div key={date}>
-                            <h3 style={{ marginBottom: '1rem', color: 'var(--primary)', borderBottom: '2px solid var(--primary)', paddingBottom: '0.5rem', display: 'inline-block' }}>
-                                📅 {new Date(date).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                            {/* Date Header */}
+                            <h3 style={{ 
+                                marginBottom: '1.5rem', 
+                                color: 'var(--primary)', 
+                                borderBottom: '2px solid var(--primary)', 
+                                paddingBottom: '0.75rem',
+                                display: 'inline-block',
+                                fontSize: '1.25rem',
+                                fontWeight: '700'
+                            }}>
+                                📅 {formatDateLong(new Date(date))}
                             </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {dateMatches.map(m => (
-                                    <div key={m.id} style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        padding: '1rem',
-                                        background: 'white',
-                                        borderRadius: '12px',
-                                        border: '1px solid var(--border)',
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                                    }} className="flex-col gap-3 md:flex-row md:gap-0 md:px-8">
-                                        <div style={{ flex: 1, textAlign: 'right', fontWeight: '600' }} className="w-full text-left md:text-right">{m.homeTeam.name}</div>
-                                        <div style={{ margin: '0 2rem', textAlign: 'center' }} className="mx-0 md:mx-8">
-                                            {m.isPlayed ? (
-                                                <div style={{ position: 'relative' }}>
-                                                    <div style={{ background: 'var(--sidebar-bg)', color: 'white', padding: '4px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
-                                                        {m.homeScore} - {m.awayScore}
-                                                    </div>
-                                                    {m.motmPlayerId && (
-                                                        <span title="Man of the Match awarded" style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '1rem' }}>🌟</span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div style={{ color: 'var(--muted)', fontWeight: 'bold' }}>VS</div>
-                                            )}
-                                        </div>
-                                        <div style={{ flex: 1, textAlign: 'left', fontWeight: '600' }} className="w-full">{m.awayTeam.name}</div>
+                            
+                            {/* Match Cards */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {dateMatches.map(m => {
+                                    const isPlayed = m.isPlayed;
+                                    const homeWon = (m.homeScore ?? 0) > (m.awayScore ?? 0);
+                                    const awayWon = (m.homeScore ?? 0) < (m.awayScore ?? 0);
+                                    const isDraw = (m.homeScore ?? 0) === (m.awayScore ?? 0);
 
-                                        <div style={{ marginLeft: '2rem', width: '80px', textAlign: 'right' }} className="ml-0 w-full text-left md:ml-8 md:w-20 md:text-right">
-                                            {m.isPlayed && (
-                                                <Link href={`/match?matchId=${m.id}`} style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>รายละเอียด</Link>
-                                            )}
+                                    return (
+                                        <div key={m.id} className="card" style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: '1.25rem 1.5rem',
+                                            background: 'var(--card-bg)',
+                                            borderRadius: '12px',
+                                            border: '1px solid var(--border)',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                                        }}>
+                                            {/* Home Team */}
+                                            <div style={{ flex: 1, textAlign: 'right', fontWeight: '600', fontSize: '1rem' }}>
+                                                {m.homeTeam.name}
+                                            </div>
+                                            
+                                            {/* Score / VS */}
+                                            <div style={{ 
+                                                margin: '0 2rem', 
+                                                textAlign: 'center',
+                                                minWidth: '120px'
+                                            }}>
+                                                {isPlayed ? (
+                                                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                        <div style={{ 
+                                                            background: 'var(--sidebar-bg)', 
+                                                            color: 'white', 
+                                                            padding: '6px 16px', 
+                                                            borderRadius: '8px', 
+                                                            fontWeight: 'bold',
+                                                            fontSize: '1.1rem'
+                                                        }}>
+                                                            {m.homeScore} - {m.awayScore}
+                                                        </div>
+                                                        {m.motmPlayerId && (
+                                                            <span 
+                                                                title={MATCH.PLAYER_OF_MATCH} 
+                                                                style={{ 
+                                                                    position: 'absolute', 
+                                                                    top: '-8px', 
+                                                                    right: '-8px', 
+                                                                    fontSize: '1.2rem' 
+                                                                }}
+                                                            >
+                                                                🌟
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ 
+                                                        color: 'var(--muted)', 
+                                                        fontWeight: 'bold',
+                                                        fontSize: '1rem',
+                                                        padding: '6px 16px'
+                                                    }}>
+                                                        VS
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Away Team */}
+                                            <div style={{ flex: 1, textAlign: 'left', fontWeight: '600', fontSize: '1rem' }}>
+                                                {m.awayTeam.name}
+                                            </div>
+                                            
+                                            {/* Details Link */}
+                                            <div style={{ 
+                                                marginLeft: '2rem', 
+                                                minWidth: '80px', 
+                                                textAlign: 'right' 
+                                            }}>
+                                                {isPlayed && (
+                                                    <Link 
+                                                        href={`/match?matchId=${m.id}`} 
+                                                        className="btn btn-sm btn-ghost"
+                                                        style={{ 
+                                                            fontSize: '0.85rem', 
+                                                            color: 'var(--primary)',
+                                                            padding: '6px 12px'
+                                                        }}
+                                                    >
+                                                        {MATCH.DETAILS} →
+                                                    </Link>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))

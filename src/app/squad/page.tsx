@@ -284,9 +284,9 @@ export default async function SquadPage() {
     return (
         <div>
             <div style={{ marginBottom: '2rem' }}>
-                <h2 style={{ fontSize: '1.75rem', margin: 0 }}>จัดการทีม (Squad Management)</h2>
+                <h2 style={{ fontSize: '1.75rem', margin: 0 }}>Squad Management</h2>
                 <p style={{ color: 'var(--muted)' }}>
-                    ทีมปัจจุบัน: <strong>{team.name}</strong> • วางแผนการเล่นและกำหนดกลยุทธ์
+                    Current Team: <strong>{team.name}</strong> • Plan tactics and strategy
                 </p>
             </div>
 

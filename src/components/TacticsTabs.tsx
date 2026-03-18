@@ -82,8 +82,8 @@ export default function TacticsTabs({ teamId, readOnly = false }: TacticsTabsPro
         }
     };
 
-    if (loading) return <div>กำลังโหลด...</div>;
-    if (!tactics) return <div>ไม่สามารถโหลดแผนการเล่น</div>;
+    if (loading) return <div>Loading...</div>;
+    if (!tactics) return <div>Failed to load tactics</div>;
 
     const tabData = {
         normal: {

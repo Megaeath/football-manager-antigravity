@@ -3,17 +3,16 @@ import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
 import NextProcessButton from '@/components/NextProcessButton';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { formatDateLong, formatDateShort } from '@/lib/dateFormat';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { NAVIGATION, LEAGUE, SQUAD, FINANCES, MATCH, PLAYERS, HOME } from '@/lib/constants/uiLabels';
 
 export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
 
-    const dateStr = gameDate.toLocaleDateString('th-TH-u-ca-gregory', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-    });
+    // Use AD (Gregorian) format with English locale
+    const dateStr = formatDateLong(gameDate);
 
     // Get settings to find user team
     const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
@@ -212,86 +211,61 @@ export default async function Home() {
 
     return (
         <div className="flex flex-col gap-6 md:gap-8">
-            {/* Header */}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-                color: 'white',
-                padding: '1.25rem',
-                borderRadius: '16px',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)'
-            }} className="flex-col gap-4 md:flex-row md:gap-6 md:p-10">
+            {/* Hero Header */}
+            <div className="hero-gradient flex flex-col gap-4 md:flex-row md:justify-between md:items-start">
                 <div className="min-w-0">
-                    <h1 style={{ margin: 0, fontWeight: '800' }} className="text-2xl md:text-4xl">⚽ FOOTBALL MANAGER</h1>
-                    <p style={{ margin: '12px 0 0 0', opacity: 0.9, fontSize: '1rem' }}>
-                        {userTeam ? `อบรม ${userTeam.name} ไปสู่ความเป็นแชมป์` : 'เตรียมทีมของคุณสำหรับสิ่งที่จะมา'}
+                    <h1 className="text-2xl md:text-4xl font-extrabold" style={{ margin: 0 }}>⚽ FOOTBALL MANAGER</h1>
+                    <p className="text-base md:text-lg" style={{ margin: '12px 0 0 0', opacity: 0.9 }}>
+                        {userTeam ? `Lead ${userTeam.name} to Championship Glory` : 'Prepare Your Team for What\'s Coming'}
                     </p>
                 </div>
-                <div style={{
-                    textAlign: 'right',
+                <div className="w-full md:w-auto text-right" style={{
                     background: 'rgba(255,255,255,0.15)',
                     padding: '12px 16px',
                     borderRadius: '12px',
                     backdropFilter: 'blur(10px)',
                     border: '1px solid rgba(255,255,255,0.3)'
-                }} className="w-full md:w-auto">
-                    <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8, marginBottom: '4px' }}>วันที่ปัจจุบัน</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '700' }} className="md:text-xl">{dateStr}</div>
-                    <div style={{ fontSize: '0.8rem', marginTop: '8px', opacity: 0.8 }}>ฤดูกาล {settings?.currentSeason || 1}</div>
-                    <div style={{ marginTop: '12px' }}>
+                }}>
+                    <div className="text-xs uppercase" style={{ opacity: 0.8, marginBottom: '4px' }}>{HOME.CURRENT_DATE}</div>
+                    <div className="text-lg md:text-xl font-bold">{dateStr}</div>
+                    <div className="text-xs mt-2" style={{ opacity: 0.8 }}>{HOME.SEASON} {settings?.currentSeason || 1}</div>
+                    <div className="mt-3">
                         <NextProcessButton />
                     </div>
                 </div>
             </div>
 
-            {/* User Team Overview */}
+            {/* User Team Overview Cards */}
             {userTeam && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-                    <div className="card" style={{ background: 'linear-gradient(135deg, rgba(13, 110, 253, 0.1) 0%, rgba(13, 110, 253, 0.05) 100%)', borderLeft: '4px solid var(--primary)' }}>
-                        <h4 style={{ margin: '0 0 1rem 0', color: 'var(--primary)' }}>👕 ทีมของคุณ</h4>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{userTeam.name}</div>
-                        <div style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>อันดับที่: <strong>{userTeamPosition}</strong></div>
-                        <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{userTeam.players.length} นักเตะในทีม</div>
-                        <Link href="/squad" style={{
-                            display: 'inline-block',
-                            marginTop: '1rem',
-                            padding: '8px 16px',
-                            background: 'var(--primary)',
-                            color: 'white',
-                            borderRadius: '6px',
-                            textDecoration: 'none',
-                            fontSize: '0.9rem'
-                        }}>
-                            จัดการทีม →
+                <div className="grid-auto-fit-md" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
+                    {/* Your Team Card */}
+                    <div className="card card-gradient-primary">
+                        <h4 className="text-lg font-semibold text-primary" style={{ margin: '0 0 1rem 0' }}>👕 {SQUAD.YOUR_TEAM}</h4>
+                        <div className="text-3xl font-bold mb-2">{userTeam.name}</div>
+                        <div className="text-sm text-muted mb-2">{LEAGUE.POSITION}: <strong>{userTeamPosition}</strong></div>
+                        <div className="text-sm text-muted">{userTeam.players.length} {SQUAD.PLAYERS_IN_SQUAD}</div>
+                        <Link href="/squad" className="btn btn-primary btn-sm" style={{ marginTop: '1rem', display: 'inline-block' }}>
+                            {SQUAD.MANAGE_SQUAD} →
                         </Link>
                     </div>
 
-                    <div className="card" style={{ background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%)', borderLeft: '4px solid #4caf50' }}>
-                        <h4 style={{ margin: '0 0 1rem 0', color: '#4caf50' }}>💰 สถานะการเงิน</h4>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#4caf50' }}>
+                    {/* Finances Card */}
+                    <div className="card card-gradient-success">
+                        <h4 className="text-lg font-semibold" style={{ margin: '0 0 1rem 0', color: 'var(--success)' }}>💰 {FINANCES.TITLE}</h4>
+                        <div className="text-3xl font-bold mb-2" style={{ color: 'var(--success)' }}>
                             ${(userTeam?.balance ?? teamFinance?.balance ?? 0).toLocaleString()}
                         </div>
-                        <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>งบประมาณที่มี</div>
-                        <Link href="/finances" style={{
-                            display: 'inline-block',
-                            marginTop: '1rem',
-                            padding: '8px 16px',
-                            background: '#4caf50',
-                            color: 'white',
-                            borderRadius: '6px',
-                            textDecoration: 'none',
-                            fontSize: '0.9rem'
-                        }}>
-                            ดูรายละเอียด →
+                        <div className="text-sm text-muted">{FINANCES.AVAILABLE_BUDGET}</div>
+                        <Link href="/finances" className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--success)', color: 'white' }}>
+                            {FINANCES.VIEW_DETAILS} →
                         </Link>
                     </div>
 
+                    {/* Next Match Card */}
                     {upcomingMatch && (
-                        <div className="card" style={{ background: 'linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%)', borderLeft: '4px solid #ff9800' }}>
-                            <h4 style={{ margin: '0 0 1rem 0', color: '#ff9800' }}>🎯 แมตช์ถัดไป</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '0.5rem' }}>
+                        <div className="card card-gradient-warning">
+                            <h4 className="text-lg font-semibold" style={{ margin: '0 0 1rem 0', color: 'var(--accent)' }}>🎯 {MATCH.NEXT_MATCH}</h4>
+                            <div className="flex flex-col gap-2 mb-2">
                                 {(() => {
                                     const isHomeUser = upcomingMatch.homeTeamId === userTeamId;
                                     const opponentTeam = isHomeUser ? upcomingMatch.awayTeam : upcomingMatch.homeTeam;
@@ -299,33 +273,20 @@ export default async function Home() {
                                     const opponentPower = teamPowerMap[opponentTeam.id] ?? 50;
 
                                     return (
-                                        <div style={{
-                                            fontSize: '1rem',
-                                            fontWeight: '700',
-                                            color: 'inherit'
-                                        }}>
+                                        <div className="text-base font-bold">
                                             {opponentTeam.name}
-                                            <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginLeft: '8px', fontWeight: '500' }}>
-                                                #{opponentRank || '-'} • พลัง {opponentPower}
+                                            <span className="text-xs text-muted ml-2">
+                                                #{opponentRank || '-'} • {MATCH.POWER} {opponentPower}
                                             </span>
                                         </div>
                                     );
                                 })()}
                             </div>
-                            <div style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                                {new Date(upcomingMatch.date).toLocaleDateString('th-TH')}
+                            <div className="text-sm text-muted mb-2">
+                                {formatDateShort(upcomingMatch.date)}
                             </div>
-                            <Link href={`/match?matchId=${upcomingMatch.id}`} style={{
-                                display: 'inline-block',
-                                marginTop: '1rem',
-                                padding: '8px 16px',
-                                background: '#ff9800',
-                                color: 'white',
-                                borderRadius: '6px',
-                                textDecoration: 'none',
-                                fontSize: '0.9rem'
-                            }}>
-                                ดูแมตช์ →
+                            <Link href={`/match?matchId=${upcomingMatch.id}`} className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--accent)', color: 'white' }}>
+                                {MATCH.VIEW_MATCH} →
                             </Link>
                         </div>
                     )}
@@ -335,60 +296,68 @@ export default async function Home() {
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr]">
                 {/* League Table */}
-                <div className="card">
-                    <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        📊 ตารางคะแนนลีก
-                    </h3>
-                    <div className="hidden overflow-x-auto md:block" style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>📊 {LEAGUE.CURRENT_STANDINGS}</CardTitle>
+                    </CardHeader>
+                    
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                    <th style={{ padding: '8px', textAlign: 'left' }}>ลำดับ</th>
-                                    <th style={{ padding: '8px', textAlign: 'left' }}>ทีม</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>นัด</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>ชนะ</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>เสมอ</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>แพ้</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>G.D.</th>
-                                    <th style={{ padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>คะแนน</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '50px', fontWeight: 'bold' }}>{LEAGUE.POSITION}</th>
+                                    <th style={{ padding: '12px', fontWeight: 'bold' }}>{LEAGUE.CLUB}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '50px' }}>{LEAGUE.PLAYED}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '50px', color: 'var(--success)', fontWeight: 'bold' }}>{LEAGUE.WON}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '50px', color: 'var(--accent)' }}>{LEAGUE.DRAWN}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '50px', color: 'var(--danger)' }}>{LEAGUE.LOST}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '70px' }}>{LEAGUE.GOAL_DIFFERENCE}</th>
+                                    <th className="text-center" style={{ padding: '12px', width: '60px', fontWeight: 'bold', fontSize: '1rem' }}>{LEAGUE.POINTS}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {leagueTable.slice(0, 10).map((team, index) => (
                                     <tr key={team.id} style={{
                                         borderBottom: '1px solid var(--border)',
-                                        background: team.isUserTeam ? 'rgba(13, 110, 253, 0.1)' : index < 3 ? 'rgba(76, 175, 80, 0.05)' : index > 6 ? 'rgba(220, 38, 38, 0.05)' : 'transparent'
+                                        background: team.isUserTeam ? 'rgba(13, 110, 253, 0.1)' : 
+                                                  index < 3 ? 'rgba(76, 175, 80, 0.05)' : 
+                                                  index > leagueTable.length - 4 ? 'rgba(220, 38, 38, 0.05)' : 'transparent'
                                     }}>
-                                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{index + 1}</td>
-                                        <td style={{ padding: '8px' }}>
-                                            {team.name}
-                                            {team.isUserTeam && <span style={{ marginLeft: '8px', color: 'var(--primary)', fontWeight: 'bold' }}>👑</span>}
+                                        <td className="text-center" style={{ padding: '10px', fontWeight: index < 3 ? 'bold' : 'normal', color: index === 0 ? 'var(--success)' : 'inherit' }}>{index + 1}</td>
+                                        <td style={{ padding: '10px' }}>
+                                            <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {team.name}
+                                                {team.isUserTeam && <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>👑</span>}
+                                            </div>
                                         </td>
-                                        <td style={{ padding: '8px', textAlign: 'center' }}>{team.played}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', color: '#4caf50', fontWeight: 'bold' }}>{team.wins}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', color: '#ff9800' }}>{team.draws}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', color: '#dc2626' }}>{team.losses}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center' }}>{team.goalDiff > 0 ? '+' : ''}{team.goalDiff}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem' }}>{team.points}</td>
+                                        <td className="text-center" style={{ padding: '10px' }}>{team.played}</td>
+                                        <td className="text-center" style={{ padding: '10px', color: 'var(--success)', fontWeight: 'bold' }}>{team.wins}</td>
+                                        <td className="text-center" style={{ padding: '10px', color: 'var(--accent)' }}>{team.draws}</td>
+                                        <td className="text-center" style={{ padding: '10px', color: 'var(--danger)' }}>{team.losses}</td>
+                                        <td className="text-center" style={{ padding: '10px' }}>{team.goalDiff > 0 ? '+' : ''}{team.goalDiff}</td>
+                                        <td className="text-center" style={{ padding: '10px', fontWeight: 'bold', fontSize: '1.05rem' }}>{team.points}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
 
-                    <div className="flex flex-col gap-2 md:hidden">
+                    {/* Mobile Cards */}
+                    <div className="md:hidden flex flex-col gap-2">
                         {leagueTable.slice(0, 10).map((team, index) => (
                             <div
                                 key={team.id}
+                                className="card"
                                 style={{
+                                    padding: '12px',
                                     border: '1px solid var(--border)',
                                     borderRadius: '10px',
-                                    padding: '12px',
                                     background: team.isUserTeam
                                         ? 'rgba(13, 110, 253, 0.1)'
                                         : index < 3
                                             ? 'rgba(76, 175, 80, 0.05)'
-                                            : index > 6
+                                            : index > leagueTable.length - 4
                                                 ? 'rgba(220, 38, 38, 0.05)'
                                                 : 'transparent'
                                 }}
@@ -398,44 +367,37 @@ export default async function Home() {
                                         #{index + 1} {team.name}
                                         {team.isUserTeam && <span style={{ marginLeft: '8px', color: 'var(--primary)' }}>👑</span>}
                                     </div>
-                                    <div style={{ fontWeight: '800', fontSize: '1rem' }}>{team.points} pts</div>
+                                    <div style={{ fontWeight: '800', fontSize: '1.05rem' }}>{team.points} {LEAGUE.POINTS}</div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                                    <div>นัด: <strong style={{ color: 'var(--foreground)' }}>{team.played}</strong></div>
-                                    <div>ชนะ: <strong style={{ color: '#4caf50' }}>{team.wins}</strong></div>
-                                    <div>เสมอ: <strong style={{ color: '#ff9800' }}>{team.draws}</strong></div>
-                                    <div>แพ้: <strong style={{ color: '#dc2626' }}>{team.losses}</strong></div>
+                                    <div>{LEAGUE.PLAYED}: <strong style={{ color: 'var(--foreground)' }}>{team.played}</strong></div>
+                                    <div>{LEAGUE.WON}: <strong style={{ color: 'var(--success)' }}>{team.wins}</strong></div>
+                                    <div>{LEAGUE.DRAWN}: <strong style={{ color: 'var(--accent)' }}>{team.draws}</strong></div>
+                                    <div>{LEAGUE.LOST}: <strong style={{ color: 'var(--danger)' }}>{team.losses}</strong></div>
                                 </div>
                             </div>
                         ))}
                     </div>
 
-                    <Link href="/league" style={{
-                        display: 'inline-block',
-                        marginTop: '1rem',
-                        padding: '8px 16px',
-                        background: 'var(--primary)',
-                        color: 'white',
-                        borderRadius: '6px',
-                        textDecoration: 'none',
-                        fontSize: '0.9rem'
-                    }}>
-                        ดูตารางเต็ม →
+                    <Link href="/league" className="btn btn-primary btn-sm" style={{ marginTop: '1rem', display: 'inline-block' }}>
+                        {LEAGUE.VIEW_FULL_TABLE} →
                     </Link>
-                </div>
+                </Card>
 
                 {/* Top Scorers */}
-                <div className="card">
-                    <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚽ แข้งทองสูงสุด</h3>
+                <Card>
+                    <CardHeader>
+                        <CardTitle level={3}>⚽ {PLAYERS.TOP_SCORERS}</CardTitle>
+                    </CardHeader>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {topScorers.map((player, index) => (
                             <div key={player.id} style={{
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
-                                padding: '8px',
+                                padding: '10px',
                                 background: 'var(--card-bg)',
-                                borderRadius: '6px',
+                                borderRadius: '8px',
                                 border: '1px solid var(--border)',
                                 fontSize: '0.9rem'
                             }}>
@@ -448,7 +410,7 @@ export default async function Home() {
                                 <div style={{
                                     background: '#fbbf24',
                                     color: 'white',
-                                    padding: '4px 12px',
+                                    padding: '6px 14px',
                                     borderRadius: '20px',
                                     fontWeight: 'bold',
                                     fontSize: '0.95rem'
@@ -458,27 +420,27 @@ export default async function Home() {
                             </div>
                         ))}
                     </div>
-                </div>
+                </Card>
             </div>
 
-            {/* Latest News & Transfers Info */}
-            <div className="card">
-                <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📰 ข่าวล่าสุด</span>
-                    <Link href="/news" style={{ fontSize: '0.85rem', color: 'var(--primary)', textDecoration: 'none' }}>ดูทั้งหมด →</Link>
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Latest News */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>📰 {HOME.LATEST_NEWS}</CardTitle>
+                    <Link href="/news" className="text-sm text-primary hover:underline">{HOME.VIEW_ALL} →</Link>
+                </CardHeader>
+                <div className="flex flex-col gap-4">
                     {recentNews.length === 0 ? (
-                        <div style={{ padding: '1rem', color: 'var(--muted)', textAlign: 'center' }}>ไม่มีข่าวใหม่</div>
+                        <div className="p-lg text-center text-muted">{HOME.NO_NEWS}</div>
                     ) : (
                         recentNews.map((news: any) => (
-                            <div key={news.id} style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'bold', minWidth: '70px' }}>
-                                    {new Date(news.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                            <div key={news.id} className="flex gap-4" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+                                <div className="text-xs text-primary font-bold min-w-[70px]">
+                                    {formatDateShort(news.date)}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{news.title}</div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: '1.4' }}>
+                                    <div className="font-bold mb-1">{news.title}</div>
+                                    <div className="text-sm text-muted" style={{ lineHeight: 1.4 }}>
                                         {news.content.length > 150 ? news.content.substring(0, 150) + '...' : news.content}
                                     </div>
                                 </div>
@@ -486,37 +448,45 @@ export default async function Home() {
                         ))
                     )}
                 </div>
-            </div>
+            </Card>
 
             {/* Recent Matches */}
-            <div className="card">
-                <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    📅 แมตช์ที่ผ่านมา
-                </h3>
+            <Card>
+                <CardHeader>
+                    <CardTitle>📅 {MATCH.RECENT_MATCHES}</CardTitle>
+                </CardHeader>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                     {recentMatches.map(match => {
                         const isUserMatch = userTeamId && (match.homeTeamId === userTeamId || match.awayTeamId === userTeamId);
                         const isHome = match.homeTeamId === userTeamId;
+                        const homeWon = (match.homeScore ?? 0) > (match.awayScore ?? 0);
+                        const awayWon = (match.homeScore ?? 0) < (match.awayScore ?? 0);
+                        const isDraw = (match.homeScore ?? 0) === (match.awayScore ?? 0);
+                        
+                        let resultText = isDraw ? MATCH.DRAW : (isHome ? (homeWon ? MATCH.WON : MATCH.LOST) : (awayWon ? MATCH.WON : MATCH.LOST));
+                        let resultColor = isDraw ? '#ff9800' : (homeWon || awayWon) ? '#4caf50' : '#dc2626';
+                        let resultBg = isDraw ? 'rgba(255, 152, 0, 0.1)' : (homeWon || awayWon) ? 'rgba(76, 175, 80, 0.1)' : 'rgba(220, 38, 38, 0.1)';
+
                         return (
                             <div key={match.id} style={{
                                 padding: '1rem',
                                 background: 'var(--border)',
-                                borderRadius: '8px',
+                                borderRadius: '12px',
                                 border: isUserMatch ? '2px solid var(--primary)' : '1px solid var(--border)'
                             }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                                        {new Date(match.date).toLocaleDateString('th-TH')}
+                                        {formatDateShort(match.date)}
                                     </div>
                                     <div style={{
                                         fontSize: '0.8rem',
                                         fontWeight: 'bold',
-                                        color: (match.homeScore ?? 0) > (match.awayScore ?? 0) ? '#4caf50' : (match.homeScore ?? 0) < (match.awayScore ?? 0) ? '#dc2626' : '#ff9800',
-                                        background: (match.homeScore ?? 0) > (match.awayScore ?? 0) ? 'rgba(76, 175, 80, 0.1)' : (match.homeScore ?? 0) < (match.awayScore ?? 0) ? 'rgba(220, 38, 38, 0.1)' : 'rgba(255, 152, 0, 0.1)',
-                                        padding: '4px 8px',
-                                        borderRadius: '4px'
+                                        color: resultColor,
+                                        background: resultBg,
+                                        padding: '4px 10px',
+                                        borderRadius: '6px'
                                     }}>
-                                        {(match.homeScore ?? 0) > (match.awayScore ?? 0) ? 'ชนะ' : (match.homeScore ?? 0) < (match.awayScore ?? 0) ? 'แพ้' : 'เสมอ'}
+                                        {resultText}
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
@@ -528,8 +498,12 @@ export default async function Home() {
                                     <div style={{
                                         fontSize: '1.3rem',
                                         fontWeight: 'bold',
-                                        minWidth: '50px',
-                                        textAlign: 'center'
+                                        minWidth: '60px',
+                                        textAlign: 'center',
+                                        background: 'var(--sidebar-bg)',
+                                        color: 'white',
+                                        padding: '4px 10px',
+                                        borderRadius: '6px'
                                     }}>
                                         {match.homeScore ?? 0} - {match.awayScore ?? 0}
                                     </div>
@@ -543,107 +517,31 @@ export default async function Home() {
                         );
                     })}
                 </div>
-            </div>
+            </Card>
 
             {/* Quick Links */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                <Link href="/league" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📊</div>
-                    <div style={{ fontWeight: 'bold' }}>ลีก</div>
-                </Link>
-
-                <Link href="/squad" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👕</div>
-                    <div style={{ fontWeight: 'bold' }}>ทีม</div>
-                </Link>
-
-                <Link href="/market" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💱</div>
-                    <div style={{ fontWeight: 'bold' }}>ตลาดนักเตะ</div>
-                </Link>
-
-                <Link href="/finances" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💰</div>
-                    <div style={{ fontWeight: 'bold' }}>การเงิน</div>
-                </Link>
-
-                <Link href="/fixtures" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📅</div>
-                    <div style={{ fontWeight: 'bold' }}>ตารางแข่ง</div>
-                </Link>
-
-                <Link href="/players" className="card" style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    color: 'inherit'
-                }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
-                    <div style={{ fontWeight: 'bold' }}>ค้นหานักเตะ</div>
-                </Link>
+                <QuickLinkCard href="/league" icon="📊" label={NAVIGATION.LEAGUE} />
+                <QuickLinkCard href="/squad" icon="👕" label={NAVIGATION.SQUAD} />
+                <QuickLinkCard href="/market" icon="💱" label={NAVIGATION.MARKET} />
+                <QuickLinkCard href="/finances" icon="💰" label={NAVIGATION.FINANCES} />
+                <QuickLinkCard href="/fixtures" icon="📅" label={NAVIGATION.FIXTURES} />
+                <QuickLinkCard href="/players" icon="🔍" label={NAVIGATION.PLAYERS} />
             </div>
-
-            {/* Footer */}
-            <footer style={{
-                marginTop: '2rem',
-                padding: '2rem',
-                borderTop: '1px solid var(--border)',
-                textAlign: 'center',
-                color: 'var(--muted)',
-                fontSize: '0.9rem'
-            }}>
-                <div style={{ fontWeight: '600', marginBottom: '4px' }}>⚽ FOOTBALL MANAGER (TEXT)</div>
-                <div style={{ fontSize: '0.8rem' }}>v0.3.0 - Dashboard Manager System</div>
-            </footer>
         </div>
+    );
+}
+
+// Quick Link Card Component
+function QuickLinkCard({ href, icon, label }: { href: string; icon: string; label: string }) {
+    return (
+        <Link 
+            href={href} 
+            className="card flex flex-col items-center justify-center p-xl text-center"
+            style={{ padding: '2rem', textDecoration: 'none', color: 'inherit' }}
+        >
+            <div className="text-4xl mb-2">{icon}</div>
+            <div className="font-bold text-sm">{label}</div>
+        </Link>
     );
 }

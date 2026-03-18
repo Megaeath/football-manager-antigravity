@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { formatDateLong } from '@/lib/dateFormat';
 
 interface HeaderProps {
     onMenuClick: () => void;
@@ -16,11 +17,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
             const data = await res.json();
             if (data.currentDate) {
                 const date = new Date(data.currentDate);
-                setGameDate(date.toLocaleDateString('th-TH-u-ca-gregory', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric'
-                }));
+                // Use AD (Gregorian) format with English locale
+                setGameDate(formatDateLong(date));
             }
         };
         fetchDate();
@@ -43,9 +41,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 </button>
 
                 <Link href="/" className="flex items-center gap-2 text-base font-bold text-[var(--foreground)] md:text-lg">
-                    <span className="text-xl md:text-2xl">🎮</span>
-                    <span className="hidden sm:inline">Football Manager Game</span>
-                    <span className="sm:hidden">FM Game</span>
+                    <span className="text-xl md:text-2xl">⚽</span>
+                    <span className="hidden sm:inline">Football Manager</span>
+                    <span className="sm:hidden">FM</span>
                 </Link>
             </div>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { LEAGUE } from '@/lib/constants/uiLabels';
 
 interface SeasonSelectorProps {
     currentSeason: number;
@@ -22,7 +23,7 @@ export default function SeasonSelector({ currentSeason, selectedSeason }: Season
 
     return (
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--muted)' }}>เลือกฤดูกาล:</span>
+            <span style={{ color: 'var(--muted)' }}>{LEAGUE.SEASON}:</span>
             <select
                 value={selectedSeason}
                 onChange={(e) => handleSeasonChange(e.target.value)}
@@ -37,7 +38,7 @@ export default function SeasonSelector({ currentSeason, selectedSeason }: Season
             >
                 {seasons.map(s => (
                     <option key={s} value={s}>
-                        ฤดูกาลที่ {s} {s === currentSeason ? '(ปัจจุบัน)' : ''}
+                        {LEAGUE.SEASON} {s} {s === currentSeason ? `(${LEAGUE.CURRENT})` : ''}
                     </option>
                 ))}
             </select>

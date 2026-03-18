@@ -170,7 +170,7 @@ export function TransferTab({
 
     const handleUpdateStatus = async () => {
         const confirmMsg = selectedTransferStatus === 'RELEASED'
-            ? `คุณแน่ใจหรือไม่ที่จะปล่อยตัว ${playerName} ออกจากทีมฟรี?`
+            ? `Are you sure you want to release ${playerName} as a free agent?`
             : `คุณแน่ใจหรือไม่ที่จะอัปเดตสถานะของ ${playerName}?`;
 
         if (!window.confirm(confirmMsg)) return;

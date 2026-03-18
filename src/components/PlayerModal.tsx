@@ -256,7 +256,7 @@ export default function PlayerModal() {
                     onClick={(e) => e.stopPropagation()}
                 >
                     {loading ? (
-                        <div style={{ padding: '2rem', textAlign: 'center' }}>กำลังโหลดข้อมูล...</div>
+                        <div style={{ padding: '2rem', textAlign: 'center' }}>Loading data...</div>
                     ) : player ? (
                         <div>
                             {/* Close Button */}
@@ -292,8 +292,8 @@ export default function PlayerModal() {
                                     <h2 style={{ color: 'white', margin: 0, fontSize: '1.4rem' }} className="md:text-3xl">{player.name}</h2>
                                     <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
                                         <span style={{ background: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '4px', fontSize: '0.9rem' }}>{player.naturalPosition}</span>
-                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'นักเตะอิสระ'}</span>
-                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>• อายุ {player.age} ปี</span>
+                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>{player.team?.name || 'Free Agent'}</span>
+                                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>• {player.age} years old</span>
                                     </div>
                                 </div>
                                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
@@ -349,7 +349,7 @@ export default function PlayerModal() {
                                         matches: { icon: '📅', label: 'ประวัติ' },
                                         contract: { icon: '📄', label: 'สัญญา' },
                                         transfer: { icon: '💱', label: 'ซื้อขาย' },
-                                        history: { icon: '🔄', label: 'การย้ายทีม' }
+                                        history: { icon: '🔄', label: 'Transfer History' }
                                     };
                                     const { icon, label } = tabLabels[tab];
                                     
@@ -453,16 +453,16 @@ export default function PlayerModal() {
                                                 </div>
 
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-                                                    <StatCard icon="⚽" label="ประตู" value={currentSeasonStats.goals} />
-                                                    <StatCard icon="🅰️" label="แอสซิสต์" value={currentSeasonStats.assists} />
+                                                    <StatCard icon="⚽" label="Goals" value={currentSeasonStats.goals} />
+                                                    <StatCard icon="🅰️" label="Assists" value={currentSeasonStats.assists} />
                                                     <StatCard icon="🎯" label="ยิงเข้า" value={currentSeasonStats.shotsOnTarget} />
                                                     <StatCard icon="🔫" label="ยิงทั้งหมด" value={currentSeasonStats.shots} />
                                                     <StatCard icon="📐" label="เปิดบอล" value={currentSeasonStats.crossesCompleted} />
                                                     <StatCard icon="🏃" label="เลี้ยงผ่าน" value={currentSeasonStats.dribblesWon} />
                                                     <StatCard icon="🛡️" label="สกัดบอล" value={currentSeasonStats.tacklesWon} />
                                                     <StatCard icon="🎾" label="พาส %" value={currentSeasonStats.passesAttempted > 0 ? Math.round((currentSeasonStats.passesCompleted / currentSeasonStats.passesAttempted) * 100) : 0} />
-                                                    <StatCard icon="⏱️" label="เล่นแล้ว" value={currentSeasonStats.minutes} suffix="&apos;" />
-                                                    <StatCard icon="🎮" label="นัดเล่น" value={currentSeasonStats.matches} />
+                                                    <StatCard icon="⏱️" label="Minutes Played" value={currentSeasonStats.minutes} suffix="&apos;" />
+                                                    <StatCard icon="🎮" label="Matches Played" value={currentSeasonStats.matches} />
                                                     <StatCard icon="🟨" label="การ์ดเหลือง" value={currentSeasonStats.yellowCards} />
                                                     <StatCard icon="🟥" label="การ์ดแดง" value={currentSeasonStats.redCards} />
                                                 </div>
@@ -482,7 +482,7 @@ export default function PlayerModal() {
                                                             
                                                             return (
                                                                 <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                                                                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>พื้นที่การเล่น (คลิกเพื่อกรอง)</div>
+                                                                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: '600' }}>Field Zones (click to filter)</div>
                                                                     <div style={{ display: 'flex', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', marginBottom: '8px', gap: '0px' }}>
                                                                         {[
                                                                             { key: 'defensive', label: '🛡️ Defensive', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
@@ -574,7 +574,7 @@ export default function PlayerModal() {
                                             </div>
                                         ) : (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
-                                                ไม่มีข้อมูลการแข่งขันในฤดูกาลนี้
+                                                No matches this season
                                             </div>
                                         )}
                                     </div>
@@ -631,7 +631,7 @@ export default function PlayerModal() {
                                                                         {stat.rating.toFixed(2)} ⭐
                                                                     </div>
                                                                     <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                                                                        {stat.minutes}&apos; เล่น
+                                                                        {stat.minutes}&apos; Played
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -640,11 +640,11 @@ export default function PlayerModal() {
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
                                                                 <div style={{ textAlign: 'center' }}>
                                                                     <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.goals || 0}</div>
-                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>⚽ ประตู</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>⚽ Goals</div>
                                                                 </div>
                                                                 <div style={{ textAlign: 'center' }}>
                                                                     <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.assists || 0}</div>
-                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🅰️ แอสซิสต์</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>🅰️ Assists</div>
                                                                 </div>
                                                                 <div style={{ textAlign: 'center' }}>
                                                                     <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)' }}>{stat.shots || 0}</div>
@@ -723,7 +723,7 @@ export default function PlayerModal() {
                                             </div>
                                         ) : (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
-                                                ยังไม่มีประวัติการแข่งขันในฤดูกาลนี้
+                                                No match history this season
                                             </div>
                                         )}
                                     </div>
@@ -758,7 +758,7 @@ export default function PlayerModal() {
                                 {activeTab === 'history' && player && (
                                     <div style={{ padding: '1.5rem' }}>
                                         {/* Transfer History Section */}
-                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>ประวัติการย้ายทีม</h3>
+                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>ประวัติTransfer History</h3>
                                         {player.transferHistory && player.transferHistory.length > 0 ? (
                                             <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -788,11 +788,11 @@ export default function PlayerModal() {
                                                 </table>
                                             </div>
                                         ) : (
-                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>ไม่มีประวัติการย้ายทีม</div>
+                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>ไม่มีประวัติTransfer History</div>
                                         )}
 
                                         {/* Seasonal Statistics Section */}
-                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>สถิติตามฤดูกาล</h3>
+                                        <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Seasonal Statistics</h3>
                                         {player.matchStats && player.matchStats.length > 0 ? (() => {
                                             const statsGrouped: Record<string, any> = {};
                                             (player.matchStats as any[]).forEach(stat => {
@@ -822,9 +822,9 @@ export default function PlayerModal() {
                                                         <thead>
                                                             <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                                                                 <th style={{ padding: '1rem' }}>ฤดูกาล</th>
-                                                                <th style={{ padding: '1rem' }}>ทีม</th>
-                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>ลงเล่น</th>
-                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>⚽ ประตู</th>
+                                                                <th style={{ padding: '1rem' }}>Team</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>Appearances</th>
+                                                                <th style={{ padding: '1rem', textAlign: 'center' }}>⚽ Goals</th>
                                                                 <th style={{ padding: '1rem', textAlign: 'center' }}>📞 ลูกหวาน</th>
                                                                 <th style={{ padding: '1rem', textAlign: 'right' }}>คะแนนเฉลี่ย</th>
                                                             </tr>
@@ -847,7 +847,7 @@ export default function PlayerModal() {
                                                 </div>
                                             );
                                         })() : (
-                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>ยังไม่มีสถิติการเล่น</div>
+                                            <div style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>No statistics yet</div>
                                         )}
                                     </div>
                                 )}

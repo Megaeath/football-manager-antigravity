@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { resetGameWithSelectedTeam, updateYellowSuspensionThreshold } from '../actions';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { SETTINGS, ACTIONS } from '@/lib/constants/uiLabels';
 
 type TeamOption = {
     id: string;
@@ -19,14 +22,14 @@ export default function SettingsClient({ teams, currentUserTeamName, yellowSuspe
 
     const handleSaveDisciplineSettings = async () => {
         setLoading(true);
-        setMessage('กำลังบันทึกกฎโทษแบนใบเหลือง...');
+        setMessage('Saving yellow card suspension rules...');
         try {
             await updateYellowSuspensionThreshold(yellowThreshold);
-            setMessage(`บันทึกแล้ว: ครบ ${yellowThreshold} ใบเหลือง = แบน 1 นัด`);
+            setMessage(`✅ Saved: ${yellowThreshold} yellow cards = 1 match suspension`);
             router.refresh();
         } catch (error) {
             console.error('Failed to update yellow suspension threshold', error);
-            setMessage('บันทึกกฎโทษแบนไม่สำเร็จ');
+            setMessage('❌ Failed to save discipline rules');
         } finally {
             setLoading(false);
         }
@@ -34,139 +37,174 @@ export default function SettingsClient({ teams, currentUserTeamName, yellowSuspe
 
     const handleStartNewGame = async () => {
         if (!selectedTeamName) {
-            setMessage('กรุณาเลือกทีมที่จะเล่นก่อนเริ่มเกมใหม่');
+            setMessage('Please select a team before starting a new game');
             return;
         }
 
         setLoading(true);
-        setMessage('กำลังเริ่มเกมใหม่...');
+        setMessage('Starting new game...');
 
         try {
             const result = await resetGameWithSelectedTeam(selectedTeamName);
-            setMessage(`เริ่มเกมใหม่สำเร็จ! ทีมที่เลือก: ${result.userTeamName || 'Unknown'}`);
+            setMessage(`✅ New game started! Selected team: ${result.userTeamName || 'Unknown'}`);
             router.push('/squad');
             router.refresh();
         } catch (error) {
             console.error('Failed to reset game', error);
-            setMessage('เกิดข้อผิดพลาดในการเริ่มเกมใหม่');
+            setMessage('❌ Error starting new game');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="card" style={{ maxWidth: '760px' }}>
-            <h2 style={{ marginTop: 0 }}>⚙️ ตั้งค่าเกม</h2>
-            <p style={{ color: 'var(--muted)' }}>
-                เมนูนี้ใช้สำหรับเริ่มเกมใหม่ทั้งหมด โดยรีเซ็ตข้อมูลฤดูกาลและทีมกลับไปที่ Season 1
-            </p>
-
-            <div style={{ marginTop: '1rem', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: '10px', padding: '1rem' }}>
-                <h3 style={{ marginTop: 0, color: '#0369a1' }}>🟨 กฎโทษแบนใบเหลืองสะสม</h3>
-                <p style={{ marginBottom: '0.75rem', color: '#334155' }}>
-                    ตั้งค่าจำนวนใบเหลืองสะสมที่ทำให้นักเตะติดโทษแบนอัตโนมัติ (ค่าแนะนำ: 4)
-                </p>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                    <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={yellowThreshold}
-                        onChange={(e) => setYellowThreshold(Math.max(1, Math.min(10, Number(e.target.value) || 4)))}
-                        disabled={loading}
-                        style={{ width: '90px', padding: '8px', border: '1px solid var(--border)', borderRadius: '8px' }}
-                    />
-                    <span style={{ color: '#475569', fontSize: '0.9rem' }}>ใบเหลือง = แบน 1 นัด</span>
-                    <button className="btn btn-primary" disabled={loading} onClick={handleSaveDisciplineSettings}>
-                        บันทึกกฎ
-                    </button>
-                </div>
+        <div className="flex flex-col gap-6 md:gap-8">
+            {/* Header */}
+            <div className="hero-gradient">
+                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>⚙️ {SETTINGS.TITLE}</h1>
+                <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Manage game settings and preferences</p>
             </div>
 
-            <div style={{ marginTop: '1rem', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: '10px', padding: '1rem' }}>
-                <h3 style={{ marginTop: 0, color: '#b91c1c' }}>🧨 เริ่มเกมใหม่ (New Game)</h3>
-                <p style={{ marginBottom: '0.75rem', color: '#7f1d1d' }}>
-                    การทำรายการนี้จะลบข้อมูลเกมเดิมทั้งหมด เช่น ตารางคะแนน ผลการแข่งขัน ตลาดซื้อขาย ข่าวสาร และสถิติ
-                </p>
+            {/* Current Team Info */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>📋 Current Status</CardTitle>
+                </CardHeader>
+                <div style={{ fontSize: '1.1rem' }}>
+                    Current Team: <strong style={{ color: 'var(--primary)', fontSize: '1.2rem' }}>{currentUserTeamName || 'None'}</strong>
+                </div>
+            </Card>
 
-                {step === 'idle' && (
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            setStep('confirm');
-                            setMessage('');
-                        }}
-                    >
-                        เริ่มเกมใหม่
-                    </button>
-                )}
-
-                {step === 'confirm' && (
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <button
-                            className="btn btn-primary"
-                            style={{ background: '#b91c1c', borderColor: '#b91c1c' }}
-                            onClick={() => setStep('choose')}
-                        >
-                            Confirm
-                        </button>
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setStep('idle');
-                                setMessage('ยกเลิกแล้ว');
-                            }}
-                        >
-                            Cancel
-                        </button>
-                    </div>
-                )}
-
-                {step === 'choose' && (
-                    <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '360px' }}>
-                        <label style={{ fontWeight: 600 }}>เลือกทีมที่จะคุมในเกมใหม่</label>
-                        <select
-                            value={selectedTeamName}
-                            onChange={(e) => setSelectedTeamName(e.target.value)}
-                            style={{ padding: '10px', border: '1px solid var(--border)', borderRadius: '8px', background: 'white' }}
+            {/* Discipline Settings */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>🟨 Yellow Card Suspension Rules</CardTitle>
+                </CardHeader>
+                <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '10px' }}>
+                    <p style={{ marginBottom: '1rem', color: 'var(--muted)' }}>
+                        Set the number of yellow card accumulations that trigger an automatic suspension (recommended: 4)
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                        <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={yellowThreshold}
+                            onChange={(e) => setYellowThreshold(Math.max(1, Math.min(10, Number(e.target.value) || 4)))}
+                            disabled={loading}
+                            className="input"
+                            style={{ width: '90px' }}
+                        />
+                        <span style={{ color: 'var(--foreground)', fontSize: '0.95rem' }}>yellow cards = 1 match suspension</span>
+                        <Button 
+                            variant="primary" 
+                            size="sm"
+                            onClick={handleSaveDisciplineSettings}
                             disabled={loading}
                         >
-                            {teams.map((team) => (
-                                <option key={team.id} value={team.name}>
-                                    {team.name}
-                                </option>
-                            ))}
-                        </select>
+                            {loading ? '⏳ Saving...' : ACTIONS.SAVE}
+                        </Button>
+                    </div>
+                </div>
+            </Card>
 
+            {/* New Game */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>🧨 New Game</CardTitle>
+                </CardHeader>
+                <div style={{ padding: '1rem', background: '#fff1f2', borderRadius: '10px', border: '1px solid #fecaca' }}>
+                    <p style={{ marginBottom: '1rem', color: '#7f1d1d' }}>
+                        ⚠️ This action will delete all existing game data including league standings, match results, transfer market, news, and statistics.
+                    </p>
+
+                    {step === 'idle' && (
+                        <Button
+                            variant="primary"
+                            onClick={() => {
+                                setStep('confirm');
+                                setMessage('');
+                            }}
+                            style={{ background: '#b91c1c' }}
+                        >
+                            Start New Game
+                        </Button>
+                    )}
+
+                    {step === 'confirm' && (
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <button
-                                className="btn btn-primary"
-                                style={{ background: '#b91c1c', borderColor: '#b91c1c' }}
-                                onClick={handleStartNewGame}
-                                disabled={loading}
+                            <Button
+                                variant="primary"
+                                style={{ background: '#b91c1c' }}
+                                onClick={() => setStep('choose')}
                             >
-                                {loading ? 'กำลังรีเซ็ต...' : 'ยืนยันเริ่มเกมใหม่'}
-                            </button>
-                            <button
-                                className="btn btn-secondary"
+                                ✅ Confirm
+                            </Button>
+                            <Button
+                                variant="ghost"
                                 onClick={() => {
                                     setStep('idle');
-                                    setMessage('ยกเลิกแล้ว');
+                                    setMessage('Cancelled');
                                 }}
+                            >
+                                {ACTIONS.CANCEL}
+                            </Button>
+                        </div>
+                    )}
+
+                    {step === 'choose' && (
+                        <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '360px' }}>
+                            <label style={{ fontWeight: 600 }}>Select team to manage in new game</label>
+                            <select
+                                value={selectedTeamName}
+                                onChange={(e) => setSelectedTeamName(e.target.value)}
+                                className="select"
                                 disabled={loading}
                             >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )}
+                                {teams.map((team) => (
+                                    <option key={team.id} value={team.name}>
+                                        {team.name}
+                                    </option>
+                                ))}
+                            </select>
 
-                {message && (
-                    <div style={{ marginTop: '0.75rem', fontSize: '0.9rem', color: loading ? '#1d4ed8' : 'var(--muted)' }}>
-                        {message}
-                    </div>
-                )}
-            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                                <Button
+                                    variant="primary"
+                                    style={{ background: '#b91c1c' }}
+                                    onClick={handleStartNewGame}
+                                    disabled={loading}
+                                >
+                                    {loading ? '⏳ Resetting...' : '✅ Confirm New Game'}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setStep('confirm');
+                                        setMessage('');
+                                    }}
+                                    disabled={loading}
+                                >
+                                    Back
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </Card>
+
+            {/* Message Display */}
+            {message && (
+                <div className="card" style={{ 
+                    padding: '1rem', 
+                    borderColor: message.includes('✅') || message.includes('Saved') || message.includes('started') ? 'var(--success)' : 'var(--danger)',
+                    background: message.includes('✅') || message.includes('Saved') || message.includes('started') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    color: message.includes('✅') || message.includes('Saved') || message.includes('started') ? 'var(--success)' : 'var(--danger)',
+                    fontWeight: '600'
+                }}>
+                    {message}
+                </div>
+            )}
         </div>
     );
 }

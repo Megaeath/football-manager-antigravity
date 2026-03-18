@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { PLAYERS, PLAYER_STATS, ACTIONS } from '@/lib/constants/uiLabels';
 
 interface Player {
     id: string;
@@ -24,6 +27,7 @@ export default function PlayersPage() {
     const [players, setPlayers] = useState<Player[]>([]);
     const [filtered, setFiltered] = useState<Player[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -48,13 +52,20 @@ export default function PlayersPage() {
 
     const handleSortColumnClick = (field: SortField) => {
         if (sortBy === field) {
-            // Toggle order if same column
             setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
         } else {
-            // Change column and default to desc
             setSortBy(field);
             setSortOrder('desc');
         }
+    };
+
+    const openPlayerModal = (playerId: string) => {
+        router.push(`/players?playerId=${playerId}`);
+    };
+
+    const closeModal = () => {
+        setSelectedPlayerId(null);
+        router.push('/players');
     };
 
     useEffect(() => {
@@ -77,42 +88,33 @@ export default function PlayersPage() {
     useEffect(() => {
         let result = [...players];
 
-        // Filter by name
         if (searchName) {
             result = result.filter(p =>
                 p.name.toLowerCase().includes(searchName.toLowerCase())
             );
         }
 
-        // Filter by power
         if (minPower) result = result.filter(p => p.power >= parseInt(minPower));
         if (maxPower) result = result.filter(p => p.power <= parseInt(maxPower));
 
-        // Filter by price
         if (minPrice) result = result.filter(p => p.marketValue >= parseInt(minPrice));
         if (maxPrice) result = result.filter(p => p.marketValue <= parseInt(maxPrice));
 
-        // Filter by age
         if (minAge) result = result.filter(p => p.age >= parseInt(minAge));
         if (maxAge) result = result.filter(p => p.age <= parseInt(maxAge));
 
-        // Filter by position
         if (selectedPosition) result = result.filter(p => p.position.startsWith(selectedPosition));
 
-        // Filter by team
         if (selectedTeam) result = result.filter(p => p.teamId === selectedTeam);
 
-        // Filter by contract
         if (contractEndingSoon) {
             result = result.filter(p => p.contractEndWeek && p.contractEndWeek <= 10);
         }
 
-        // Filter by free agents
         if (showFreeAgentsOnly) {
             result = result.filter(p => !p.teamId);
         }
 
-        // Sort
         result.sort((a, b) => {
             let compareValue = 0;
             switch (sortBy) {
@@ -139,7 +141,6 @@ export default function PlayersPage() {
         setCurrentPage(1);
     }, [players, searchName, minPower, maxPower, minPrice, maxPrice, minAge, maxAge, selectedTeam, selectedPosition, contractEndingSoon, showFreeAgentsOnly, sortBy, sortOrder]);
 
-    // Get unique teams (excluding free agents)
     const uniqueTeams = Array.from(new Set(players.filter(p => p.teamId).map(p => p.teamId as string)))
         .map(id => {
             const player = players.find(p => p.teamId === id);
@@ -147,7 +148,6 @@ export default function PlayersPage() {
         })
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Pagination
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const paginatedPlayers = filtered.slice(
         (currentPage - 1) * itemsPerPage,
@@ -162,627 +162,387 @@ export default function PlayersPage() {
         return '#f44336';
     };
 
-    const openPlayerModal = (playerId: string) => {
-        router.push(`/players?playerId=${playerId}`);
+    const formatCurrency = (value: number) => {
+        if (value >= 1000000) {
+            return `$${(value / 1000000).toFixed(2)}M`;
+        }
+        if (value >= 1000) {
+            return `$${(value / 1000).toFixed(1)}K`;
+        }
+        return `$${value}`;
+    };
+
+    const resetFilters = () => {
+        setSearchName('');
+        setMinPower('');
+        setMaxPower('');
+        setMinPrice('');
+        setMaxPrice('');
+        setMinAge('');
+        setMaxAge('');
+        setSelectedTeam('');
+        setSelectedPosition('');
+        setContractEndingSoon(false);
+        setShowFreeAgentsOnly(false);
     };
 
     if (loading) {
         return (
             <div className="p-4 text-center md:p-8" style={{ padding: '2rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem' }}>🔍 กำลังโหลดข้อมูลนักเตะ...</div>
+                <div style={{ fontSize: '1.5rem' }}>🔍 {PLAYERS.LOADING_PLAYERS}</div>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col gap-6 md:gap-8" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div className="flex flex-col gap-6 md:gap-8">
             {/* Header */}
-            <div style={{
-                background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-                color: 'white',
-                padding: '1.25rem',
-                borderRadius: '12px'
-            }} className="p-5 md:p-8">
-                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🔍 ค้นหานักเตะ</h1>
-                <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>ค้นหาและตัดสินใจด้วยตัวกรองที่ยืดหยุ่น (ในอนาคตจะเป็นระบบซื้อขาย)</p>
+            <div className="hero-gradient">
+                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🔍 {PLAYERS.TITLE}</h1>
+                <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>{PLAYERS.SUBTITLE}</p>
             </div>
 
-            {/* Search Section */}
-            <div className="card" style={{ padding: '1.5rem' }}>
-                <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>🎯 ค้นหาและกรอง</h3>
+            {/* Search & Filters - Better Organized */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>🎯 {PLAYERS.SEARCH_FILTERS}</CardTitle>
+                </CardHeader>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.8rem', marginBottom: '1rem' }}>
-                    {/* Name Search */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>ชื่อนักเตะ</label>
-                        <input
-                            type="text"
-                            placeholder="พิมพ์ชื่อ..."
-                            value={searchName}
-                            onChange={(e) => setSearchName(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                border: '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.95rem',
-                                boxSizing: 'border-box'
-                            }}
-                        />
-                    </div>
-
-                    {/* Power Range */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>พลัง</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {/* Basic Filters */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--muted)' }}>Basic Search</h4>
+                    <div className="grid-auto-fit-md" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                        {/* Name Search */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>{PLAYERS.PLAYER_NAME}</label>
                             <input
-                                type="number"
-                                placeholder="Min"
-                                min="0"
-                                max="100"
-                                value={minPower}
-                                onChange={(e) => setMinPower(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
-                            />
-                            <input
-                                type="number"
-                                placeholder="Max"
-                                min="0"
-                                max="100"
-                                value={maxPower}
-                                onChange={(e) => setMaxPower(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
+                                type="text"
+                                placeholder={PLAYERS.SEARCH_BY_NAME}
+                                value={searchName}
+                                onChange={(e) => setSearchName(e.target.value)}
+                                className="input"
+                                style={{ width: '100%' }}
                             />
                         </div>
-                    </div>
 
-                    {/* Price Range */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>ราคา ($)</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <input
-                                type="number"
-                                placeholder="Min"
-                                value={minPrice}
-                                onChange={(e) => setMinPrice(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
-                            />
-                            <input
-                                type="number"
-                                placeholder="Max"
-                                value={maxPrice}
-                                onChange={(e) => setMaxPrice(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Age Range */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>อายุ</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <input
-                                type="number"
-                                placeholder="Min"
-                                min="16"
-                                max="40"
-                                value={minAge}
-                                onChange={(e) => setMinAge(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
-                            />
-                            <input
-                                type="number"
-                                placeholder="Max"
-                                min="16"
-                                max="40"
-                                value={maxAge}
-                                onChange={(e) => setMaxAge(e.target.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.95rem'
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Position */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>ตำแหน่ง</label>
-                        <select
-                            value={selectedPosition}
-                            onChange={(e) => setSelectedPosition(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                border: '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.95rem',
-                                boxSizing: 'border-box'
-                            }}
-                        >
-                            <option value="">ทั้งหมด</option>
-                            {positions.map(pos => (
-                                <option key={pos} value={pos}>{pos}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Team */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>ทีม</label>
-                        <select
-                            value={selectedTeam}
-                            onChange={(e) => setSelectedTeam(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                border: '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.95rem',
-                                boxSizing: 'border-box'
-                            }}
-                        >
-                            <option value="">ทั้งหมด</option>
-                            {uniqueTeams.map(team => (
-                                <option key={team.id} value={team.id}>{team.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Contract Ending Soon */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>สัญญา</label>
-                        <button
-                            onClick={() => setContractEndingSoon(!contractEndingSoon)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                background: contractEndingSoon ? 'var(--primary)' : 'var(--border)',
-                                color: contractEndingSoon ? 'white' : 'var(--text)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                fontSize: '0.95rem',
-                                fontWeight: '500'
-                            }}
-                        >
-                            {contractEndingSoon ? '✓ ใกล้หมด (≤10 อ.)' : 'สัญญาใกล้หมด'}
-                        </button>
-                    </div>
-
-                    {/* Free Agents Only */}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>นักเตะอิสระ</label>
-                        <button
-                            onClick={() => setShowFreeAgentsOnly(!showFreeAgentsOnly)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                background: showFreeAgentsOnly ? '#ff9800' : 'var(--border)',
-                                color: showFreeAgentsOnly ? 'white' : 'var(--text)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                fontSize: '0.95rem',
-                                fontWeight: '500'
-                            }}
-                        >
-                            {showFreeAgentsOnly ? '⭐ นักเตะอิสระเท่านั้น' : '🆓 นักเตะอิสระ'}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Clear Filters */}
-                <button
-                    onClick={() => {
-                        setSearchName('');
-                        setMinPower('');
-                        setMaxPower('');
-                        setMinPrice('');
-                        setMaxPrice('');
-                        setMinAge('');
-                        setMaxAge('');
-                        setSelectedTeam('');
-                        setSelectedPosition('');
-                        setContractEndingSoon(false);
-                        setShowFreeAgentsOnly(false);
-                        setSortBy('power');
-                        setSortOrder('desc');
-                    }}
-                    style={{
-                        padding: '10px 20px',
-                        background: 'var(--border)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem',
-                        fontWeight: '500'
-                    }}
-                >
-                    🔄 ล้างตัวกรอง
-                </button>
-            </div>
-
-            {/* Results */}
-            <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <h3 style={{ margin: 0 }}>📋 ผลลัพธ์: {filtered.length} นักเตะ</h3>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>💡 คลิกที่ header ของตารางเพื่อเรียงลำดับ</p>
-                </div>
-
-                {filtered.length === 0 ? (
-                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
-                        <div style={{ fontSize: '1.2rem' }}>😕 ไม่พบนักเตะตามเงื่อนไขที่เลือก</div>
-                    </div>
-                ) : (
-                    <>
-                        <div className="hidden md:block" style={{
-                            overflowX: 'auto',
-                            marginBottom: '1rem',
-                            borderRadius: '8px',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                        }}>
-                            <table style={{
-                                width: '100%',
-                                borderCollapse: 'collapse',
-                                fontSize: '0.9rem'
-                            }}>
-                                <thead style={{ background: '#f5f5f5' }}>
-                                    <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                        <th
-                                            onClick={() => handleSortColumnClick('name')}
-                                            style={{
-                                                padding: '12px',
-                                                textAlign: 'left',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                fontWeight: sortBy === 'name' ? '700' : '600',
-                                                background: sortBy === 'name' ? '#e8f4f8' : 'transparent'
-                                            }}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            ชื่อ {sortBy === 'name' && (sortOrder === 'desc' ? '↓' : '↑')}
-                                        </th>
-                                        <th
-                                            onClick={() => handleSortColumnClick('power')}
-                                            style={{
-                                                padding: '12px',
-                                                textAlign: 'center',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                fontWeight: sortBy === 'power' ? '700' : '600',
-                                                background: sortBy === 'power' ? '#e8f4f8' : 'transparent'
-                                            }}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            พลัง {sortBy === 'power' && (sortOrder === 'desc' ? '↓' : '↑')}
-                                        </th>
-                                        <th
-                                            onClick={() => handleSortColumnClick('rating')}
-                                            style={{
-                                                padding: '12px',
-                                                textAlign: 'center',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                fontWeight: sortBy === 'rating' ? '700' : '600',
-                                                background: sortBy === 'rating' ? '#e8f4f8' : 'transparent'
-                                            }}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            Rating {sortBy === 'rating' && (sortOrder === 'desc' ? '↓' : '↑')}
-                                        </th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>ตำแหน่ง</th>
-                                        <th
-                                            onClick={() => handleSortColumnClick('age')}
-                                            style={{
-                                                padding: '12px',
-                                                textAlign: 'center',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                fontWeight: sortBy === 'age' ? '700' : '600',
-                                                background: sortBy === 'age' ? '#e8f4f8' : 'transparent'
-                                            }}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            อายุ {sortBy === 'age' && (sortOrder === 'desc' ? '↓' : '↑')}
-                                        </th>
-                                        <th style={{ padding: '12px', textAlign: 'left' }}>ทีม</th>
-                                        <th
-                                            onClick={() => handleSortColumnClick('price')}
-                                            style={{
-                                                padding: '12px',
-                                                textAlign: 'right',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                fontWeight: sortBy === 'price' ? '700' : '600',
-                                                background: sortBy === 'price' ? '#e8f4f8' : 'transparent'
-                                            }}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            ราคา {sortBy === 'price' && (sortOrder === 'desc' ? '↓' : '↑')}
-                                        </th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>สัญญา</th>
-                                        <th style={{ padding: '12px', textAlign: 'center' }}>ซื้อขาย</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {paginatedPlayers.map((player, idx) => (
-                                        <tr key={player.id} style={{
-                                            borderBottom: '1px solid var(--border)',
-                                            background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
-                                            cursor: 'pointer',
-                                            transition: 'background 0.2s'
-                                        }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.08)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)'}
-                                            onClick={() => openPlayerModal(player.id)}>
-                                            <td style={{ padding: '12px' }}>
-                                                <span style={{
-                                                    color: 'var(--primary)',
-                                                    fontWeight: '500',
-                                                    textDecoration: 'underline'
-                                                }}>
-                                                    {player.name}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                <div style={{
-                                                    display: 'inline-block',
-                                                    background: getPowerColor(player.power),
-                                                    color: 'white',
-                                                    padding: '4px 12px',
-                                                    borderRadius: '12px',
-                                                    fontWeight: 'bold'
-                                                }}>
-                                                    {player.power}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center', fontWeight: '500' }}>
-                                                {player.avgRating || '-'}
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                <span style={{
-                                                    background: 'var(--border)',
-                                                    padding: '4px 8px',
-                                                    borderRadius: '4px',
-                                                    fontWeight: '500',
-                                                    whiteSpace: 'nowrap'
-                                                }}>
-                                                    {player.position}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                {player.age}
-                                            </td>
-                                            <td style={{ padding: '12px' }}>
-                                                <span style={{ whiteSpace: 'nowrap' }}>
-                                                    {player.teamId ? player.teamName : (
-                                                        <span style={{ color: '#ff9800', fontWeight: 'bold' }}>🆓 นักเตะอิสระ</span>
-                                                    )}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'right', fontWeight: '500' }}>
-                                                ${player.marketValue.toLocaleString()}
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                {player.contractEndWeek ? (
-                                                    <div style={{
-                                                        background: player.contractEndWeek <= 10 ? '#fecaca' : '#fef3c7',
-                                                        color: player.contractEndWeek <= 10 ? '#991b1b' : '#92400e',
-                                                        padding: '4px 8px',
-                                                        borderRadius: '4px',
-                                                        fontSize: '0.85rem',
-                                                        whiteSpace: 'nowrap'
-                                                    }}>
-                                                        {player.contractEndWeek} อ.
-                                                    </div>
-                                                ) : (
-                                                    <span style={{ color: 'var(--muted)' }}>-</span>
-                                                )}
-                                            </td>
-                                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        router.push(`/players?playerId=${player.id}&tab=transfer`);
-                                                    }}
-                                                    style={{
-                                                        background: 'var(--success)',
-                                                        color: 'white',
-                                                        border: 'none',
-                                                        padding: '6px 12px',
-                                                        borderRadius: '4px',
-                                                        fontSize: '0.8rem',
-                                                        fontWeight: 'bold',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    ซื้อ
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="mb-4 flex flex-col gap-3 md:hidden">
-                            {paginatedPlayers.map((player) => (
-                                <div
-                                    key={player.id}
-                                    className="rounded-xl border border-[var(--border)] p-3"
-                                    onClick={() => openPlayerModal(player.id)}
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                        <div style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}>{player.name}</div>
-                                        <div style={{
-                                            background: getPowerColor(player.power),
-                                            color: 'white',
-                                            padding: '4px 10px',
-                                            borderRadius: '999px',
-                                            fontWeight: 'bold',
-                                            fontSize: '0.85rem'
-                                        }}>
-                                            PWR {player.power}
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', fontSize: '0.85rem', marginBottom: '10px' }}>
-                                        <div>ตำแหน่ง: <strong>{player.position}</strong></div>
-                                        <div>อายุ: <strong>{player.age}</strong></div>
-                                        <div>Rating: <strong>{player.avgRating || '-'}</strong></div>
-                                        <div>
-                                            สัญญา:{' '}
-                                            <strong>
-                                                {player.contractEndWeek ? `${player.contractEndWeek} อ.` : '-'}
-                                            </strong>
-                                        </div>
-                                        <div style={{ gridColumn: '1 / -1' }}>
-                                            ทีม:{' '}
-                                            <strong>
-                                                {player.teamId ? player.teamName : '🆓 นักเตะอิสระ'}
-                                            </strong>
-                                        </div>
-                                        <div style={{ gridColumn: '1 / -1' }}>
-                                            ราคา: <strong>${player.marketValue.toLocaleString()}</strong>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            router.push(`/players?playerId=${player.id}&tab=transfer`);
-                                        }}
-                                        style={{
-                                            background: 'var(--success)',
-                                            color: 'white',
-                                            border: 'none',
-                                            padding: '8px 12px',
-                                            borderRadius: '6px',
-                                            fontSize: '0.85rem',
-                                            fontWeight: 'bold',
-                                            cursor: 'pointer',
-                                            width: '100%'
-                                        }}
-                                    >
-                                        ซื้อ
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                paddingTop: '1rem',
-                                borderTop: '1px solid var(--border)',
-                                flexWrap: 'wrap'
-                            }}>
-                                <button
-                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                    disabled={currentPage === 1}
-                                    style={{
-                                        padding: '8px 12px',
-                                        background: currentPage === 1 ? 'var(--border)' : 'var(--primary)',
-                                        color: currentPage === 1 ? 'var(--muted)' : 'white',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: currentPage === 1 ? 'default' : 'pointer',
-                                        fontSize: '0.85rem'
-                                    }}
-                                >
-                                    ← ก่อนหน้า
-                                </button>
-
-                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                    if (totalPages <= 5) return i + 1;
-                                    if (currentPage <= 3) return i + 1;
-                                    if (currentPage >= totalPages - 2) return totalPages - 4 + i;
-                                    return currentPage - 2 + i;
-                                }).map(page => (
-                                    <button
-                                        key={page}
-                                        onClick={() => setCurrentPage(page)}
-                                        style={{
-                                            padding: '8px 12px',
-                                            background: currentPage === page ? 'var(--primary)' : 'var(--border)',
-                                            color: currentPage === page ? 'white' : 'var(--text)',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem',
-                                            fontWeight: currentPage === page ? '600' : '400',
-                                            minWidth: '36px'
-                                        }}
-                                    >
-                                        {page}
-                                    </button>
+                        {/* Position */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>{PLAYER_STATS.POSITION}</label>
+                            <select
+                                value={selectedPosition}
+                                onChange={(e) => setSelectedPosition(e.target.value)}
+                                className="select"
+                                style={{ width: '100%' }}
+                            >
+                                <option value="">{PLAYERS.ALL_POSITIONS}</option>
+                                {positions.map(pos => (
+                                    <option key={pos} value={pos}>{pos}</option>
                                 ))}
+                            </select>
+                        </div>
 
+                        {/* Team */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>Team</label>
+                            <select
+                                value={selectedTeam}
+                                onChange={(e) => setSelectedTeam(e.target.value)}
+                                className="select"
+                                style={{ width: '100%' }}
+                            >
+                                <option value="">{PLAYERS.ALL_TEAMS}</option>
+                                {uniqueTeams.map(team => (
+                                    <option key={team.id} value={team.id}>{team.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Advanced Filters */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--muted)' }}>Advanced Filters</h4>
+                    <div className="grid-auto-fit-sm" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        {/* Power Range */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>{PLAYER_STATS.POWER}</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MIN}
+                                    min="0"
+                                    max="100"
+                                    value={minPower}
+                                    onChange={(e) => setMinPower(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MAX}
+                                    min="0"
+                                    max="100"
+                                    value={maxPower}
+                                    onChange={(e) => setMaxPower(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Age Range */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>{PLAYER_STATS.AGE}</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MIN}
+                                    min="16"
+                                    max="40"
+                                    value={minAge}
+                                    onChange={(e) => setMinAge(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MAX}
+                                    min="16"
+                                    max="40"
+                                    value={maxAge}
+                                    onChange={(e) => setMaxAge(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Price Range */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>{PLAYER_STATS.MARKET_VALUE}</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MIN}
+                                    value={minPrice}
+                                    onChange={(e) => setMinPrice(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder={PLAYERS.MAX}
+                                    value={maxPrice}
+                                    onChange={(e) => setMaxPrice(e.target.value)}
+                                    className="input"
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Contract Status */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>Status</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <button
-                                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                    disabled={currentPage === totalPages}
+                                    onClick={() => setContractEndingSoon(!contractEndingSoon)}
                                     style={{
-                                        padding: '8px 12px',
-                                        background: currentPage === totalPages ? 'var(--border)' : 'var(--primary)',
-                                        color: currentPage === totalPages ? 'var(--muted)' : 'white',
+                                        flex: 1,
+                                        padding: '10px 12px',
+                                        background: contractEndingSoon ? 'var(--primary)' : 'var(--border)',
+                                        color: contractEndingSoon ? 'white' : 'var(--foreground)',
                                         border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: currentPage === totalPages ? 'default' : 'pointer',
-                                        fontSize: '0.85rem'
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: '500'
                                     }}
                                 >
-                                    ถัดไป →
+                                    {contractEndingSoon ? '✓ Ending Soon' : 'Ending Soon'}
+                                </button>
+                                <button
+                                    onClick={() => setShowFreeAgentsOnly(!showFreeAgentsOnly)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 12px',
+                                        background: showFreeAgentsOnly ? 'var(--accent)' : 'var(--border)',
+                                        color: showFreeAgentsOnly ? 'white' : 'var(--foreground)',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    {showFreeAgentsOnly ? '✓ Free Agent' : 'Free Agent'}
                                 </button>
                             </div>
-                        )}
-
-                        <div style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--muted)', marginTop: '1rem' }}>
-                            หน้า {currentPage} / {totalPages}
                         </div>
-                    </>
-                )}
-            </div>
+                    </div>
+                </div>
 
-            {/* Modal */}
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                    <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={resetFilters}
+                    >
+                        {ACTIONS.RESET}
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={() => {}}>
+                        {ACTIONS.APPLY}
+                    </Button>
+                </div>
+            </Card>
+
+            {/* Results Table */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>
+                        {PLAYERS.RESULTS}: {filtered.length} {PLAYERS.PLAYERS_FOUND}
+                    </CardTitle>
+                </CardHeader>
+
+                {/* Desktop Table - Using Cool Table Style from Design System */}
+                <div className="hidden md:block overflow-x-auto">
+                    <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer' }} onClick={() => handleSortColumnClick('name')}>
+                                    {PLAYER_STATS.NAME} {sortBy === 'name' && (sortOrder === 'desc' ? '↓' : '↑')}
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>{PLAYER_STATS.POSITION}</th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '70px', cursor: 'pointer' }} onClick={() => handleSortColumnClick('age')}>
+                                    {PLAYER_STATS.AGE} {sortBy === 'age' && (sortOrder === 'desc' ? '↓' : '↑')}
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '80px', cursor: 'pointer' }} onClick={() => handleSortColumnClick('power')}>
+                                    {PLAYER_STATS.POWER} {sortBy === 'power' && (sortOrder === 'desc' ? '↓' : '↑')}
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '80px', cursor: 'pointer' }} onClick={() => handleSortColumnClick('rating')}>
+                                    {PLAYER_STATS.RATING} {sortBy === 'rating' && (sortOrder === 'desc' ? '↓' : '↑')}
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px', cursor: 'pointer' }} onClick={() => handleSortColumnClick('price')}>
+                                    {PLAYER_STATS.MARKET_VALUE} {sortBy === 'price' && (sortOrder === 'desc' ? '↓' : '↑')}
+                                </th>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>{PLAYER_STATS.TEAM}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {paginatedPlayers.map((player) => (
+                                <tr 
+                                    key={player.id} 
+                                    onClick={() => openPlayerModal(player.id)}
+                                    style={{ 
+                                        borderBottom: '1px solid var(--border)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <td style={{ padding: '12px', fontWeight: '600' }}>{player.name}</td>
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        <span style={{ 
+                                            background: 'var(--border)', 
+                                            padding: '4px 10px', 
+                                            borderRadius: '6px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: '600'
+                                        }}>
+                                            {player.position}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>{player.age}</td>
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        <span style={{ 
+                                            color: getPowerColor(player.power),
+                                            fontWeight: 'bold',
+                                            fontSize: '1.05rem'
+                                        }}>
+                                            {player.power}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        <span style={{ fontWeight: 'bold' }}>{player.avgRating > 0 ? player.avgRating.toFixed(2) : '-'}</span>
+                                    </td>
+                                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>
+                                        {formatCurrency(player.marketValue)}
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        {player.teamName || <span style={{ color: 'var(--muted)' }}>{PLAYERS.FREE_AGENT}</span>}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden flex flex-col gap-3">
+                    {paginatedPlayers.map((player) => (
+                        <div
+                            key={player.id}
+                            className="card"
+                            onClick={() => openPlayerModal(player.id)}
+                            style={{ 
+                                padding: '14px',
+                                cursor: 'pointer',
+                                border: '1px solid var(--border)',
+                                borderRadius: '10px'
+                            }}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <div style={{ fontWeight: '700', fontSize: '1.05rem' }}>{player.name}</div>
+                                <div style={{ 
+                                    color: getPowerColor(player.power),
+                                    fontWeight: 'bold',
+                                    fontSize: '1.1rem'
+                                }}>
+                                    {player.power}
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                <div>{PLAYER_STATS.POSITION}: <strong style={{ color: 'var(--foreground)' }}>{player.position}</strong></div>
+                                <div>{PLAYER_STATS.AGE}: <strong style={{ color: 'var(--foreground)' }}>{player.age}</strong></div>
+                                <div>{PLAYER_STATS.RATING}: <strong style={{ color: 'var(--foreground)' }}>{player.avgRating > 0 ? player.avgRating.toFixed(2) : '-'}</strong></div>
+                            </div>
+                            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                                    {player.teamName || PLAYERS.FREE_AGENT}
+                                </div>
+                                <div style={{ fontWeight: '600', color: 'var(--primary)' }}>
+                                    {formatCurrency(player.marketValue)}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        >
+                            ← {PLAYERS.PREVIOUS}
+                        </Button>
+                        <span style={{ padding: '6px 12px', fontWeight: '600' }}>
+                            {currentPage} / {totalPages}
+                        </span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        >
+                            {PLAYERS.NEXT} →
+                        </Button>
+                    </div>
+                )}
+            </Card>
+
+            {/* Player Modal */}
             <PlayerModal />
         </div>
     );

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import '../globals.css';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { FINANCES, ACTIONS } from '@/lib/constants/uiLabels';
 
 interface FinancialData {
     teamId: string;
@@ -54,7 +56,6 @@ export default function FinancesPage() {
                     return;
                 }
 
-                // Fetch financial data from API
                 const financesRes = await fetch(`/api/finances?teamId=${gameInfo.userTeamId}`);
                 if (!financesRes.ok) {
                     throw new Error(`Failed to load finances: ${financesRes.statusText}`);
@@ -71,27 +72,30 @@ export default function FinancesPage() {
         fetchData();
     }, []);
 
-    if (loading) return <div className="container" style={{ padding: '2rem', textAlign: 'center' }}>Loading financial data...</div>;
-    if (error) return <div className="container" style={{ padding: '2rem', color: 'red' }}>{error}</div>;
-    if (!data) return <div className="container" style={{ padding: '2rem' }}>No data available</div>;
+    if (loading) return (
+        <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.5rem' }}>💰 Loading financial data...</div>
+        </div>
+    );
+    
+    if (error) return (
+        <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
+            ❌ {error}
+        </div>
+    );
+    
+    if (!data) return (
+        <div className="p-4 text-center" style={{ padding: '2rem', textAlign: 'center' }}>
+            No data available
+        </div>
+    );
 
     const formatCurrency = (num: number) => {
         const abs = Math.abs(num);
-        const sign = num < 0 ? '-' : '';
-
-        if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(1)}M`;
+        const sign = num < 0 ? '−' : '';
+        if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(2)}M`;
         if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}K`;
-        return `${sign}$${abs}`;
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'healthy': return '#4ade80';
-            case 'warning': return '#fbbf24';
-            case 'danger': return '#f87171';
-            case 'critical': return '#dc2626';
-            default: return '#999';
-        }
+        return `${sign}$${abs.toLocaleString()}`;
     };
 
     const revenueTotal = data.weeklyData.breakdown.sponsorship +
@@ -100,451 +104,280 @@ export default function FinancesPage() {
         data.weeklyData.breakdown.seasonRewards +
         data.weeklyData.breakdown.playerSales;
 
-    return (
-        <div className="container" style={{ padding: '2rem' }}>
-            <style>{`
-                .finances-header {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 1rem;
-                    margin-bottom: 2rem;
-                }
-                .big-number {
-                    background: var(--card-bg);
-                    border: 1px solid var(--border);
-                    border-radius: 12px;
-                    padding: 1.5rem;
-                    text-align: center;
-                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                }
-                .big-number-label {
-                    font-size: 0.85rem;
-                    color: var(--muted);
-                    text-transform: uppercase;
-                    margin-bottom: 0.5rem;
-                }
-                .big-number-value {
-                    font-size: 2rem;
-                    font-weight: bold;
-                    color: var(--primary);
-                }
-                .big-number-value.positive {
-                    color: #4ade80;
-                }
-                .big-number-value.negative {
-                    color: #f87171;
-                }
-                
-                .main-grid {
-                    display: grid;
-                    grid-template-columns: 2fr 1fr;
-                    gap: 2rem;
-                    margin-bottom: 2rem;
-                }
-                
-                @media (max-width: 1024px) {
-                    .main-grid {
-                        grid-template-columns: 1fr;
-                    }
-                }
-                
-                .card {
-                    background: var(--card-bg);
-                    border: 1px solid var(--border);
-                    border-radius: 12px;
-                    padding: 1.5rem;
-                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                }
-                
-                .card-title {
-                    font-size: 1.1rem;
-                    font-weight: bold;
-                    margin-bottom: 1rem;
-                    border-bottom: 2px solid var(--primary);
-                    padding-bottom: 0.75rem;
-                }
-                
-                .revenue-chart {
-                    display: flex;
-                    align-items: center;
-                    gap: 2rem;
-                }
-                
-                .pie-chart {
-                    width: 120px;
-                    height: 120px;
-                    border-radius: 50%;
-                    background: conic-gradient(
-                        #3b82f6 0deg ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg,
-                        #10b981 ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg,
-                        #f59e0b ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg,
-                        #8b5cf6 ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg 360deg
-                    );
-                    flex-shrink: 0;
-                }
-                
-                .revenue-legend {
-                    font-size: 0.9rem;
-                }
-                
-                .legend-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 0.5rem;
-                    margin-bottom: 0.5rem;
-                }
-                
-                .legend-color {
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 2px;
-                }
-                
-                .accounting-row {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 1rem;
-                    margin-bottom: 0.75rem;
-                    padding-bottom: 0.75rem;
-                    border-bottom: 1px solid var(--border);
-                }
-                
-                .accounting-row:last-child {
-                    border-bottom: none;
-                }
-                
-                .accounting-label {
-                    color: var(--muted);
-                }
-                
-                .accounting-amount {
-                    font-weight: bold;
-                    text-align: right;
-                }
-                
-                .accounting-amount.income {
-                    color: #4ade80;
-                }
-                
-                .accounting-amount.expense {
-                    color: #f87171;
-                }
-                
-                .accounting-amount.net {
-                    color: var(--primary);
-                    font-size: 1.1rem;
-                }
-                
-                .progress-container {
-                    margin-bottom: 1rem;
-                }
-                
-                .progress-label {
-                    display: flex;
-                    justify-content: space-between;
-                    font-size: 0.9rem;
-                    margin-bottom: 0.5rem;
-                    color: var(--muted);
-                }
-                
-                .progress-bar {
-                    width: 100%;
-                    height: 24px;
-                    background: #e5e7eb;
-                    border-radius: 12px;
-                    overflow: hidden;
-                    border: 1px solid var(--border);
-                }
-                
-                .progress-fill {
-                    height: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: white;
-                    font-size: 0.75rem;
-                    font-weight: bold;
-                    transition: width 0.3s ease;
-                }
-                
-                .stadium-info {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 1rem;
-                }
-                
-                .info-item {
-                    background: var(--primary-light);
-                    padding: 1rem;
-                    border-radius: 8px;
-                    text-align: center;
-                }
-                
-                .info-label {
-                    font-size: 0.85rem;
-                    color: var(--muted);
-                    text-transform: uppercase;
-                    margin-bottom: 0.5rem;
-                }
-                
-                .info-value {
-                    font-size: 1.5rem;
-                    font-weight: bold;
-                    color: var(--primary);
-                }
-                
-                .ffp-status {
-                    padding: 1rem;
-                    border-radius: 8px;
-                    border-left: 4px solid;
-                    margin-top: 1rem;
-                }
-                
-                .ffp-status.healthy {
-                    background: #f0fdf4;
-                    border-color: #4ade80;
-                }
-                
-                .ffp-status.warning {
-                    background: #fffbeb;
-                    border-color: #fbbf24;
-                }
-                
-                .ffp-status.danger {
-                    background: #fef2f2;
-                    border-color: #f87171;
-                }
-                
-                .ffp-status.critical {
-                    background: #fef2f2;
-                    border-color: #dc2626;
-                }
-                
-                .ffp-message {
-                    font-size: 0.9rem;
-                    color: var(--text);
-                }
-            `}</style>
+    const revenueBreakdown = [
+        { label: 'Sponsorship', value: data.weeklyData.breakdown.sponsorship, color: '#3b82f6' },
+        { label: 'Ticket Sales', value: data.weeklyData.breakdown.ticketSales, color: '#10b981' },
+        { label: 'Jersey Sales', value: data.weeklyData.breakdown.jerseySales, color: '#f59e0b' },
+        { label: 'Season Rewards', value: data.weeklyData.breakdown.seasonRewards, color: '#8b5cf6' },
+        { label: 'Player Sales', value: data.weeklyData.breakdown.playerSales, color: '#ec4899' }
+    ];
 
+    const expenseBreakdown = [
+        { label: 'Wages', value: data.weeklyData.breakdown.wages, color: '#ef4444' },
+        { label: 'Maintenance', value: data.weeklyData.breakdown.maintenance, color: '#f97316' },
+        { label: 'Player Purchases', value: data.weeklyData.breakdown.playerPurchases, color: '#6366f1' },
+        { label: 'Training', value: data.weeklyData.breakdown.trainingWeekly, color: '#14b8a6' }
+    ];
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'healthy': return 'var(--success)';
+            case 'warning': return 'var(--accent)';
+            case 'danger': return '#f87171';
+            case 'critical': return 'var(--danger)';
+            default: return '#999';
+        }
+    };
+
+    const getStatusText = (status: string) => {
+        switch (status) {
+            case 'healthy': return '✅ Compliant';
+            case 'warning': return '⚠️ Warning';
+            case 'danger': return '❗ Danger';
+            case 'critical': return '🚨 Critical';
+            default: return status;
+        }
+    };
+
+    return (
+        <div className="flex flex-col gap-6 md:gap-8">
             {/* Header */}
-            <div style={{ marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💰 Finances - {data.teamName}</h1>
-                <p style={{ color: 'var(--muted)' }}>Weekly financial overview and club health status</p>
+            <div className="hero-gradient">
+                <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>💰 {FINANCES.TITLE}</h1>
+                <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>{data.teamName}</p>
             </div>
 
             {/* Big Numbers */}
-            <div className="finances-header">
-                <div className="big-number">
-                    <div className="big-number-label">Current Balance</div>
-                    <div className="big-number-value">{formatCurrency(data.balance)}</div>
-                </div>
-                <div className="big-number">
-                    <div className="big-number-label">Weekly Income</div>
-                    <div className="big-number-value positive">{formatCurrency(data.weeklyData.income)}</div>
-                </div>
-                <div className="big-number">
-                    <div className="big-number-label">Weekly Expenses</div>
-                    <div className="big-number-value negative">-{formatCurrency(data.weeklyData.expenses)}</div>
-                </div>
-                <div className="big-number">
-                    <div className="big-number-label">Weekly Profit/Loss</div>
-                    <div className={`big-number-value ${data.weeklyData.netBalance >= 0 ? 'positive' : 'negative'}`}>
-                        {data.weeklyData.netBalance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(data.weeklyData.netBalance))}
+            <div className="grid-auto-fit-md" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+                <Card style={{ textAlign: 'center', padding: '2rem' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{FINANCES.BALANCE}</div>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: data.balance >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                        {formatCurrency(data.balance)}
                     </div>
-                </div>
+                </Card>
+
+                <Card style={{ textAlign: 'center', padding: '2rem' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{FINANCES.WEEKLY_INCOME}</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--success)' }}>
+                        {formatCurrency(data.weeklyData.income)}
+                    </div>
+                </Card>
+
+                <Card style={{ textAlign: 'center', padding: '2rem' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{FINANCES.WEEKLY_EXPENSES}</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--danger)' }}>
+                        {formatCurrency(data.weeklyData.expenses)}
+                    </div>
+                </Card>
+
+                <Card style={{ textAlign: 'center', padding: '2rem' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{FINANCES.PROFIT_LOSS}</div>
+                    <div style={{ 
+                        fontSize: '2rem', 
+                        fontWeight: 'bold', 
+                        color: data.weeklyData.netBalance >= 0 ? 'var(--success)' : 'var(--danger)' 
+                    }}>
+                        {formatCurrency(data.weeklyData.netBalance)}
+                    </div>
+                </Card>
             </div>
 
             {/* Main Grid */}
-            <div className="main-grid">
-                {/* Left Column */}
-                <div>
-                    {/* Revenue Breakdown */}
-                    <div className="card" style={{ marginBottom: '2rem' }}>
-                        <div className="card-title">📊 Revenue Breakdown (Weekly)</div>
-                        <div className="revenue-chart">
-                            <div className="pie-chart"></div>
-                            <div className="revenue-legend">
-                                <div className="legend-item">
-                                    <div className="legend-color" style={{ background: '#3b82f6' }}></div>
-                                    <span>Sponsor: {formatCurrency(data.weeklyData.breakdown.sponsorship)}</span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Revenue Breakdown */}
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle>📊 {FINANCES.INCOME} Breakdown</CardTitle>
+                    </CardHeader>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                        {/* Pie Chart */}
+                        <div style={{ 
+                            width: '140px', 
+                            height: '140px', 
+                            borderRadius: '50%',
+                            background: `conic-gradient(
+                                #3b82f6 0deg ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg,
+                                #10b981 ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg,
+                                #f59e0b ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg,
+                                #8b5cf6 ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg ${((revenueTotal - data.weeklyData.breakdown.playerSales) / revenueTotal) * 360}deg,
+                                #ec4899 ${((revenueTotal - data.weeklyData.breakdown.playerSales) / revenueTotal) * 360}deg 360deg
+                            )`,
+                            flexShrink: 0
+                        }} />
+                        
+                        {/* Legend */}
+                        <div style={{ flex: 1 }}>
+                            {revenueBreakdown.map((item) => (
+                                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                    <div style={{ width: '14px', height: '14px', borderRadius: '3px', background: item.color }} />
+                                    <span style={{ fontSize: '0.9rem', flex: 1 }}>{item.label}</span>
+                                    <span style={{ fontWeight: '600' }}>{formatCurrency(item.value)}</span>
                                 </div>
-                                <div className="legend-item">
-                                    <div className="legend-color" style={{ background: '#10b981' }}></div>
-                                    <span>Tickets: {formatCurrency(data.weeklyData.breakdown.ticketSales)}</span>
+                            ))}
+                        </div>
+                    </div>
+                </Card>
+
+                {/* FFP Status */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>📋 {FINANCES.FFP_STATUS}</CardTitle>
+                    </CardHeader>
+                    <div style={{ 
+                        padding: '1.5rem', 
+                        borderRadius: '10px', 
+                        background: 'rgba(0,0,0,0.02)',
+                        borderLeft: `5px solid ${getStatusColor(data.ffp.status)}`
+                    }}>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                            {getStatusText(data.ffp.status)}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: '1rem' }}>
+                            {data.ffp.message}
+                        </div>
+                        
+                        {/* Wage Progress */}
+                        <div style={{ marginBottom: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                                <span>Wage to Income Ratio</span>
+                                <span style={{ fontWeight: 'bold' }}>{data.ffp.wagePercentage.toFixed(1)}%</span>
+                            </div>
+                            <div style={{ 
+                                width: '100%', 
+                                height: '24px', 
+                                background: '#e5e7eb', 
+                                borderRadius: '12px',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ 
+                                    width: `${Math.min(data.ffp.wagePercentage, 100)}%`,
+                                    height: '100%',
+                                    background: data.ffp.wagePercentage > 70 ? '#ef4444' : data.ffp.wagePercentage > 50 ? '#f59e0b' : '#10b981',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {data.ffp.wagePercentage.toFixed(1)}%
                                 </div>
-                                <div className="legend-item">
-                                    <div className="legend-color" style={{ background: '#f59e0b' }}></div>
-                                    <span>Jersey: {formatCurrency(data.weeklyData.breakdown.jerseySales)}</span>
-                                </div>
-                                <div className="legend-item">
-                                    <div className="legend-color" style={{ background: '#8b5cf6' }}></div>
-                                    <span>Season Rewards: {formatCurrency(data.weeklyData.breakdown.seasonRewards)}</span>
-                                </div>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                                FFP Limit: 70%
                             </div>
                         </div>
                     </div>
 
-                    {/* Weekly Accounting */}
-                    <div className="card">
-                        <div className="card-title">📋 Weekly Accounting</div>
-                        <div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🎯 Sponsorship</div>
-                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.sponsorship)}</div>
+                    {/* Stadium Info */}
+                    <div style={{ marginTop: '1.5rem' }}>
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '1rem' }}>🏟️ Stadium</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                            <div style={{ 
+                                background: 'var(--primary-light)', 
+                                padding: '1rem', 
+                                borderRadius: '8px',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textTransform: 'uppercase' }}>Capacity</div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                                    {data.stadiumCapacity.toLocaleString()}
+                                </div>
                             </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🎟️ Ticket Sales</div>
-                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.ticketSales)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">👕 Jersey Sales</div>
-                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.jerseySales)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🏅 Season Rewards</div>
-                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.seasonRewards)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">💱 Player Transfer Sales</div>
-                                <div className="accounting-amount income">{formatCurrency(data.weeklyData.breakdown.playerSales)}</div>
-                            </div>
-                            <div className="accounting-row" style={{ borderTop: '2px solid var(--primary)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
-                                <div className="accounting-label" style={{ fontWeight: 'bold' }}>📥 Total Income</div>
-                                <div className="accounting-amount income" style={{ fontSize: '1.1rem' }}>{formatCurrency(data.weeklyData.income)}</div>
-                            </div>
-                        </div>
-
-                        <div style={{ marginTop: '1.5rem', borderTop: '2px solid var(--border)', paddingTop: '1rem' }}>
-                            <div className="accounting-row">
-                                <div className="accounting-label">💼 Player Wages</div>
-                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.wages)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🏟️ Maintenance</div>
-                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.maintenance)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🏋️ Training Weekly Fee</div>
-                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.trainingWeekly)}</div>
-                            </div>
-                            <div className="accounting-row">
-                                <div className="accounting-label">🤝 Player Purchases</div>
-                                <div className="accounting-amount expense">-{formatCurrency(data.weeklyData.breakdown.playerPurchases)}</div>
-                            </div>
-                            <div className="accounting-row" style={{ borderTop: '2px solid var(--primary)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
-                                <div className="accounting-label" style={{ fontWeight: 'bold' }}>📤 Total Expenses</div>
-                                <div className="accounting-amount expense" style={{ fontSize: '1.1rem' }}>-{formatCurrency(data.weeklyData.expenses)}</div>
-                            </div>
-                        </div>
-
-                        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--primary-light)', borderRadius: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <div style={{ fontWeight: 'bold' }}>📊 Net Balance</div>
-                                <div className={`accounting-amount net`}>
-                                    {data.weeklyData.netBalance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(data.weeklyData.netBalance))}
+                            <div style={{ 
+                                background: 'var(--primary-light)', 
+                                padding: '1rem', 
+                                borderRadius: '8px',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textTransform: 'uppercase' }}>Reputation</div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                                    {data.reputation}
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                </Card>
+            </div>
 
-                {/* Right Column */}
-                <div>
-                    {/* Stadium Status */}
-                    <div className="card" style={{ marginBottom: '2rem' }}>
-                        <div className="card-title">🏟️ Stadium Status</div>
-                        <div className="stadium-info">
-                            <div className="info-item">
-                                <div className="info-label">Capacity</div>
-                                <div className="info-value">{(data.stadiumCapacity / 1000).toFixed(0)}K</div>
+            {/* Accounting Details */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Expenses */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>💸 {FINANCES.EXPENSE} Breakdown</CardTitle>
+                    </CardHeader>
+                    <div>
+                        {expenseBreakdown.map((item) => (
+                            <div key={item.label} style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: '1fr auto', 
+                                gap: '1rem',
+                                padding: '0.75rem 0',
+                                borderBottom: '1px solid var(--border)'
+                            }}>
+                                <span style={{ color: 'var(--muted)' }}>{item.label}</span>
+                                <span style={{ fontWeight: 'bold', color: 'var(--danger)' }}>
+                                    {formatCurrency(-item.value)}
+                                </span>
                             </div>
-                            <div className="info-item">
-                                <div className="info-label">Avg Attendance</div>
-                                <div className="info-value">{Math.round(data.stadiumCapacity * 0.75 / 1000)}K</div>
-                            </div>
-                            <div className="info-item">
-                                <div className="info-label">Reputation</div>
-                                <div className="info-value">{data.reputation}/100</div>
-                            </div>
-                            <div className="info-item">
-                                <div className="info-label">Attendance Rate</div>
-                                <div className="info-value">75%</div>
-                            </div>
+                        ))}
+                        <div style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: '1fr auto', 
+                            gap: '1rem',
+                            padding: '1rem 0 0 0',
+                            marginTop: '0.5rem',
+                            borderTop: '2px solid var(--border)'
+                        }}>
+                            <span style={{ fontWeight: '600' }}>Total Expenses</span>
+                            <span style={{ fontWeight: 'bold', color: 'var(--danger)', fontSize: '1.1rem' }}>
+                                {formatCurrency(-data.weeklyData.expenses)}
+                            </span>
                         </div>
                     </div>
+                </Card>
 
-                    {/* Wage Bill Tracker */}
-                    <div className="card" style={{ marginBottom: '2rem' }}>
-                        <div className="card-title">💰 Wage Bill Status</div>
-                        <div className="progress-container">
-                            <div className="progress-label">
-                                <span>Wages as % of Revenue</span>
-                                <span style={{ fontWeight: 'bold' }}>{data.ffp.wagePercentage}%</span>
-                            </div>
-                            <div className="progress-bar">
-                                <div
-                                    className="progress-fill"
-                                    style={{
-                                        width: `${Math.min(data.ffp.wagePercentage, 100)}%`,
-                                        background: getStatusColor(data.ffp.status)
-                                    }}
-                                >
-                                    {data.ffp.wagePercentage > 30 && `${data.ffp.wagePercentage}%`}
-                                </div>
-                            </div>
+                {/* Training Facility */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>🏋️ Training Facility</CardTitle>
+                    </CardHeader>
+                    <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Current Level</span>
+                            <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                                Lv.{data.training.facilityLevel}
+                            </span>
                         </div>
-                        <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginTop: '1rem' }}>
-                            <div>⚠️ Healthy: &lt;50%</div>
-                            <div>⚠️ Warning: 50-70%</div>
-                            <div>⚠️ Danger: 70-90%</div>
-                            <div>⚠️ Critical: &gt;90%</div>
+                        
+                        <div style={{ marginBottom: '1rem' }}>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>Weekly Fee</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{formatCurrency(data.training.weeklyFee)}</div>
                         </div>
-                    </div>
 
-                    {/* Training Facility Status */}
-                    <div className="card" style={{ marginBottom: '2rem' }}>
-                        <div className="card-title">🏋️ Training Facility</div>
-                        <div className="stadium-info">
-                            <div className="info-item">
-                                <div className="info-label">Facility Level</div>
-                                <div className="info-value">Lv.{data.training.facilityLevel}/9</div>
+                        {!data.training.isMaxLevel ? (
+                            <Button 
+                                variant="primary" 
+                                fullWidth
+                                onClick={() => {/* Handle upgrade */}}
+                            >
+                                ⬆️ Upgrade ({formatCurrency(data.training.nextUpgradeCost)})
+                            </Button>
+                        ) : (
+                            <div style={{ 
+                                padding: '0.75rem', 
+                                background: 'var(--success)', 
+                                color: 'white', 
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                fontWeight: '600'
+                            }}>
+                                ✅ Max Level Reached
                             </div>
-                            <div className="info-item">
-                                <div className="info-label">Weekly Fee</div>
-                                <div className="info-value">{formatCurrency(data.training.weeklyFee)}</div>
-                            </div>
-                            {!data.training.isMaxLevel && (
-                                <>
-                                    <div className="info-item">
-                                        <div className="info-label">Next Level</div>
-                                        <div className="info-value">Lv.{data.training.facilityLevel + 1}</div>
-                                    </div>
-                                    <div className="info-item">
-                                        <div className="info-label">Upgrade Cost</div>
-                                        <div className="info-value">{formatCurrency(data.training.nextUpgradeCost)}</div>
-                                    </div>
-                                </>
-                            )}
-                            {data.training.isMaxLevel && (
-                                <div className="info-item" style={{ gridColumn: '1 / -1' }}>
-                                    <div className="info-label">Status</div>
-                                    <div className="info-value">🌟 Maximum Level Reached</div>
-                                </div>
-                            )}
-                        </div>
+                        )}
                     </div>
-
-                    {/* FFP Status */}
-                    <div className={`ffp-status ${data.ffp.status}`}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                            {data.ffp.status === 'healthy' && '✅ Healthy'}
-                            {data.ffp.status === 'warning' && '⚠️ Warning'}
-                            {data.ffp.status === 'danger' && '⛔ Danger'}
-                            {data.ffp.status === 'critical' && '🚨 Critical'}
-                        </div>
-                        <div className="ffp-message">{data.ffp.message}</div>
-                    </div>
-                </div>
+                </Card>
             </div>
         </div>
     );
