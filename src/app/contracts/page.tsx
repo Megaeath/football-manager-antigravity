@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import PlayerModal from '@/components/PlayerModal';
 import { CONTRACTS, ACTIONS } from '@/lib/constants/uiLabels';
 
 interface ContractPlayer {
@@ -23,6 +25,7 @@ interface ContractsResponse {
 }
 
 export default function ContractsPage() {
+    const router = useRouter();
     const [data, setData] = useState<ContractsResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -52,6 +55,10 @@ export default function ContractsPage() {
     useEffect(() => {
         fetchContracts();
     }, []);
+
+    const openPlayerModal = (playerId: string) => {
+        router.push(`/contracts?playerId=${playerId}`);
+    };
 
     const handleRenew = async (playerId: string) => {
         setRenewingId(playerId);
@@ -156,7 +163,14 @@ export default function ContractsPage() {
                                     const badge = getStatusBadge(player.contractEndWeek);
                                     return (
                                         <tr key={player.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td style={{ padding: '12px', fontWeight: '600' }}>{player.name}</td>
+                                            <td style={{ padding: '12px' }}>
+                                                <button
+                                                    onClick={() => openPlayerModal(player.id)}
+                                                    style={{ color: 'var(--primary)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: '600' }}
+                                                >
+                                                    {player.name}
+                                                </button>
+                                            </td>
                                             <td style={{ padding: '12px', textAlign: 'center' }}>
                                                 <span style={{ 
                                                     background: 'var(--border)', 
@@ -243,6 +257,9 @@ export default function ContractsPage() {
                     })}
                 </div>
             </Card>
+
+            {/* Player Modal */}
+            <PlayerModal />
         </div>
     );
 }

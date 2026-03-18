@@ -183,12 +183,7 @@ export default function RankingsClient({
             </div>
 
             {/* Player Modal */}
-            {(() => {
-                const params = new URLSearchParams(window.location.search);
-                const playerId = params.get('playerId');
-                if (playerId) return <PlayerModal />;
-                return null;
-            })()}
+            <PlayerModal />
         </div>
     );
 }
