@@ -564,8 +564,14 @@ button {
 
 @media (min-width: 768px) {
   .md\:flex { display: flex; }
+  .md\:table { display: table; }
+  .md\:block { display: block; }
+  .md\:inline-flex { display: inline-flex; }
   .md\:hidden { display: none; }
   .md\:p-lg { padding: 24px; }
+  .md\:overflow-visible { overflow: visible; }
+  .md\:text-base { font-size: 1rem; line-height: 1.5rem; }
+  .md\:px-5 { padding-left: 1.25rem; padding-right: 1.25rem; }
 }
 
 @media (min-width: 1024px) {

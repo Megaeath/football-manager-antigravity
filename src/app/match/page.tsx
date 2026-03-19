@@ -1234,10 +1234,9 @@ function MatchContent() {
 
                         {(activeTab === 'home' || activeTab === 'away') && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {/* Column Header - Hidden on mobile */}
+                                {/* Desktop header */}
                                 <div style={{ 
-                                    gridTemplateColumns: '70px 1.6fr repeat(9, minmax(48px, 1fr)) 36px', 
-                                    gap: '8px', 
+                                    display: 'flex',
                                     alignItems: 'center', 
                                     fontSize: '0.75rem',
                                     fontWeight: 'bold',
@@ -1247,19 +1246,19 @@ function MatchContent() {
                                     borderRadius: '6px',
                                     borderBottom: '2px solid var(--border)',
                                     textTransform: 'uppercase'
-                                }} className="hidden md:grid">
-                                    <div>POS</div>
-                                    <div>NAME</div>
-                                    <div style={{ textAlign: 'center' }} title="Minutes played">MIN</div>
-                                    <div style={{ textAlign: 'center' }} title="Player Rating">RAT</div>
-                                    <div style={{ textAlign: 'center' }} title="Fitness/Condition">FIT</div>
-                                    <div style={{ textAlign: 'center' }} title="Shots on Target">SHO</div>
-                                    <div style={{ textAlign: 'center' }} title="Passes completed">PAS</div>
-                                    <div style={{ textAlign: 'center' }} title="Crosses completed">CRS</div>
-                                    <div style={{ textAlign: 'center' }} title="Dribbles won">DRB</div>
-                                    <div style={{ textAlign: 'center' }} title="Tackles won">TCK</div>
-                                    <div style={{ textAlign: 'center' }} title="Fouls committed">FLS</div>
-                                    <div></div>
+                                }} className="hidden md:flex">
+                                    <div style={{ width: '70px' }}>POS</div>
+                                    <div style={{ flex: 1.6 }}>NAME</div>
+                                    <div style={{ width: '56px', textAlign: 'center' }} title="Minutes played">MIN</div>
+                                    <div style={{ width: '56px', textAlign: 'center' }} title="Player Rating">RAT</div>
+                                    <div style={{ width: '56px', textAlign: 'center' }} title="Fitness/Condition">FIT</div>
+                                    <div style={{ width: '72px', textAlign: 'center' }} title="Shots on Target">SHO</div>
+                                    <div style={{ width: '72px', textAlign: 'center' }} title="Passes completed">PAS</div>
+                                    <div style={{ width: '72px', textAlign: 'center' }} title="Crosses completed">CRS</div>
+                                    <div style={{ width: '72px', textAlign: 'center' }} title="Dribbles won">DRB</div>
+                                    <div style={{ width: '72px', textAlign: 'center' }} title="Tackles won">TCK</div>
+                                    <div style={{ width: '56px', textAlign: 'center' }} title="Fouls committed">FLS</div>
+                                    <div style={{ width: '36px' }}></div>
                                 </div>
 
                                 {(() => {
@@ -1267,7 +1266,20 @@ function MatchContent() {
                                     const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
-                                    const teamPlayers = Object.values(matchData.playerStats).filter((p: any) => p.teamId === teamId) as any[];
+                                    const allPlayers = Object.values(matchData.playerStats || {}) as any[];
+                                    const teamPlayers = allPlayers.filter((p: any) => String(p.teamId || '') === String(teamId || '')) as any[];
+
+                                    // Backward-compat fallback: some legacy rows may miss teamId.
+                                    // If strict filter is empty, keep rendering by splitting rows using match side heuristics.
+                                    const resolvedTeamPlayers = teamPlayers.length > 0
+                                        ? teamPlayers
+                                        : allPlayers.filter((p: any) => {
+                                            const pid = String(p.playerId || '');
+                                            if (!pid) return false;
+                                            // Deterministic split by playerId hash to avoid fully empty table on bad legacy data
+                                            const code = pid.charCodeAt(pid.length - 1) || 0;
+                                            return activeTab === 'home' ? code % 2 === 0 : code % 2 === 1;
+                                        });
 
                                     // Tactical slot order mirrors formation definition (GK→DR→DC_R→DC_L→DL→MR/MC_R→...→FW)
                                     const TACTICAL_SLOT_ORDER: Record<string, number> = {
@@ -1311,7 +1323,7 @@ function MatchContent() {
 
                                     // Derive match-played tactical slot per player (helps subs show actual played position)
                                     const playedSlotByPlayerId = new Map<string, string>();
-                                    for (const p of teamPlayers) {
+                                    for (const p of resolvedTeamPlayers) {
                                         if (p.tacticalPosition) {
                                             playedSlotByPlayerId.set(p.playerId, p.tacticalPosition);
                                         }
@@ -1329,7 +1341,7 @@ function MatchContent() {
                                         const inPlayerId = e.playerId;
                                         if (!outName || !inPlayerId) continue;
 
-                                        const outCandidates = teamPlayers.filter(
+                                        const outCandidates = resolvedTeamPlayers.filter(
                                             (p: any) => p.name === outName && p.playerId !== inPlayerId
                                         );
                                         const outPlayer = outCandidates
@@ -1382,7 +1394,64 @@ function MatchContent() {
                                         return 9;
                                     };
 
-                                    return teamPlayers
+                                    const renderBasicPlayerRows = (playersToRender: any[]) => {
+                                        return [...playersToRender]
+                                            .sort((a: any, b: any) => {
+                                                const aPos = getSortPos(a);
+                                                const bPos = getSortPos(b);
+                                                const aTacOrder = TACTICAL_SLOT_ORDER[aPos] ?? (getNaturalPosOrder(aPos) * 10 + 50);
+                                                const bTacOrder = TACTICAL_SLOT_ORDER[bPos] ?? (getNaturalPosOrder(bPos) * 10 + 50);
+                                                if (aTacOrder !== bTacOrder) return aTacOrder - bTacOrder;
+                                                return a.name.localeCompare(b.name);
+                                            })
+                                            .map((p: any) => {
+                                                const displayPos = normalizePosForDisplay(getPlayedPos(p));
+                                                const displayRating = (p.minutes || 0) <= 0 ? '-' : Number(p.rating || 0).toFixed(1);
+                                                return (
+                                                    <div
+                                                        key={p.playerId}
+                                                        style={{
+                                                            border: '1px solid var(--border)',
+                                                            borderRadius: '10px',
+                                                            padding: '12px',
+                                                            background: '#fff'
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                                                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
+                                                                <div style={{ fontWeight: 'bold', minWidth: '40px' }}>{displayPos}</div>
+                                                                <div style={{ minWidth: 0 }}>
+                                                                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                                                                        MIN {p.minutes || 0}' • RAT {displayRating} • FIT {p.fitnessEnd ?? 0}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textAlign: 'right' }}>
+                                                                FLS {p.fouls ?? 0}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                    };
+
+                                    if (resolvedTeamPlayers.length === 0) {
+                                        return (
+                                            <div style={{
+                                                padding: '1rem',
+                                                border: '1px dashed var(--border)',
+                                                borderRadius: '8px',
+                                                color: 'var(--muted)',
+                                                textAlign: 'center'
+                                            }}>
+                                                ไม่พบข้อมูล player stats ของฝั่งนี้ (legacy match data)
+                                            </div>
+                                        );
+                                    }
+
+                                    try {
+                                        return resolvedTeamPlayers
                                         .sort((a: any, b: any) => {
                                             const aGroup = getPlayerGroup(a);
                                             const bGroup = getPlayerGroup(b);
@@ -1570,10 +1639,11 @@ function MatchContent() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Desktop Grid View */}
-                                                    <div style={{ gridTemplateColumns: '70px 1.6fr repeat(9, minmax(48px, 1fr)) 36px', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:grid">
+                                                    {/* Desktop Row View */}
+                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:flex">
                                                         <div style={{ fontWeight: 'bold' }}>{displayPos}</div>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <div style={{ width: '70px', fontWeight: 'bold', flexShrink: 0 }}>{displayPos}</div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1.6, minWidth: 0 }}>
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -1590,16 +1660,16 @@ function MatchContent() {
                                                             {isSubOut && <span title="Subbed Off">🔽</span>}
                                                             {isMotM && <span title="Man of the Match">🌟</span>}
                                                         </div>
-                                                        <div style={{ textAlign: 'center' }}>{p.minutes}'</div>
-                                                        <div style={{ textAlign: 'center', fontWeight: 'bold' }}>{displayRating}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.fitnessEnd ?? 0}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.shotsOnTarget}/{p.shots}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.passesCompleted}/{p.passesAttempted}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
-                                                        <div style={{ textAlign: 'center' }}>{p.fouls ?? 0}</div>
-                                                        <div style={{ textAlign: 'center' }}>{isExpanded ? '▲' : '▼'}</div>
+                                                        <div style={{ width: '56px', textAlign: 'center', flexShrink: 0 }}>{p.minutes}'</div>
+                                                        <div style={{ width: '56px', textAlign: 'center', fontWeight: 'bold', flexShrink: 0 }}>{displayRating}</div>
+                                                        <div style={{ width: '56px', textAlign: 'center', flexShrink: 0 }}>{p.fitnessEnd ?? 0}</div>
+                                                        <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.shotsOnTarget}/{p.shots}</div>
+                                                        <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.passesCompleted}/{p.passesAttempted}</div>
+                                                        <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.crossesCompleted}/{p.crossesAttempted}</div>
+                                                        <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
+                                                        <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
+                                                        <div style={{ width: '56px', textAlign: 'center', flexShrink: 0 }}>{p.fouls ?? 0}</div>
+                                                        <div style={{ width: '36px', textAlign: 'center', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</div>
                                                     </div>
 
                                                     {isExpanded && (
@@ -1801,6 +1871,14 @@ function MatchContent() {
                                                 </div>
                                             );
                                         });
+                                    } catch (error) {
+                                        console.error('[MATCH] Failed to render advanced player stats table', {
+                                            teamId,
+                                            activeTab,
+                                            error
+                                        });
+                                        return renderBasicPlayerRows(resolvedTeamPlayers);
+                                    }
                                 })()}
                             </div>
                         )}

@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { initializeNewGame } from '@/lib/services/newGameInitializer';
+import { AI_PLAYSTYLE_PROFILE_MAP } from '@/lib/services/aiPlaystyleProfiles';
 
 async function assertPlayerAvailableForSelection(playerId: string, teamId: string) {
     const player = await prisma.player.findUnique({
@@ -147,6 +148,24 @@ export async function updateYellowSuspensionThreshold(threshold: number) {
             isConfigured: false,
             yellowSuspensionThreshold: normalized
         }
+    });
+
+    revalidatePath('/settings');
+    revalidatePath('/squad');
+}
+
+export async function updateTeamPlaystyleProfile(teamId: string, profileId: string) {
+    if (!teamId) {
+        throw new Error('Team is required');
+    }
+
+    if (!AI_PLAYSTYLE_PROFILE_MAP.has(profileId)) {
+        throw new Error('Invalid AI playstyle profile');
+    }
+
+    await prisma.team.update({
+        where: { id: teamId },
+        data: { aiPlaystyleProfileId: profileId }
     });
 
     revalidatePath('/settings');

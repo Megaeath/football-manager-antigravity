@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { resetGameWithSelectedTeam, updateYellowSuspensionThreshold } from '../actions';
+import { resetGameWithSelectedTeam, updateTeamPlaystyleProfile, updateYellowSuspensionThreshold } from '../actions';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SETTINGS, ACTIONS } from '@/lib/constants/uiLabels';
@@ -10,14 +10,36 @@ import { SETTINGS, ACTIONS } from '@/lib/constants/uiLabels';
 type TeamOption = {
     id: string;
     name: string;
+    aiPlaystyleProfileId?: string | null;
 };
 
-export default function SettingsClient({ teams, currentUserTeamName, yellowSuspensionThreshold }: { teams: TeamOption[]; currentUserTeamName: string; yellowSuspensionThreshold: number }) {
+type PlaystyleOption = {
+    id: string;
+    name: string;
+    description: string;
+};
+
+export default function SettingsClient({
+    teams,
+    currentUserTeamName,
+    yellowSuspensionThreshold,
+    currentUserTeamId,
+    currentUserTeamStyleProfileId,
+    playstyleOptions
+}: {
+    teams: TeamOption[];
+    currentUserTeamName: string;
+    yellowSuspensionThreshold: number;
+    currentUserTeamId: string;
+    currentUserTeamStyleProfileId: string;
+    playstyleOptions: PlaystyleOption[];
+}) {
     const router = useRouter();
     const [step, setStep] = useState<'idle' | 'confirm' | 'choose'>('idle');
     const [loading, setLoading] = useState(false);
     const [selectedTeamName, setSelectedTeamName] = useState(currentUserTeamName || teams[0]?.name || '');
     const [yellowThreshold, setYellowThreshold] = useState(yellowSuspensionThreshold || 4);
+    const [selectedPlaystyle, setSelectedPlaystyle] = useState(currentUserTeamStyleProfileId);
     const [message, setMessage] = useState('');
 
     const handleSaveDisciplineSettings = async () => {
@@ -52,6 +74,27 @@ export default function SettingsClient({ teams, currentUserTeamName, yellowSuspe
         } catch (error) {
             console.error('Failed to reset game', error);
             setMessage('❌ Error starting new game');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSavePlaystyle = async () => {
+        if (!currentUserTeamId) {
+            setMessage('❌ No active user team');
+            return;
+        }
+
+        setLoading(true);
+        setMessage('Saving playstyle profile...');
+        try {
+            await updateTeamPlaystyleProfile(currentUserTeamId, selectedPlaystyle);
+            const chosen = playstyleOptions.find((p) => p.id === selectedPlaystyle);
+            setMessage(`✅ Saved playstyle: ${chosen?.name || selectedPlaystyle}`);
+            router.refresh();
+        } catch (error) {
+            console.error('Failed to update playstyle profile', error);
+            setMessage('❌ Failed to save playstyle profile');
         } finally {
             setLoading(false);
         }
@@ -104,6 +147,47 @@ export default function SettingsClient({ teams, currentUserTeamName, yellowSuspe
                         >
                             {loading ? '⏳ Saving...' : ACTIONS.SAVE}
                         </Button>
+                    </div>
+                </div>
+            </Card>
+
+            {/* AI Playstyle Profile */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>🧠 AI Team Playstyle Profile</CardTitle>
+                </CardHeader>
+                <div style={{ padding: '1rem', background: 'var(--primary-light)', borderRadius: '10px' }}>
+                    <p style={{ marginBottom: '1rem', color: 'var(--muted)' }}>
+                        Choose your team identity profile. This affects AI auto-tactics and transfer targeting behavior.
+                    </p>
+                    <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '620px' }}>
+                        <select
+                            value={selectedPlaystyle}
+                            onChange={(e) => setSelectedPlaystyle(e.target.value)}
+                            disabled={loading}
+                            className="select"
+                        >
+                            {playstyleOptions.map((profile) => (
+                                <option key={profile.id} value={profile.id}>
+                                    {profile.name}
+                                </option>
+                            ))}
+                        </select>
+
+                        <div style={{ fontSize: '0.92rem', color: 'var(--muted)' }}>
+                            {playstyleOptions.find((p) => p.id === selectedPlaystyle)?.description}
+                        </div>
+
+                        <div>
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={handleSavePlaystyle}
+                                disabled={loading}
+                            >
+                                {loading ? '⏳ Saving...' : 'Save Playstyle'}
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Card>

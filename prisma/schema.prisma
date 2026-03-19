@@ -48,6 +48,8 @@ model Team {
   tackling         String @default("NORMAL")
   attacking_focus  String @default("MIXED")
   creative_freedom String @default("NORMAL")
+  aiPlaystyleProfileId String?
+  aiPlaystyleLocked    Boolean @default(false)
   trainingFacilityLevel Int @default(1)
 
   // Financial & Reputation

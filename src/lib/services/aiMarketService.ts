@@ -4,6 +4,8 @@ import { calculatePlayerPower, toPlayerAttributes } from '../engine/playerPower'
 import { evaluateMarketValue } from '../engine/financial';
 import { submitBid } from '../engine/market';
 import { getGameTime } from './gameTime';
+import { resolveAIPlaystyleForTeam } from './aiPlaystyleService';
+import type { AIPlaystyleProfile } from './aiPlaystyleProfiles';
 
 type MarketTarget = { player: any; power: number };
 
@@ -49,6 +51,31 @@ function buildPositionDepthMap(players: Array<{ naturalPosition: string }>, form
 
 function getPositionDepth(depthMap: Map<string, number>, position: string) {
     return depthMap.get(normalizeDepthPosition(position)) || 0;
+}
+
+function getStyleTransferFitScore(player: any, style: AIPlaystyleProfile): number {
+    const age = Number(player.age || 0);
+    const ageInBand = age >= style.transferPolicy.preferAgeMin && age <= style.transferPolicy.preferAgeMax;
+    const ageDistance = age < style.transferPolicy.preferAgeMin
+        ? style.transferPolicy.preferAgeMin - age
+        : age > style.transferPolicy.preferAgeMax
+            ? age - style.transferPolicy.preferAgeMax
+            : 0;
+
+    const ageScore = ageInBand ? 14 : Math.max(0, 12 - ageDistance * 2);
+
+    const weightedAttributes = Object.entries(style.transferPolicy.attributeWeights || {}).reduce((sum, [k, w]) => {
+        const value = Number(player[k] || 0);
+        return sum + (value * Number(w || 0));
+    }, 0);
+
+    const riskMod = style.transferPolicy.riskBias === 'HIGH'
+        ? 1.12
+        : style.transferPolicy.riskBias === 'LOW'
+            ? 0.94
+            : 1.0;
+
+    return (ageScore + weightedAttributes) * riskMod;
 }
 
 async function getTopRankingPlayerIds(currentSeason: number, log: (msg: string) => void): Promise<Set<string>> {
@@ -423,6 +450,8 @@ async function processAIBuyingLogic(
         log(`[AI Market] Team ${teamId} not found - skipping`);
         return;
     }
+
+    const style = resolveAIPlaystyleForTeam(team);
     
     // Lower minimum balance to allow more transfers (was 1,000,000)
     if (team.balance < 500000) {
@@ -466,7 +495,8 @@ async function processAIBuyingLogic(
     const allAvailable = [...listedPlayers, ...freeAgentsWithPower];
     const teamDepthMap = buildPositionDepthMap(team.players, team.formation);
 
-    const maxBudget = isTopTier ? team.balance : team.balance * 0.8;
+    const profileBudgetUsage = Math.max(0.35, Math.min(0.95, style.transferPolicy.budgetUsage || 0.8));
+    const maxBudget = isTopTier ? team.balance : team.balance * profileBudgetUsage;
 
     // Respect one-transfer-per-season rule
     const targets = allAvailable.filter(lp =>
@@ -504,18 +534,22 @@ async function processAIBuyingLogic(
         const finalPool = urgentPool.length > 0 ? urgentPool : preferredPool;
 
         const sortedPreferred = [...finalPool].sort((a, b) => {
+            const styleScoreA = getStyleTransferFitScore(a.player, style);
+            const styleScoreB = getStyleTransferFitScore(b.player, style);
             const scoreA = (rankingTop3Ids.has(a.player.id) ? 100 : 0)
                 + Number(a.player.popularity || 0)
                 + Number(a.player.avgRating || 0) * 10
                 + Number(a.player.motmCount || 0) * 3
                 + Number(a.player.goals || 0)
-                + Number(a.player.assists || 0);
+                + Number(a.player.assists || 0)
+                + styleScoreA;
             const scoreB = (rankingTop3Ids.has(b.player.id) ? 100 : 0)
                 + Number(b.player.popularity || 0)
                 + Number(b.player.avgRating || 0) * 10
                 + Number(b.player.motmCount || 0) * 3
                 + Number(b.player.goals || 0)
-                + Number(b.player.assists || 0);
+                + Number(b.player.assists || 0)
+                + styleScoreB;
             return scoreB - scoreA;
         });
 
@@ -571,13 +605,17 @@ async function processAIBuyingLogic(
             });
 
             if (posTargets.length > 0) {
-                const sortedTargets = [...posTargets].sort((a, b) => b.power - a.power);
+                const sortedTargets = [...posTargets].sort((a, b) => {
+                    const scoreA = a.power + getStyleTransferFitScore(a.player, style);
+                    const scoreB = b.power + getStyleTransferFitScore(b.player, style);
+                    return scoreB - scoreA;
+                });
                 const pool = sortedTargets.slice(0, Math.min(3, sortedTargets.length));
                 const t = pool[Math.floor(Math.random() * pool.length)];
                 const isFreeAgent = !t.player.teamId;
                 const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
                 const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
-                log(`[AI Market] ${team.name} bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)}, Depth:${depth}, Need2:${isUrgent ? 'Y' : 'N'}, NoDepth:${hasNoDepth ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
+                log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)}, Depth:${depth}, Need2:${isUrgent ? 'Y' : 'N'}, NoDepth:${hasNoDepth ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
                 break;
             }
         }

@@ -104,6 +104,89 @@ function clampChance(v: number): number {
     return clamp(v, INJURY_MIN_CHANCE, INJURY_MAX_CHANCE);
 }
 
+function getRankRevenueRatio(rank: number): number {
+    // Rank 1 = 50%, then -2% per rank, floor at 10%
+    return Math.max(50 - ((Math.max(1, rank) - 1) * 2), 10) / 100;
+}
+
+async function getTeamLeagueRank(teamId: string, season: number): Promise<number> {
+    const teams = await prisma.team.findMany({
+        select: { id: true, name: true }
+    });
+
+    const standings = new Map<string, {
+        teamId: string;
+        name: string;
+        points: number;
+        goalDiff: number;
+        goalsFor: number;
+        goalsAgainst: number;
+    }>();
+
+    for (const team of teams) {
+        standings.set(team.id, {
+            teamId: team.id,
+            name: team.name,
+            points: 0,
+            goalDiff: 0,
+            goalsFor: 0,
+            goalsAgainst: 0
+        });
+    }
+
+    const playedMatches = await prisma.match.findMany({
+        where: {
+            season,
+            isPlayed: true,
+            homeScore: { not: null },
+            awayScore: { not: null }
+        },
+        select: {
+            homeTeamId: true,
+            awayTeamId: true,
+            homeScore: true,
+            awayScore: true
+        }
+    });
+
+    for (const m of playedMatches) {
+        const home = standings.get(m.homeTeamId);
+        const away = standings.get(m.awayTeamId);
+        if (!home || !away) continue;
+
+        const hs = m.homeScore ?? 0;
+        const as = m.awayScore ?? 0;
+
+        home.goalsFor += hs;
+        home.goalsAgainst += as;
+        home.goalDiff = home.goalsFor - home.goalsAgainst;
+
+        away.goalsFor += as;
+        away.goalsAgainst += hs;
+        away.goalDiff = away.goalsFor - away.goalsAgainst;
+
+        if (hs > as) {
+            home.points += 3;
+        } else if (hs < as) {
+            away.points += 3;
+        } else {
+            home.points += 1;
+            away.points += 1;
+        }
+    }
+
+    const table = Array.from(standings.values()).sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.goalDiff !== a.goalDiff) return b.goalDiff - a.goalDiff;
+        if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+        if (a.goalsAgainst !== b.goalsAgainst) return a.goalsAgainst - b.goalsAgainst;
+        return a.name.localeCompare(b.name);
+    });
+
+    const rankIndex = table.findIndex((row) => row.teamId === teamId);
+    return rankIndex >= 0 ? rankIndex + 1 : Math.max(1, table.length);
+}
+
 function rollInjuryForMatch(player: { stamina: number; strength: number }, stat: EnginePlayerMatchStats): { weeks: number; severity: 'MINOR' | 'MODERATE' | 'MAJOR' } | null {
     const durabilityNorm = getDurabilityNorm(player.stamina, player.strength);
     const minuteFactor = Math.min(1, (stat.minutes || 0) / 90);
@@ -701,6 +784,53 @@ export async function processMatchFinancials(matchId: string) {
     const homeResult = match.homeScore > match.awayScore ? 'win' : match.homeScore === match.awayScore ? 'draw' : 'loss';
     const awayResult = match.awayScore > match.homeScore ? 'win' : match.homeScore === match.awayScore ? 'draw' : 'loss';
 
+    // Matchday income model:
+    // - Attendance depends on home rank: rank 1 = 50%, then -2% each rank (floor 10%)
+    // - Home receives 100% of gate
+    // - Away receives 50% * away-rank-ratio share of home gate
+    const [homeRank, awayRank] = await Promise.all([
+        getTeamLeagueRank(match.homeTeamId, match.season),
+        getTeamLeagueRank(match.awayTeamId, match.season)
+    ]);
+
+    const ticketPrice = 10;
+    const homeAttendanceRate = getRankRevenueRatio(homeRank);
+    const homeGateRevenue = Math.round((match.homeTeam.stadiumCapacity || 50000) * homeAttendanceRate * ticketPrice);
+
+    const awayRankRatio = getRankRevenueRatio(awayRank);
+    const awayRevenueShare = 0.5 * awayRankRatio;
+    const awayGateRevenue = Math.round(homeGateRevenue * awayRevenueShare);
+
+    await prisma.$transaction(async (tx) => {
+        await tx.team.update({
+            where: { id: match.homeTeamId },
+            data: { balance: { increment: homeGateRevenue } }
+        });
+
+        await tx.team.update({
+            where: { id: match.awayTeamId },
+            data: { balance: { increment: awayGateRevenue } }
+        });
+
+        await tx.financialEvent.create({
+            data: {
+                teamId: match.homeTeamId,
+                type: 'MATCHDAY',
+                amount: homeGateRevenue,
+                description: `Matchday home gate (${Math.round(homeAttendanceRate * 100)}% attendance, rank ${homeRank})`
+            }
+        });
+
+        await tx.financialEvent.create({
+            data: {
+                teamId: match.awayTeamId,
+                type: 'MATCHDAY',
+                amount: awayGateRevenue,
+                description: `Away share from matchday gate (${Math.round(awayRevenueShare * 100)}% of home gate, away rank ${awayRank})`
+            }
+        });
+    });
+
     // Update player popularity for all players in the match
     for (const stat of match.playerStats) {
         const player = await prisma.player.findUnique({
@@ -728,6 +858,14 @@ export async function processMatchFinancials(matchId: string) {
 
     return {
         homeResult,
-        awayResult
+        awayResult,
+        matchday: {
+            homeRank,
+            awayRank,
+            homeAttendanceRate,
+            homeGateRevenue,
+            awayRevenueShare,
+            awayGateRevenue
+        }
     };
 }

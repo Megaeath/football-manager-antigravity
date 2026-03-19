@@ -34,11 +34,20 @@ export async function PATCH(
             }
         }
 
+        // When releasing to free agent pool, clear teamId and tactical position
+        const isRelease = transferStatus === 'RELEASED';
+
         const updatedPlayer = await prisma.player.update({
             where: { id: playerId },
             data: {
-                transferStatus,
-                askingPrice: askingPrice || null
+                transferStatus: isRelease ? 'FREE_AGENT' : transferStatus,
+                askingPrice: isRelease ? null : (askingPrice || null),
+                ...(isRelease && {
+                    teamId: null,
+                    tacticalPosition: null,
+                    playerRole: null,
+                    morale: 50
+                })
             }
         });
 

@@ -285,9 +285,22 @@ export default async function Home() {
                             <div className="text-sm text-muted mb-2">
                                 {formatDateShort(upcomingMatch.date)}
                             </div>
-                            <Link href={`/match?matchId=${upcomingMatch.id}`} className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--accent)', color: 'white' }}>
-                                {MATCH.VIEW_MATCH} →
-                            </Link>
+                            {(() => {
+                                const matchDateNorm = new Date(upcomingMatch.date);
+                                matchDateNorm.setUTCHours(0, 0, 0, 0);
+                                const gameDateNorm = new Date(gameDate);
+                                gameDateNorm.setUTCHours(0, 0, 0, 0);
+                                const isMatchDay = gameDateNorm >= matchDateNorm;
+                                return isMatchDay ? (
+                                    <Link href={`/match?matchId=${upcomingMatch.id}`} className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--accent)', color: 'white' }}>
+                                        {MATCH.VIEW_MATCH} →
+                                    </Link>
+                                ) : (
+                                    <span className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--border)', color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.6 }}>
+                                        🔒 Available on {formatDateShort(upcomingMatch.date)}
+                                    </span>
+                                );
+                            })()}
                         </div>
                     )}
                 </div>

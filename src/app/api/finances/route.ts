@@ -51,9 +51,6 @@ export async function GET(request: NextRequest) {
         };
         const weeklyTrainingFee = trainingFeeMap[trainingFacilityLevel] || 20000;
 
-        // Calculate attendance: 60% base + up to 35% from reputation
-        const attendanceRate = 0.60 + (reputation / 100) * 0.35;
-
         const settings = await prisma.globalGameSettings.findFirst();
         const currentDate = settings?.currentDate || new Date();
         const weekStart = new Date(currentDate);
@@ -70,6 +67,16 @@ export async function GET(request: NextRequest) {
         });
         const seasonRewards = seasonRewardAgg._sum.amount || 0;
 
+        const matchdayAgg = await prisma.financialEvent.aggregate({
+            where: {
+                teamId,
+                type: 'MATCHDAY',
+                date: { gte: weekStart, lte: currentDate }
+            },
+            _sum: { amount: true }
+        });
+        const matchdayIncome = matchdayAgg._sum.amount || 0;
+
         // Transfer values are shown as season-to-date (more meaningful than a strict 7-day window)
         const transferIncomeAgg = await prisma.financialEvent.aggregate({
             where: { teamId, type: 'PLAYER_SOLD', date: { gte: seasonStart, lte: currentDate } },
@@ -83,15 +90,16 @@ export async function GET(request: NextRequest) {
         });
         const playerPurchases = Math.abs(transferExpenseAgg._sum.amount || 0);
 
-        // Revenue calculation
-        const sponsorship = 20000 * (1 + reputation / 100);
-        const ticketSales = stadiumCapacity * attendanceRate * 10;
+        // Revenue calculation (balanced model)
+        const sponsorship = 50000 + (reputation / 100) * 150000;
+        const ticketSales = 0; // moved to per-match MATCHDAY events
+        const famousPlayers = team.players.filter((p) => (p.popularity || 0) >= 60).length;
         const averagePopularity = team.players.length > 0
             ? team.players.reduce((sum, p) => sum + (p.popularity || 50), 0) / team.players.length
             : 50;
-        const jerseySales = 500 * (averagePopularity / 100) * team.players.length;
+        const jerseySales = (famousPlayers * 8000) + (averagePopularity * 200);
 
-        const totalIncome = sponsorship + ticketSales + jerseySales + seasonRewards + playerSales;
+        const totalIncome = sponsorship + ticketSales + jerseySales + matchdayIncome + seasonRewards + playerSales;
         const totalExpenses = totalWages + maintenanceCost + playerPurchases + weeklyTrainingFee;
         const netBalance = totalIncome - totalExpenses;
 
@@ -142,6 +150,7 @@ export async function GET(request: NextRequest) {
                     sponsorship: Math.round(sponsorship),
                     ticketSales: Math.round(ticketSales),
                     jerseySales: Math.round(jerseySales),
+                    matchday: Math.round(matchdayIncome),
                     seasonRewards: Math.round(seasonRewards),
                     playerSales: Math.round(playerSales),
                     wages: Math.round(totalWages),

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 function formatDateDMY(date: string | Date) {
     return new Date(date).toLocaleDateString('en-GB', {
@@ -31,6 +32,7 @@ export function TransferTab({
     marketValue,
     onBidSuccess
 }: TransferTabProps) {
+    const router = useRouter();
     const [amount, setAmount] = useState<number>(0);
     const [signOnBonus, setSignOnBonus] = useState<number>(0);
     const [userBalance, setUserBalance] = useState<number>(0);
@@ -189,8 +191,14 @@ export function TransferTab({
 
             const data = await res.json();
             if (res.ok) {
-                setMessage('Player status updated successfully!');
-                setIsSuccess(true);
+                if (selectedTransferStatus === 'RELEASED') {
+                    // Player has been released - navigate back to squad
+                    router.push('/squad');
+                    router.refresh();
+                } else {
+                    setMessage('Player status updated successfully!');
+                    setIsSuccess(true);
+                }
             } else {
                 setMessage(data.error || 'Failed to update player status.');
                 setIsSuccess(false);

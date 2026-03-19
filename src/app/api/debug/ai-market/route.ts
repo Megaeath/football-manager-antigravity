@@ -33,6 +33,17 @@ export async function GET(req: Request) {
             take: 10
         });
 
+        const teamsWithStyles = await prisma.team.findMany({
+            select: { id: true, name: true, aiPlaystyleProfileId: true },
+            orderBy: { name: 'asc' }
+        });
+
+        const styleDistribution = teamsWithStyles.reduce<Record<string, number>>((acc, team) => {
+            const style = team.aiPlaystyleProfileId || 'unassigned';
+            acc[style] = (acc[style] || 0) + 1;
+            return acc;
+        }, {});
+
         return NextResponse.json({
             success: true,
             trigger,
@@ -40,7 +51,11 @@ export async function GET(req: Request) {
             bidCount,
             logs,
             recentBids: bids,
-            listedPlayers: listed
+            listedPlayers: listed,
+            aiPlaystyles: {
+                distribution: styleDistribution,
+                teams: teamsWithStyles
+            }
         });
     } catch (error: any) {
         console.error('Debug API Error:', error);

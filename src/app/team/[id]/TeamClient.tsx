@@ -12,6 +12,7 @@ import TacticsTabs from '@/components/TacticsTabs';
 import PlayerRolesReadOnlyTab from '@/components/PlayerRolesReadOnlyTab';
 import TeamFinanceTab from '@/components/TeamFinanceTab';
 import TrainingReadOnlyTab, { type TrainingState } from '@/components/TrainingReadOnlyTab';
+import { AI_PLAYSTYLE_PROFILE_MAP } from '@/lib/services/aiPlaystyleProfiles';
 
 interface Player {
     id: string;
@@ -81,6 +82,7 @@ interface Team {
     tackling: string;
     attacking_focus: string;
     creative_freedom: string;
+    aiPlaystyleProfileId?: string | null;
 }
 
 interface TransferHistoryItem {
@@ -689,6 +691,7 @@ export default function TeamClient({
             )}
 
             {activeTab === 'tactics' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {/* Team Tactics */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -751,6 +754,79 @@ export default function TeamClient({
                             ))}
                     </div>
                 </div>
+            </div>
+            {/* AI Playstyle Profile Section */}
+            {(() => {
+                const profile = team.aiPlaystyleProfileId
+                    ? AI_PLAYSTYLE_PROFILE_MAP.get(team.aiPlaystyleProfileId)
+                    : null;
+                if (!profile) return null;
+                const mentalityLabel: Record<string, string> = {
+                    ALL_OUT_ATTACK: '⚔️ All Out Attack', ATTACKING: '🔴 Attacking',
+                    NORMAL: '🟡 Normal', DEFENSIVE: '🔵 Defensive', ULTRA_DEFENSIVE: '🛡️ Ultra Defensive',
+                };
+                const passingLabel: Record<string, string> = { SHORT: '🔵 Short', MIXED: '🟡 Mixed', DIRECT: '🔴 Direct' };
+                const tacklingLabel: Record<string, string> = { SOFT: '🟢 Soft', NORMAL: '🟡 Normal', HARD: '🔴 Hard Press' };
+                const focusLabel: Record<string, string> = { CENTER: '↑ Center', MIXED: '↔ Mixed', WINGS: '← Wings →' };
+                const freedomLabel: Record<string, string> = { RESTRICTED: '🔒 Restricted', NORMAL: '🟡 Normal', MAXIMUM: '🔓 Maximum' };
+                const topAttributes = Object.entries(profile.transferPolicy.attributeWeights)
+                    .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                    .slice(0, 4)
+                    .map(([k]) => k.charAt(0).toUpperCase() + k.slice(1));
+                return (
+                    <div className="card" style={{ borderLeft: '4px solid var(--primary)', background: 'var(--hover-bg)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                            <span style={{ fontSize: '2rem' }}>🧠</span>
+                            <div>
+                                <h3 style={{ margin: 0, color: 'var(--primary)' }}>AI Playing Style: {profile.name}</h3>
+                                <p style={{ margin: '0.3rem 0 0', color: 'var(--muted)', fontSize: '0.95rem' }}>{profile.description}</p>
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                            <div>
+                                <h4 style={{ marginBottom: '0.75rem', color: 'var(--success)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>⚽ Playing Style Breakdown</h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.9rem' }}>
+                                    {([
+                                        ['Formation', profile.tactics.formation],
+                                        ['Mentality', mentalityLabel[profile.tactics.mentality] ?? profile.tactics.mentality],
+                                        ['Passing', passingLabel[profile.tactics.passing] ?? profile.tactics.passing],
+                                        ['Pressing', tacklingLabel[profile.tactics.tackling] ?? profile.tactics.tackling],
+                                        ['Attack Via', focusLabel[profile.tactics.attacking_focus] ?? profile.tactics.attacking_focus],
+                                        ['Creativity', freedomLabel[profile.tactics.creative_freedom] ?? profile.tactics.creative_freedom],
+                                    ] as [string, string][]).map(([label, value]) => (
+                                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.75rem', background: 'var(--bg)', borderRadius: '4px' }}>
+                                            <span style={{ color: 'var(--muted)' }}>{label}</span>
+                                            <span style={{ fontWeight: 600 }}>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 style={{ marginBottom: '0.75rem', color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>💼 Transfer Philosophy</h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.9rem' }}>
+                                    {([
+                                        ['Preferred Age', `${profile.transferPolicy.preferAgeMin}–${profile.transferPolicy.preferAgeMax} yrs`],
+                                        ['Budget Usage', `${Math.round(profile.transferPolicy.budgetUsage * 100)}%`],
+                                        ['Risk Appetite', profile.transferPolicy.riskBias],
+                                        ['Priority Stats', topAttributes.join(', ')],
+                                    ] as [string, string][]).map(([label, value]) => (
+                                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.75rem', background: 'var(--bg)', borderRadius: '4px' }}>
+                                            <span style={{ color: 'var(--muted)' }}>{label}</span>
+                                            <span style={{ fontWeight: 600 }}>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--muted)', borderLeft: '3px solid var(--accent)' }}>
+                                    💡 This team prioritizes{' '}
+                                    <strong style={{ color: 'var(--foreground)' }}>{topAttributes[0]}</strong>
+                                    {topAttributes[1] ? <>{' '}and <strong style={{ color: 'var(--foreground)' }}>{topAttributes[1]}</strong></> : ''}
+                                    {' '}when recruiting players.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
             </div>
             )}
 

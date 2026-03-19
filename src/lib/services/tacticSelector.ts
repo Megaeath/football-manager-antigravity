@@ -4,6 +4,15 @@
  */
 
 import type { Player } from '@prisma/client';
+import type { AIPlaystyleProfile } from './aiPlaystyleProfiles';
+import { normalizePlaystyleTactics } from './aiPlaystyleService';
+
+type TacticFormation = '4-4-2' | '4-3-3' | '4-5-1';
+type TacticMentality = 'ALL_OUT_ATTACK' | 'ATTACKING' | 'NORMAL' | 'DEFENSIVE' | 'ULTRA_DEFENSIVE';
+type TacticPassing = 'SHORT' | 'MIXED' | 'DIRECT';
+type TacticTackling = 'SOFT' | 'NORMAL' | 'HARD';
+type TacticAttackingFocus = 'CENTER' | 'MIXED' | 'WINGS';
+type TacticCreativeFreedom = 'RESTRICTED' | 'NORMAL' | 'MAXIMUM';
 
 interface SquadAnalysis {
     avgPace: number;
@@ -78,7 +87,7 @@ function analyzeSquad(players: Player[]): SquadAnalysis {
     };
 }
 
-function selectFormation(analysis: SquadAnalysis): string {
+function selectFormation(analysis: SquadAnalysis): TacticFormation {
     const { defenders, midfielders, forwards } = analysis;
     const totalOutfield = defenders + midfielders + forwards;
     
@@ -107,7 +116,7 @@ function selectFormation(analysis: SquadAnalysis): string {
     return '4-4-2';
 }
 
-function selectMentality(analysis: SquadAnalysis): string {
+function selectMentality(analysis: SquadAnalysis): TacticMentality {
     const { avgPace, avgPhysical, avgTechnical, hasSpeedsters } = analysis;
 
     // High pace + technical = attacking
@@ -123,7 +132,7 @@ function selectMentality(analysis: SquadAnalysis): string {
     return 'NORMAL';
 }
 
-function selectPassing(analysis: SquadAnalysis): string {
+function selectPassing(analysis: SquadAnalysis): TacticPassing {
     const { avgPassing, hasStrongPassers } = analysis;
 
     if (hasStrongPassers && avgPassing >= 13) return 'SHORT';
@@ -131,7 +140,7 @@ function selectPassing(analysis: SquadAnalysis): string {
     return 'DIRECT';
 }
 
-function selectTackling(analysis: SquadAnalysis): string {
+function selectTackling(analysis: SquadAnalysis): TacticTackling {
     const { avgPhysical, hasPhysicalPlayers } = analysis;
 
     if (hasPhysicalPlayers && avgPhysical >= 13) return 'HARD';
@@ -139,7 +148,7 @@ function selectTackling(analysis: SquadAnalysis): string {
     return 'SOFT';
 }
 
-function selectAttackingFocus(analysis: SquadAnalysis): string {
+function selectAttackingFocus(analysis: SquadAnalysis): TacticAttackingFocus {
     const { avgTechnical, hasSpeedsters, wingers } = analysis;
 
     if (hasSpeedsters && avgTechnical >= 12 && wingers >= 2) return 'WINGS';
@@ -148,7 +157,7 @@ function selectAttackingFocus(analysis: SquadAnalysis): string {
     return 'MIXED';
 }
 
-function selectCreativeFreedom(analysis: SquadAnalysis): string {
+function selectCreativeFreedom(analysis: SquadAnalysis): TacticCreativeFreedom {
     const { hasStrongPassers, avgPassing } = analysis;
 
     if (hasStrongPassers && avgPassing >= 14) return 'RESTRICTED';
@@ -156,10 +165,10 @@ function selectCreativeFreedom(analysis: SquadAnalysis): string {
     return 'MAXIMUM';
 }
 
-export function autoSelectTactics(players: Player[]) {
+export function autoSelectTactics(players: Player[], playstyle?: AIPlaystyleProfile | null) {
     const analysis = analyzeSquad(players);
 
-    return {
+    const baseFromSquad = {
         formation: selectFormation(analysis),
         mentality: selectMentality(analysis),
         passing: selectPassing(analysis),
@@ -167,4 +176,47 @@ export function autoSelectTactics(players: Player[]) {
         attacking_focus: selectAttackingFocus(analysis),
         creative_freedom: selectCreativeFreedom(analysis)
     };
+
+    if (!playstyle) {
+        return baseFromSquad;
+    }
+
+    const styleBase = normalizePlaystyleTactics(playstyle.tactics);
+
+    // Blend style identity + current squad reality
+    const finalTactics = {
+        formation: styleBase.formation,
+        mentality: styleBase.mentality,
+        passing: styleBase.passing,
+        tackling: styleBase.tackling,
+        attacking_focus: styleBase.attacking_focus,
+        creative_freedom: styleBase.creative_freedom
+    };
+
+    // If squad strongly favors another shape, allow tactical correction.
+    if (analysis.defenders < 5 && styleBase.formation === '4-5-1') {
+        finalTactics.formation = baseFromSquad.formation;
+    }
+
+    // Possession styles still need passers; otherwise relax to mixed/direct.
+    if (styleBase.passing === 'SHORT' && !analysis.hasStrongPassers) {
+        finalTactics.passing = analysis.avgPassing >= 11 ? 'MIXED' : 'DIRECT';
+    }
+
+    // Aggressive style without physical capacity becomes normal tackling.
+    if (styleBase.tackling === 'HARD' && analysis.avgPhysical < 11) {
+        finalTactics.tackling = 'NORMAL';
+    }
+
+    // Creative restrictive style should loosen if technical level is low.
+    if (styleBase.creative_freedom === 'RESTRICTED' && analysis.avgTechnical < 10) {
+        finalTactics.creative_freedom = 'NORMAL';
+    }
+
+    // Wing-focused style requires some width in squad.
+    if (styleBase.attacking_focus === 'WINGS' && analysis.wingers < 2) {
+        finalTactics.attacking_focus = 'MIXED';
+    }
+
+    return finalTactics;
 }

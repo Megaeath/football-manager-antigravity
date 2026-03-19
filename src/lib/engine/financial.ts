@@ -169,23 +169,19 @@ export async function calculateWeeklyAccounting(teamId: string): Promise<{
 
     // ===== INCOME =====
 
-    // Sponsorship: Base + reputation bonus
-    const sponsorshipBase = 20000;
-    const sponsorship = sponsorshipBase * (1 + team.reputation / 100);
+    // Sponsorship: guaranteed weekly base + reputation scaling
+    // Range target: 50,000 (low reputation) -> 200,000 (elite reputation)
+    const sponsorship = 50000 + (team.reputation / 100) * 150000;
 
-    // Ticket sales: capacity × attendance% × ticket price × reputation modifier
-    // Attendance = 60% base + reputation can boost to 95%
-    const baseAttendance = 0.6;
-    const reputationAttendanceBoost = (team.reputation / 100) * 0.35; // Up to +35%
-    const attendance = baseAttendance + reputationAttendanceBoost;
-    const ticketsPerSeat = 10; // Currency per ticket
-    const ticketSales = team.stadiumCapacity * attendance * ticketsPerSeat;
+    // Ticket sales are now matchday-based (handled in processMatchFinancials as MATCHDAY events)
+    // Keep weekly ticket sales at 0 to avoid double-counting.
+    const ticketSales = 0;
 
-    // Jersey sales: Based on player popularity
+    // Jersey sales: based on famous player ratio + average popularity
+    const famousPlayers = team.players.filter((p) => p.popularity >= 60).length;
     const totalPopularity = team.players.reduce((sum, p) => sum + p.popularity, 0);
     const avgPopularity = team.players.length > 0 ? totalPopularity / team.players.length : 0;
-    const jerseySalesPerPlayer = 500; // Base jersey revenue
-    const jerseySales = jerseySalesPerPlayer * (avgPopularity / 100) * team.players.length;
+    const jerseySales = (famousPlayers * 8000) + (avgPopularity * 200);
 
     const totalIncome = sponsorship + ticketSales + jerseySales;
 
@@ -296,8 +292,17 @@ export async function checkFFPCompliance(teamId: string): Promise<{
     message: string;
 }> {
     const accounting = await calculateWeeklyAccounting(teamId);
-    
-    if (accounting.income === 0) {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        select: { stadiumCapacity: true }
+    });
+
+    // Ticket sales moved to matchday events; include conservative estimated matchday income
+    // for weekly FFP health calculations.
+    const estimatedMatchdayIncome = Math.round((team?.stadiumCapacity || 50000) * 0.3 * 10);
+    const effectiveIncome = accounting.income + estimatedMatchdayIncome;
+
+    if (effectiveIncome === 0) {
         return {
             status: 'critical',
             wagePercentage: 100,
@@ -305,7 +310,7 @@ export async function checkFFPCompliance(teamId: string): Promise<{
         };
     }
 
-    const wagePercentage = (accounting.breakdown.wages / accounting.income) * 100;
+    const wagePercentage = (accounting.breakdown.wages / effectiveIncome) * 100;
 
     if (wagePercentage > 90) {
         return {

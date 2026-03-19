@@ -2,7 +2,32 @@ import { NextResponse } from 'next/server';
 import { advanceDay, getGameTime } from '@/lib/services/gameTime';
 import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
+import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam } from '@/lib/services/aiPlaystyleService';
 import prisma from '@/lib/prisma';
+
+async function ensureAITeamPlaystyles(userTeamId: string) {
+    const aiTeams = await prisma.team.findMany({
+        where: {
+            id: { not: userTeamId || undefined },
+            aiPlaystyleProfileId: null
+        },
+        select: { id: true }
+    });
+
+    if (aiTeams.length === 0) return;
+
+    await prisma.$transaction(
+        aiTeams.map((team) => {
+            const style = pickDeterministicAIPlaystyle(team.id);
+            return prisma.team.update({
+                where: { id: team.id },
+                data: { aiPlaystyleProfileId: style.id }
+            });
+        })
+    );
+
+    console.log(`[Process API] Assigned AI playstyle profile to ${aiTeams.length} teams`);
+}
 
 async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
     const updates: any = {};
@@ -14,7 +39,9 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
             include: { players: true }
         });
         if (homeTeam) {
-            const autoTactics = autoSelectTactics(homeTeam.players);
+            const style = resolveAIPlaystyleForTeam(homeTeam);
+            const autoTactics = autoSelectTactics(homeTeam.players, style);
+            updates.homeTactics_formation = autoTactics.formation;
             updates.homeTactics_mentality = autoTactics.mentality;
             updates.homeTactics_passing = autoTactics.passing;
             updates.homeTactics_tackling = autoTactics.tackling;
@@ -30,7 +57,9 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
             include: { players: true }
         });
         if (awayTeam) {
-            const autoTactics = autoSelectTactics(awayTeam.players);
+            const style = resolveAIPlaystyleForTeam(awayTeam);
+            const autoTactics = autoSelectTactics(awayTeam.players, style);
+            updates.awayTactics_formation = autoTactics.formation;
             updates.awayTactics_mentality = autoTactics.mentality;
             updates.awayTactics_passing = autoTactics.passing;
             updates.awayTactics_tackling = autoTactics.tackling;
@@ -55,6 +84,8 @@ export async function POST(req: Request) {
 
         // Initialize AI team assignments on first access (if missing)
         try {
+            await ensureAITeamPlaystyles(userTeamId);
+
             const { autoAssignRolesForAllAITeams } = await import('@/lib/services/aiRoleSelector');
             const { autoAssignTacticalPositionsForAllAITeams } = await import('@/lib/services/autoTacticalPositionSelector');
             
