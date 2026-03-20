@@ -271,7 +271,7 @@ export async function advanceDay() {
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
 
     // Bootstrap: if there are no free-agent youth at all, create an initial pool immediately
-    // This helps existing saves start seeing the new system before the next 1st day of month.
+    // This helps existing saves start seeing the new system before the next 15th day of month.
     try {
         const freeYouthCount = await prisma.player.count({
             where: { teamId: null, isRetired: false, age: { gte: 16, lte: 19 } }
@@ -339,12 +339,22 @@ export async function advanceDay() {
 
     }
 
+    // Trigger monthly free-agent youth generation on day 15
+    const isProspectGenerationDay = nextDate.getUTCDate() === 15;
+    if (isProspectGenerationDay) {
+        try {
+            console.log('[GameTime] Generating monthly free-agent youth prospects (1 player) on day 15...');
+            await generateMonthlyFreeAgentProspects(nextDate, 1);
+
+        } catch (error) {
+            console.error('[GameTime] Error generating monthly free-agent prospects:', error);
+        }
+    }
+
     // Trigger AI Market Movements monthly on day 1
     const isFirstDayOfMonth = nextDate.getUTCDate() === 1;
     if (isFirstDayOfMonth) {
         try {
-            console.log('[GameTime] Generating monthly free-agent youth prospects (1 player)...');
-            await generateMonthlyFreeAgentProspects(nextDate, 1);
 
             console.log('[GameTime] Triggering monthly AI Market movements (day 1)...');
             const { processAIMarketMovements } = await import('./aiMarketService');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import Breadcrumbs from '@/components/Breadcrumbs';
@@ -11,6 +12,11 @@ interface AppShellProps {
 
 export default function AppShell({ children }: AppShellProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const pathname = usePathname();
+
+    if (pathname === '/login') {
+        return <>{children}</>;
+    }
 
     return (
         <div className="flex min-h-screen">

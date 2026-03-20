@@ -656,6 +656,8 @@ export async function processMatch(matchId: string) {
         });
 
         const postPlayerEvents: Array<{ minute: number; type: string; text: string; teamId?: string; playerId?: string }> = [];
+        const playedPlayerIds = new Set<string>();
+        const playedExpGainByTeam: Record<string, number[]> = {};
 
         for (const stat of playerStats) {
             // Calculate EXP gain from match performance
@@ -697,6 +699,12 @@ export async function processMatch(matchId: string) {
                 const gainToApply = Math.round(adjustedGain);
                 const currentExp = player.exp || 0;
                 const newExp = currentExp + gainToApply;
+
+            if ((stat.minutes || 0) > 0) {
+                playedPlayerIds.add(stat.playerId);
+                if (!playedExpGainByTeam[stat.teamId]) playedExpGainByTeam[stat.teamId] = [];
+                playedExpGainByTeam[stat.teamId].push(gainToApply);
+            }
 
             const currentYellowAccumulation = player.yellowCardAccumulation || 0;
             const updatedYellowAccumulationRaw = currentYellowAccumulation + (stat.yellowCards || 0);
@@ -753,6 +761,59 @@ export async function processMatch(matchId: string) {
                     injurySeverity: injuryWeeksToApply > 0 ? (injurySeverityToApply || (player.injuryWeeksRemaining > 0 ? undefined : null)) : null
                 }
             });
+        }
+
+        // Additional EXP policy:
+        // 1) Non-playing veterans (>30 years old) lose EXP (decline phase)
+        // 2) If team wins, non-playing youth (<26 years old) gain EXP bonus equal
+        //    to the minimum EXP gain among players who played in that winning team.
+        const allMatchSquadPlayers = [...matchDB.homeTeam.players, ...matchDB.awayTeam.players];
+        const availableNonPlayingPlayers = allMatchSquadPlayers.filter((p: any) => {
+            return !playedPlayerIds.has(p.id) && !isUnavailablePlayer(p);
+        });
+
+        const veteranNonPlayingIds = availableNonPlayingPlayers
+            .filter((p: any) => (p.age || 0) > 30)
+            .map((p: any) => p.id);
+
+        if (veteranNonPlayingIds.length > 0) {
+            await Promise.all(
+                veteranNonPlayingIds.map((playerId) =>
+                    (tx.player as any).update({
+                        where: { id: playerId },
+                        data: { exp: { decrement: 1 } }
+                    })
+                )
+            );
+        }
+
+        const winnerTeamId = result.homeScore > result.awayScore
+            ? matchDB.homeTeamId
+            : result.awayScore > result.homeScore
+                ? matchDB.awayTeamId
+                : null;
+
+        if (winnerTeamId) {
+            const playedGains = playedExpGainByTeam[winnerTeamId] || [];
+            const minPlayedGain = playedGains.length > 0 ? Math.min(...playedGains) : 0;
+            const youthBenchBonus = Math.max(0, minPlayedGain);
+
+            if (youthBenchBonus > 0) {
+                const youthNonPlayingIds = availableNonPlayingPlayers
+                    .filter((p: any) => p.teamId === winnerTeamId && (p.age || 0) < 26)
+                    .map((p: any) => p.id);
+
+                if (youthNonPlayingIds.length > 0) {
+                    await Promise.all(
+                        youthNonPlayingIds.map((playerId) =>
+                            (tx.player as any).update({
+                                where: { id: playerId },
+                                data: { exp: { increment: youthBenchBonus } }
+                            })
+                        )
+                    );
+                }
+            }
         }
 
         if (postPlayerEvents.length > 0) {

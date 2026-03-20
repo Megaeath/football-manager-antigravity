@@ -438,21 +438,37 @@ function MatchContent() {
 
     const FieldZoneStackedBar = ({ teamId, side }: { teamId: string; side: 'home' | 'away' }) => {
         const zones = matchActionAnalytics?.teamZones?.[teamId] || { defensive: 0, middle: 0, attacking: 0, total: 0 };
-        const total = zones.total || 1;
-        const defensivePct = Math.round((zones.defensive / total) * 100);
-        const middlePct = Math.round((zones.middle / total) * 100);
-        const attackingPct = Math.round((zones.attacking / total) * 100);
+        const globalTotal = Object.values(matchActionAnalytics?.teamZones || {}).reduce((sum: number, z: any) => {
+            return sum + (z?.total || 0);
+        }, 0) || 1;
+
+        // Team share vs both teams combined (global 100%).
+        const teamSharePct = Math.round((zones.total / globalTotal) * 100);
+
+        // Split team share into DF/MF/FW so that DF+MF+FW = teamSharePct exactly.
+        const [defensivePct, middlePct, attackingPct] = distributeByWeight(teamSharePct, [
+            zones.defensive || 0,
+            zones.middle || 0,
+            zones.attacking || 0
+        ]);
+
+        // Render full-width bars without gray remainder (normalize zone split to 100% of each side).
+        const [defensiveRenderPct, middleRenderPct, attackingRenderPct] = distributeByWeight(100, [
+            zones.defensive || 0,
+            zones.middle || 0,
+            zones.attacking || 0
+        ]);
 
         const segments = side === 'away'
             ? [
-                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' },
-                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
-                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' }
+                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, renderPct: attackingRenderPct, value: zones.attacking, color: '#f59e0b' },
+                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, renderPct: middleRenderPct, value: zones.middle, color: '#10b981' },
+                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, renderPct: defensiveRenderPct, value: zones.defensive, color: '#3b82f6' }
             ]
             : [
-                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, value: zones.defensive, color: '#3b82f6' },
-                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, value: zones.middle, color: '#10b981' },
-                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, value: zones.attacking, color: '#f59e0b' }
+                { key: 'defensive', label: 'เกมรับ', short: '🛡️', pct: defensivePct, renderPct: defensiveRenderPct, value: zones.defensive, color: '#3b82f6' },
+                { key: 'middle', label: 'กลางสนาม', short: '⚙️', pct: middlePct, renderPct: middleRenderPct, value: zones.middle, color: '#10b981' },
+                { key: 'attacking', label: 'Attacking Third', short: '⚽', pct: attackingPct, renderPct: attackingRenderPct, value: zones.attacking, color: '#f59e0b' }
             ];
 
         return (
@@ -463,7 +479,7 @@ function MatchContent() {
                             key={seg.key}
                             title={`${seg.label}: ${seg.value} (${seg.pct}%)`}
                             style={{
-                                width: `${seg.pct}%`,
+                                width: `${seg.renderPct}%`,
                                 background: seg.color,
                                 color: 'white',
                                 fontSize: '0.7rem',
@@ -475,7 +491,7 @@ function MatchContent() {
                                 overflow: 'hidden'
                             }}
                         >
-                            {seg.pct >= 12 ? `${seg.short} ${seg.pct}%` : ''}
+                            {seg.pct >= 5 ? `${seg.short} ${seg.pct}%` : ''}
                         </div>
                     ))}
                 </div>
@@ -1654,7 +1670,7 @@ function MatchContent() {
                                                     </div>
 
                                                     {/* Desktop Row View */}
-                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:flex">
+                                                    <div style={{ display: 'flex', gap: '0', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:flex">
                                                         <div style={{ width: '70px', fontWeight: 'bold', flexShrink: 0 }}>{displayPos}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1.6, minWidth: 0 }}>
                                                             <button

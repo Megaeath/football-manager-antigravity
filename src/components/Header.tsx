@@ -10,6 +10,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
     const [gameDate, setGameDate] = useState<string>('');
+    const [loggingOut, setLoggingOut] = useState(false);
 
     useEffect(() => {
         const fetchDate = async () => {
@@ -47,12 +48,30 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 </Link>
             </div>
 
-            {gameDate && (
-                <div className="hidden items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary-light)] px-3 py-1 text-xs font-semibold text-[var(--primary)] sm:flex md:gap-3 md:px-4 md:py-2 md:text-sm">
-                    <span className="text-base md:text-lg">📅</span>
-                    <span>{gameDate}</span>
-                </div>
-            )}
+            <div className="flex items-center gap-2">
+                {gameDate && (
+                    <div className="hidden items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary-light)] px-3 py-1 text-xs font-semibold text-[var(--primary)] sm:flex md:gap-3 md:px-4 md:py-2 md:text-sm">
+                        <span className="text-base md:text-lg">📅</span>
+                        <span>{gameDate}</span>
+                    </div>
+                )}
+                <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={loggingOut}
+                    onClick={async () => {
+                        setLoggingOut(true);
+                        try {
+                            await fetch('/api/auth/logout', { method: 'POST' });
+                            window.location.href = '/login';
+                        } finally {
+                            setLoggingOut(false);
+                        }
+                    }}
+                >
+                    {loggingOut ? 'Signing out...' : 'Logout'}
+                </button>
+            </div>
         </header>
     );
 }
