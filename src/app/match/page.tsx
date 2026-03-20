@@ -129,12 +129,19 @@ function MatchContent() {
             // Calculate standings from match results
             const standingsMap: Record<string, { position: number; power: number }> = {};
             const teamStatsMap: Record<string, { points: number; gf: number; ga: number }> = {};
+            const teamLeagueMap: Record<string, string> = {};
 
             // Initialize all teams first
             const teamIds = new Set<string>();
             seasonMatches.forEach((m: any) => {
-                if (m.homeTeam?.id) teamIds.add(m.homeTeam.id);
-                if (m.awayTeam?.id) teamIds.add(m.awayTeam.id);
+                if (m.homeTeam?.id) {
+                    teamIds.add(m.homeTeam.id);
+                    if (m.homeTeam.leagueId) teamLeagueMap[m.homeTeam.id] = m.homeTeam.leagueId;
+                }
+                if (m.awayTeam?.id) {
+                    teamIds.add(m.awayTeam.id);
+                    if (m.awayTeam.leagueId) teamLeagueMap[m.awayTeam.id] = m.awayTeam.leagueId;
+                }
             });
 
             teamIds.forEach(id => {
@@ -165,21 +172,30 @@ function MatchContent() {
                 }
             });
 
-            // Create standings
-            const standings = Object.entries(teamStatsMap).map(([teamId, stats]) => ({
-                teamId,
-                points: stats.points,
-                gd: stats.gf - stats.ga,
-                gf: stats.gf
-            }));
+            // Create standings per division
+            const standingsByLeague: Record<string, Array<{ teamId: string; points: number; gd: number; gf: number }>> = {};
 
-            standings.sort((a, b) => {
-                if (b.points !== a.points) return b.points - a.points;
-                if (b.gd !== a.gd) return b.gd - a.gd;
-                return b.gf - a.gf;
+            Object.entries(teamStatsMap).forEach(([teamId, stats]) => {
+                const leagueId = teamLeagueMap[teamId] || 'unknown';
+                if (!standingsByLeague[leagueId]) standingsByLeague[leagueId] = [];
+                standingsByLeague[leagueId].push({
+                    teamId,
+                    points: stats.points,
+                    gd: stats.gf - stats.ga,
+                    gf: stats.gf
+                });
             });
 
-            console.log('[STANDINGS] Sorted', standings.length, 'teams');
+            Object.values(standingsByLeague).forEach((standings) => {
+                standings.sort((a, b) => {
+                    if (b.points !== a.points) return b.points - a.points;
+                    if (b.gd !== a.gd) return b.gd - a.gd;
+                    return b.gf - a.gf;
+                });
+            });
+
+            const totalTeams = Object.values(standingsByLeague).reduce((sum, list) => sum + list.length, 0);
+            console.log('[STANDINGS] Sorted by division:', Object.keys(standingsByLeague).length, 'leagues,', totalTeams, 'teams');
 
             // Fetch players to calculate team power
             const playersRes = await fetch('/api/players/search');
@@ -187,34 +203,32 @@ function MatchContent() {
             console.log('[STANDINGS] Got', allPlayers.length, 'players');
 
             // Create position map with power (use placeholder for now)
-            standings.forEach((team, index) => {
-                // Try to calculate power from players
-                let teamPower = 50; // Default placeholder
-                
-                // Find players that belong to this team (if they have team info)
-                const teamPlayers = allPlayers.filter((p: any) => {
-                    return p.team?.id === team.teamId || p.teamId === team.teamId;
-                });
+            Object.values(standingsByLeague).forEach((standings) => {
+                standings.forEach((team, index) => {
+                    // Try to calculate power from players
+                    let teamPower = 50; // Default placeholder
 
-                if (teamPlayers.length > 0) {
-                    const bestPlayers = teamPlayers
-                        .map((p: any) => p.power || 0)
-                        .sort((a: number, b: number) => b - a)
-                        .slice(0, 11);
-                    if (bestPlayers.length > 0) {
-                        const avgPower = bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length;
-                        teamPower = Math.round(avgPower);
+                    // Find players that belong to this team (if they have team info)
+                    const teamPlayers = allPlayers.filter((p: any) => {
+                        return p.team?.id === team.teamId || p.teamId === team.teamId;
+                    });
+
+                    if (teamPlayers.length > 0) {
+                        const bestPlayers = teamPlayers
+                            .map((p: any) => p.power || 0)
+                            .sort((a: number, b: number) => b - a)
+                            .slice(0, 11);
+                        if (bestPlayers.length > 0) {
+                            const avgPower = bestPlayers.reduce((sum: number, p: number) => sum + p, 0) / bestPlayers.length;
+                            teamPower = Math.round(avgPower);
+                        }
                     }
-                }
 
-                standingsMap[team.teamId] = {
-                    position: index + 1,
-                    power: teamPower
-                };
-
-                if (index < 5) {
-                    console.log(`[STANDINGS] #${index + 1}: ${team.points} pts, power ${teamPower}`);
-                }
+                    standingsMap[team.teamId] = {
+                        position: index + 1,
+                        power: teamPower
+                    };
+                });
             });
 
             console.log('[STANDINGS] Set', Object.keys(standingsMap).length, 'teams');
@@ -1641,7 +1655,6 @@ function MatchContent() {
 
                                                     {/* Desktop Row View */}
                                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.85rem' }} className="hidden md:flex">
-                                                        <div style={{ fontWeight: 'bold' }}>{displayPos}</div>
                                                         <div style={{ width: '70px', fontWeight: 'bold', flexShrink: 0 }}>{displayPos}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1.6, minWidth: 0 }}>
                                                             <button

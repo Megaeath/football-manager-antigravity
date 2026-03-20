@@ -32,6 +32,7 @@ export default async function Home() {
             select: {
                 id: true,
                 name: true,
+                leagueId: true,
                 balance: true,
                 players: { select: { id: true, name: true } }
             }
@@ -62,6 +63,7 @@ export default async function Home() {
 
         // Get league table
         const allTeams = await prisma.team.findMany({
+            where: userTeam?.leagueId ? { leagueId: userTeam.leagueId } : undefined,
             include: {
                 homeMatches: {
                     where: {
@@ -197,6 +199,12 @@ export default async function Home() {
 
     // Get top scorers
     const topScorers = await prisma.player.findMany({
+        where: userTeam?.leagueId
+            ? {
+                isRetired: false,
+                team: { is: { leagueId: userTeam.leagueId } }
+            }
+            : { isRetired: false },
         include: { team: true },
         orderBy: { goals: 'desc' },
         take: 5

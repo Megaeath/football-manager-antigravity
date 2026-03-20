@@ -14,8 +14,8 @@ export async function GET(req: Request) {
 
         const query: any = {
             include: {
-                homeTeam: { select: { id: true, name: true } },
-                awayTeam: { select: { id: true, name: true } }
+                homeTeam: { select: { id: true, name: true, leagueId: true } },
+                awayTeam: { select: { id: true, name: true, leagueId: true } }
             },
             orderBy: { date: 'asc' }
         };
