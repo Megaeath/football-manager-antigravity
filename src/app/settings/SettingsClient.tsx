@@ -11,6 +11,8 @@ type TeamOption = {
     id: string;
     name: string;
     aiPlaystyleProfileId?: string | null;
+    divisionLevel?: number;
+    divisionName?: string;
 };
 
 type PlaystyleOption = {
@@ -19,8 +21,11 @@ type PlaystyleOption = {
     description: string;
 };
 
+type NewGameDivision = { level: number; name: string; teams: string[] };
+
 export default function SettingsClient({
     teams,
+    newGameDivisionTeams,
     currentUserTeamName,
     yellowSuspensionThreshold,
     currentUserTeamId,
@@ -28,6 +33,7 @@ export default function SettingsClient({
     playstyleOptions
 }: {
     teams: TeamOption[];
+    newGameDivisionTeams: NewGameDivision[];
     currentUserTeamName: string;
     yellowSuspensionThreshold: number;
     currentUserTeamId: string;
@@ -37,7 +43,7 @@ export default function SettingsClient({
     const router = useRouter();
     const [step, setStep] = useState<'idle' | 'confirm' | 'choose'>('idle');
     const [loading, setLoading] = useState(false);
-    const [selectedTeamName, setSelectedTeamName] = useState(currentUserTeamName || teams[0]?.name || '');
+    const [selectedTeamName, setSelectedTeamName] = useState(currentUserTeamName || newGameDivisionTeams[0]?.teams[0] || '');
     const [yellowThreshold, setYellowThreshold] = useState(yellowSuspensionThreshold || 4);
     const [selectedPlaystyle, setSelectedPlaystyle] = useState(currentUserTeamStyleProfileId);
     const [message, setMessage] = useState('');
@@ -237,18 +243,23 @@ export default function SettingsClient({
                     )}
 
                     {step === 'choose' && (
-                        <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '360px' }}>
+                        <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '420px' }}>
                             <label style={{ fontWeight: 600 }}>Select team to manage in new game</label>
                             <select
                                 value={selectedTeamName}
                                 onChange={(e) => setSelectedTeamName(e.target.value)}
                                 className="select"
                                 disabled={loading}
+                                size={1}
                             >
-                                {teams.map((team) => (
-                                    <option key={team.id} value={team.name}>
-                                        {team.name}
-                                    </option>
+                                {newGameDivisionTeams.map((div) => (
+                                    <optgroup key={div.level} label={`── ${div.name} ──`}>
+                                        {div.teams.map((teamName) => (
+                                            <option key={teamName} value={teamName}>
+                                                {teamName}
+                                            </option>
+                                        ))}
+                                    </optgroup>
                                 ))}
                             </select>
 

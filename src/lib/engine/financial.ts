@@ -414,60 +414,25 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
         }
     });
 
-    // Create financial events
+    // Create financial events (batched: 1 createMany instead of N sequential creates)
+    const financialEventsData: { teamId: string; type: string; amount: number; description: string }[] = [];
     if (accounting.breakdown.sponsorship > 0) {
-        await prisma.financialEvent.create({
-            data: {
-                teamId,
-                type: 'SPONSORSHIP',
-                amount: accounting.breakdown.sponsorship,
-                description: `Sponsorship income (week ${week})`
-            }
-        });
+        financialEventsData.push({ teamId, type: 'SPONSORSHIP', amount: accounting.breakdown.sponsorship, description: `Sponsorship income (week ${week})` });
     }
-
     if (accounting.breakdown.ticketSales > 0) {
-        await prisma.financialEvent.create({
-            data: {
-                teamId,
-                type: 'TICKET',
-                amount: accounting.breakdown.ticketSales,
-                description: `Ticket sales (week ${week}, attendance: ${((accounting.breakdown.ticketSales / accounting.breakdown.ticketSales) * 100).toFixed(1)}%)`
-            }
-        });
+        financialEventsData.push({ teamId, type: 'TICKET', amount: accounting.breakdown.ticketSales, description: `Ticket sales (week ${week})` });
     }
-
     if (accounting.breakdown.jerseySales > 0) {
-        await prisma.financialEvent.create({
-            data: {
-                teamId,
-                type: 'JERSEY',
-                amount: accounting.breakdown.jerseySales,
-                description: `Jersey and merchandise sales (week ${week})`
-            }
-        });
+        financialEventsData.push({ teamId, type: 'JERSEY', amount: accounting.breakdown.jerseySales, description: `Jersey and merchandise sales (week ${week})` });
     }
-
     if (accounting.breakdown.wages > 0) {
-        await prisma.financialEvent.create({
-            data: {
-                teamId,
-                type: 'WAGE',
-                amount: -accounting.breakdown.wages,
-                description: `Player wages (week ${week})`
-            }
-        });
+        financialEventsData.push({ teamId, type: 'WAGE', amount: -accounting.breakdown.wages, description: `Player wages (week ${week})` });
     }
-
     if (accounting.breakdown.maintenance > 0) {
-        await prisma.financialEvent.create({
-            data: {
-                teamId,
-                type: 'MAINTENANCE',
-                amount: -accounting.breakdown.maintenance,
-                description: `Stadium maintenance (week ${week})`
-            }
-        });
+        financialEventsData.push({ teamId, type: 'MAINTENANCE', amount: -accounting.breakdown.maintenance, description: `Stadium maintenance (week ${week})` });
+    }
+    if (financialEventsData.length > 0) {
+        await prisma.financialEvent.createMany({ data: financialEventsData });
     }
 }
 
@@ -594,6 +559,7 @@ export async function processInactivePlayerPopularityDecay(teamId: string): Prom
         statMap.set(`${s.playerId}:${s.matchId}`, s.minutes);
     }
 
+    const popularityDecayUpdates: { id: string; popularity: number }[] = [];
     for (const player of team.players) {
         let missedStreak = 0;
 
@@ -608,12 +574,14 @@ export async function processInactivePlayerPopularityDecay(teamId: string): Prom
         if (missedStreak >= 4) {
             const newPopularity = Math.max(0, player.popularity - 2);
             if (newPopularity !== player.popularity) {
-                await prisma.player.update({
-                    where: { id: player.id },
-                    data: { popularity: newPopularity }
-                });
+                popularityDecayUpdates.push({ id: player.id, popularity: newPopularity });
             }
         }
+    }
+    if (popularityDecayUpdates.length > 0) {
+        await prisma.$transaction(
+            popularityDecayUpdates.map(u => prisma.player.update({ where: { id: u.id }, data: { popularity: u.popularity } }))
+        );
     }
 }
 
@@ -683,24 +651,31 @@ export async function autoRenewContracts(teamId: string): Promise<{
 
     const details: string[] = [];
     let renewed = 0;
-    let failures = 0;
+    const failures = 0;
 
     // Find players with contracts expiring 26-52 weeks (6-12 months)
+    // Compute new values in memory → 1 transaction instead of N×(findUnique+update)
+    const renewalOps: { id: string; name: string; newWage: number; newEndWeek: number }[] = [];
     for (const player of team.players) {
         if (player.contractEndWeek >= 26 && player.contractEndWeek <= 52) {
-            try {
-                const result = await handleContractRenewal(player.id);
-                if (result.success) {
-                    renewed++;
-                    details.push(`✓ ${player.name}: Renewed until week ${result.newEndWeek}`);
-                } else {
-                    failures++;
-                    details.push(`✗ ${player.name}: ${result.message}`);
-                }
-            } catch (error) {
-                failures++;
-                details.push(`✗ ${player.name}: Error during renewal`);
-            }
+            renewalOps.push({
+                id: player.id,
+                name: player.name,
+                newWage: Math.round(player.weeklyWage * 1.25),
+                newEndWeek: player.contractEndWeek + 104
+            });
+        }
+    }
+    if (renewalOps.length > 0) {
+        await prisma.$transaction(
+            renewalOps.map(r => prisma.player.update({
+                where: { id: r.id },
+                data: { weeklyWage: r.newWage, contractEndWeek: r.newEndWeek }
+            }))
+        );
+        for (const r of renewalOps) {
+            renewed++;
+            details.push(`✓ ${r.name}: Renewed until week ${r.newEndWeek}`);
         }
     }
 

@@ -54,6 +54,12 @@ const DIVISION_TEAM_NAMES = [
     DIVISION_3_TEAM_NAMES
 ];
 
+export const NEW_GAME_DIVISION_TEAMS = [
+    { level: 1, name: 'Division 1', teams: DIVISION_1_TEAM_NAMES },
+    { level: 2, name: 'Division 2', teams: DIVISION_2_TEAM_NAMES },
+    { level: 3, name: 'Division 3', teams: DIVISION_3_TEAM_NAMES }
+];
+
 const FIRST_NAMES = [
     // Classic & Modern
     'James', 'Liam', 'Noah', 'Oliver', 'Mason', 'Ethan', 'Logan', 'Lucas', 'Aiden', 'Kai',

@@ -127,16 +127,19 @@ export async function processAllAITeamsWeeklyTraining(
     select: { id: true },
   });
 
-  // SQLite has coarse file-level write locks. Running all AI teams in parallel can
-  // cause lock contention and socket timeouts (P1008), especially when each team
-  // performs multiple writes in init + weekly processing.
-  for (const team of aiTeams) {
-    try {
-      await initAITeamTraining(team.id);
-      await processWeeklyTraining(team.id, weekKey);
-    } catch (err) {
-      console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
-    }
+  // Process teams in parallel batches of 10. Turso (libSQL over HTTP) has no
+  // file-level write locks, so concurrent writes across teams are safe.
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < aiTeams.length; i += BATCH_SIZE) {
+    const batch = aiTeams.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(async (team) => {
+      try {
+        await initAITeamTraining(team.id);
+        await processWeeklyTraining(team.id, weekKey);
+      } catch (err) {
+        console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
+      }
+    }));
   }
 }
 

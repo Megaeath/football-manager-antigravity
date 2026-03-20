@@ -357,14 +357,24 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
         const playerPower = getPlayerPowerValue(player);
 
         let shouldList = false;
-        
-        // More aggressive listing criteria
-        if (player.age > 30 && playerPower < 72) shouldList = true; // Old and weak
-        if (player.age > 33) shouldList = true; // Very old, regardless of power
-        
-        if (!shouldList && playerPower < 65) { // Lower threshold (was 68)
-            if (currentDepth > MIN_POSITION_DEPTH) shouldList = true; // Excess depth
+
+        // Very weak players: always list regardless of depth/age
+        if (playerPower < 50) shouldList = true;
+
+        // Very old players: always list if squad not already at minimum
+        if (!shouldList && player.age > 35 && projectedSquad > MIN_SQUAD_SIZE) shouldList = true;
+
+        // Old + below average: list
+        if (!shouldList && player.age > 30 && playerPower < 72) shouldList = true;
+        if (!shouldList && player.age > 33) shouldList = true;
+
+        // Weak at excess depth
+        if (!shouldList && playerPower < 62) {
+            if (currentDepth > MIN_POSITION_DEPTH) shouldList = true;
         }
+
+        // Even at minimum depth, list if notably weak (frees up wage budget)
+        if (!shouldList && playerPower < 55 && currentDepth >= MIN_POSITION_DEPTH) shouldList = true;
 
         if (shouldList) {
             const value = await evaluateMarketValue(player);
@@ -643,7 +653,11 @@ async function processAIBuyingLogic(
             const posTargets = targets.filter(lp => {
                 const targetPos = getPositionKey(lp.player.naturalPosition);
                 const normalizedTargetPos = normalizeDepthPosition(targetPos);
-                return normalizedTargetPos === pos && lp.power > avgPower;
+                 if (normalizedTargetPos !== pos) return false;
+                 // Urgent or missing positions: accept any available player
+                 if (isUrgent || hasNoDepth) return true;
+                 // Regular upgrade: allow within 5 power of team average (was strictly greater than)
+                 return lp.power >= avgPower - 5;
             });
 
             if (posTargets.length > 0) {
@@ -664,5 +678,106 @@ async function processAIBuyingLogic(
                 }
             }
         }
+    }
+}
+
+/**
+ * Process AI Market movements for a single team (distributed processing)
+ * Called by gameTime.ts as part of daily distributed market processing
+ * 
+ * @param teamId - The AI team to process market movements for
+ */
+export async function processAIMarketForTeam(teamId: string) {
+    const logCollector: string[] = [];
+    const log = (msg: string) => {
+        console.log(msg);
+        logCollector.push(msg);
+    };
+
+    try {
+        const settings = await getGameTime();
+        const team = await prisma.team.findUnique({ where: { id: teamId } });
+        
+        if (!team) {
+            log(`[AI Market] Team not found: ${teamId}`);
+            return;
+        }
+
+        if (team.id === settings.userTeamId) {
+            log(`[AI Market] Skipping user team: ${team.name}`);
+            return;
+        }
+
+        log(`[AI Market] Processing team: ${team.name}`);
+
+        // Get standings to determine if team is top tier
+        // 0. Revalue existing listings to keep asking prices current
+        const existingListings = await prisma.player.findMany({
+            where: { transferStatus: 'LISTED', isRetired: false }
+        });
+        for (const listedPlayer of existingListings) {
+            const currentValue = await evaluateMarketValue(listedPlayer);
+            if (listedPlayer.askingPrice !== currentValue) {
+                await prisma.player.update({
+                    where: { id: listedPlayer.id },
+                    data: { askingPrice: currentValue }
+                });
+            }
+        }
+        if (existingListings.length > 0) {
+            log(`[AI Market] Revalued ${existingListings.length} existing listings`);
+        }
+
+        // Get standings to determine if team is top tier (safe: leagueId may be null in edge cases)
+        const standings = team.leagueId
+            ? await calculateSeasonStandings(team.leagueId, settings.currentSeason)
+            : [];
+        const topTeams = standings.slice(0, 5).map(s => s.id);
+        const isTopTier = topTeams.includes(teamId);
+
+        // Get ranking top 3 players for bid comparison
+        const rankingTop3Ids = await getTopRankingPlayerIds(settings.currentSeason, log);
+
+        // 0.5. Release old/weak players
+        await processAIReleasingLogic(teamId, log);
+
+        // 1. Selling logic - list surplus players
+        await processAISellingLogic(teamId, log);
+
+        // 2. Get available players on market (excluding locked bids)
+        const acceptedLockedPlayerIds = new Set(
+            (await prisma.bid.findMany({
+                where: {
+                    status: 'ACCEPTED',
+                    windowEnds: { gte: settings.currentDate }
+                },
+                select: { playerId: true }
+            })).map(b => b.playerId)
+        );
+
+        const allListed = await prisma.player.findMany({
+            where: { transferStatus: 'LISTED', isRetired: false },
+            include: { team: true }
+        });
+        
+        const availablePlayers = allListed.filter(p => p.teamId !== null && !acceptedLockedPlayerIds.has(p.id));
+
+        const playersWithPower = availablePlayers.map(p => ({
+            player: p,
+            power: calculatePlayerPower({ 
+                attributes: toPlayerAttributes(p), 
+                targetPosition: p.naturalPosition.split('_')[0],
+                condition: 100,
+                exp: p.exp || 0
+            }).powerWithExp
+        }));
+
+        // 3. Buying logic - bid on suitable players
+        await processAIBuyingLogic(teamId, isTopTier, playersWithPower, settings.currentSeason, rankingTop3Ids, log);
+
+        log(`[AI Market] ✓ Team market processing complete: ${team.name}`);
+    } catch (err: any) {
+        log(`[AI Market] Error processing team ${teamId}: ${err.message}`);
+        throw err; // Re-throw so gameTime can catch and not update timestamp
     }
 }

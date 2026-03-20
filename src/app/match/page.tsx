@@ -436,14 +436,11 @@ function MatchContent() {
         );
     };
 
-    const FieldZoneStackedBar = ({ teamId, side }: { teamId: string; side: 'home' | 'away' }) => {
+    const FieldZoneStackedBar = ({ teamId, side, possessionPct }: { teamId: string; side: 'home' | 'away'; possessionPct: number }) => {
         const zones = matchActionAnalytics?.teamZones?.[teamId] || { defensive: 0, middle: 0, attacking: 0, total: 0 };
-        const globalTotal = Object.values(matchActionAnalytics?.teamZones || {}).reduce((sum: number, z: any) => {
-            return sum + (z?.total || 0);
-        }, 0) || 1;
 
-        // Team share vs both teams combined (global 100%).
-        const teamSharePct = Math.round((zones.total / globalTotal) * 100);
+        // Use possession % as team share so that DEF+MID+ATK sums exactly to possession.
+        const teamSharePct = possessionPct;
 
         // Split team share into DF/MF/FW so that DF+MF+FW = teamSharePct exactly.
         const [defensivePct, middlePct, attackingPct] = distributeByWeight(teamSharePct, [
@@ -1075,13 +1072,13 @@ function MatchContent() {
                                 {/* Field Zone Usage */}
                                 <div style={{ alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }} className="hidden md:flex">
                                     <div style={{ flex: 1 }}>
-                                        <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" />
+                                        <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" possessionPct={matchData.teamStats.home.possession} />
                                     </div>
                                     <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>
                                         Field Zone
                                     </div>
                                     <div style={{ flex: 1 }}>
-                                        <FieldZoneStackedBar teamId={matchData.awayTeamId} side="away" />
+                                        <FieldZoneStackedBar teamId={matchData.awayTeamId} side="away" possessionPct={matchData.teamStats.away.possession} />
                                     </div>
                                 </div>
                             </div>

@@ -213,19 +213,23 @@ export async function advanceDay() {
         return Math.max(0, yearDiff - (beforeBirthday ? 1 : 0));
     };
 
+    const ageUpdateOps: { id: string; newAge: number; name: string; oldAge: number }[] = [];
     for (const p of playersForAgeUpdate) {
         const correctedAge = getAgeAtDateUTC(p.birthDate, nextDate);
-        if (correctedAge === p.age) continue;
-
-        await prisma.player.update({
-            where: { id: p.id },
-            data: { age: correctedAge }
-        });
-
-        if (correctedAge > p.age) {
-            console.log(`Birthday! ${p.name} is now ${correctedAge}`);
-        } else {
-            console.log(`[AgeCorrection] ${p.name}: ${p.age} -> ${correctedAge}`);
+        if (correctedAge !== p.age) {
+            ageUpdateOps.push({ id: p.id, newAge: correctedAge, name: p.name, oldAge: p.age });
+        }
+    }
+    if (ageUpdateOps.length > 0) {
+        await prisma.$transaction(
+            ageUpdateOps.map(u => prisma.player.update({ where: { id: u.id }, data: { age: u.newAge } }))
+        );
+        for (const u of ageUpdateOps) {
+            if (u.newAge > u.oldAge) {
+                console.log(`Birthday! ${u.name} is now ${u.newAge}`);
+            } else {
+                console.log(`[AgeCorrection] ${u.name}: ${u.oldAge} -> ${u.newAge}`);
+            }
         }
     }
 
@@ -235,6 +239,7 @@ export async function advanceDay() {
         select: { id: true, condition: true, stamina: true }
     });
 
+    const conditionUpdates: { id: string; condition: number }[] = [];
     for (const p of activePlayers) {
         if (p.condition >= 100) continue;
 
@@ -248,12 +253,12 @@ export async function advanceDay() {
         const variance = Math.random() * 2;          // 0-2
         const bonus = Math.random() < 0.1 ? 1 + Math.random() * 2 : 0; // 10% chance of 1-3 bonus
         const recovery = baseRecovery + variance + bonus;
-
-        const newCondition = Math.min(100, Math.round(p.condition + recovery));
-        await prisma.player.update({
-            where: { id: p.id },
-            data: { condition: newCondition }
-        });
+        conditionUpdates.push({ id: p.id, condition: Math.min(100, Math.round(p.condition + recovery)) });
+    }
+    if (conditionUpdates.length > 0) {
+        await prisma.$transaction(
+            conditionUpdates.map(u => prisma.player.update({ where: { id: u.id }, data: { condition: u.condition } }))
+        );
     }
 
     // Process expired bids and transfers (daily)
@@ -312,7 +317,6 @@ export async function advanceDay() {
                 await processWeeklyFinances(team.id, weekKey);
                 await processInactivePlayerPopularityDecay(team.id);
                 // Auto-renew contracts for AI teams (if not user team)
-                const settings = await getGameTime();
                 if (team.id !== settings.userTeamId) {
                     await autoRenewContracts(team.id);
                 }
@@ -351,23 +355,61 @@ export async function advanceDay() {
         }
     }
 
-    // Trigger AI Market Movements monthly on day 1
-    const isFirstDayOfMonth = nextDate.getUTCDate() === 1;
-    if (isFirstDayOfMonth) {
-        try {
+    // Distributed AI Market Movements - process overdue teams daily
+    try {
+        // Find teams that haven't been processed in the last 30 days
+        // Find teams that haven't been processed in the last 14 days
+        const fourteenDaysAgo = new Date(nextDate);
+        fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 14);
+        
+        const overdueTeams = await prisma.team.findMany({
+            where: {
+                id: { not: settings.userTeamId || undefined },
+                OR: [
+                    { lastAIMarketProcessedDate: null },
+                    { lastAIMarketProcessedDate: { lt: fourteenDaysAgo } }
+                ]
+            },
+            orderBy: { lastAIMarketProcessedDate: 'asc' },
+            select: { id: true }
+        });
 
-            console.log('[GameTime] Triggering monthly AI Market movements (day 1)...');
-            const { processAIMarketMovements } = await import('./aiMarketService');
-            await processAIMarketMovements();
-        } catch (error) {
-            console.error('[GameTime] Error processing AI Market:', error);
+        if (overdueTeams.length > 0) {
+            // Shuffle and take batch from .env (default 5)
+            const batchSize = parseInt(process.env.AI_MARKET_BATCH_SIZE || '5', 10);
+            const shuffled = overdueTeams.sort(() => Math.random() - 0.5);
+            const toProcess = shuffled.slice(0, Math.min(batchSize, shuffled.length));
+
+            console.log(`[GameTime] Processing AI Market for ${toProcess.length}/${overdueTeams.length} overdue teams...`);
+
+            const { processAIMarketForTeam } = await import('./aiMarketService');
+            
+            // Process in series with atomic date updates to avoid race conditions
+            for (const team of toProcess) {
+                try {
+                    await processAIMarketForTeam(team.id);
+                    // Update timestamp only after successful processing
+                    await prisma.team.update({
+                        where: { id: team.id },
+                        data: { lastAIMarketProcessedDate: nextDate }
+                    });
+                } catch (teamError) {
+                    console.error(`[GameTime] Failed to process AI market for team ${team.id}:`, teamError);
+                    // Don't update timestamp on failure - team will be retried next day
+                }
+            }
+
+            console.log('[GameTime] ✓ Distributed AI Market processing complete');
         }
+    } catch (error) {
+        console.error('[GameTime] Error in distributed AI Market processing:', error);
     }
 
     if (isNewYear) {
         console.log('[GameTime] *** STARTING NEW SEASON ***');
         return await startNewSeason(settings, nextDate);
     }
+
 
     return await prisma.globalGameSettings.update({
         where: { id: settings.id },
@@ -464,30 +506,30 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
     });
 
+    const retiredPlayerIds: string[] = [];
+    const retirementReplacements: any[] = [];
     for (const player of playersToRetire) {
         if (player.age >= player.retirementAge) {
-            await prisma.player.update({
-                where: { id: player.id },
-                data: { isRetired: true }
-            });
+            retiredPlayerIds.push(player.id);
             console.log(`Player Retired: ${player.name} (Age: ${player.age})`);
-
             const youthAge = randomInt(18, 22);
-            await prisma.player.create({
-                data: {
-                    teamId: player.teamId,
-                    name: randomName(),
-                    age: youthAge,
-                    naturalPosition: player.naturalPosition,
-                    retirementAge: randomInt(31, 33),
-                    morale: 100,
-                    condition: 100,
-                    isRetired: false,
-                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
-                    ...generateYouthAttributes(player.naturalPosition)
-                }
+            retirementReplacements.push({
+                teamId: player.teamId,
+                name: randomName(),
+                age: youthAge,
+                naturalPosition: player.naturalPosition,
+                retirementAge: randomInt(31, 33),
+                morale: 100,
+                condition: 100,
+                isRetired: false,
+                birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                ...generateYouthAttributes(player.naturalPosition)
             });
         }
+    }
+    if (retiredPlayerIds.length > 0) {
+        await prisma.player.updateMany({ where: { id: { in: retiredPlayerIds } }, data: { isRetired: true } });
+        await prisma.player.createMany({ data: retirementReplacements });
     }
 
     // 6. Add Young Prospects (based on ranking)
@@ -545,65 +587,57 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     // All teams get 3 youth players
     const YOUTH_PLAYERS_PER_TEAM = 3;
 
+    const allYouthToCreate: any[] = [];
     for (const team of allTeams) {
         const teamStanding = standings.find(s => s.teamId === team.id);
         const ranking = teamStanding?.ranking || allTeams.indexOf(team) + 1;
         const talentedCount = getTalentedYouthCount(ranking, allTeams.length);
         const normalCount = YOUTH_PLAYERS_PER_TEAM - talentedCount;
 
-        let addedCount = 0;
-
         // Add talented youth players
         for (let i = 0; i < talentedCount; i++) {
             const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
             const youthAge = randomInt(16, 20);
-            const youthName = randomName();
-
-            await prisma.player.create({
-                data: {
-                    teamId: team.id,
-                    name: youthName,
-                    age: youthAge,
-                    naturalPosition: randomPosition,
-                    retirementAge: randomInt(31, 33),
-                    morale: 100,
-                    condition: 100,
-                    isRetired: false,
-                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
-                    popularity: randomInt(10, 30),
-                    weeklyWage: randomInt(5000, 15000),
-                    ...generateYouthAttributes(randomPosition, 'talented')
-                }
+            allYouthToCreate.push({
+                teamId: team.id,
+                name: randomName(),
+                age: youthAge,
+                naturalPosition: randomPosition,
+                retirementAge: randomInt(31, 33),
+                morale: 100,
+                condition: 100,
+                isRetired: false,
+                birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                popularity: randomInt(10, 30),
+                weeklyWage: randomInt(5000, 15000),
+                ...generateYouthAttributes(randomPosition, 'talented')
             });
-            addedCount++;
         }
 
         // Add normal youth players (fill remaining slots)
         for (let i = 0; i < normalCount; i++) {
             const randomPosition = POSITIONS[randomInt(0, POSITIONS.length - 1)];
             const youthAge = randomInt(16, 20);
-            const youthName = randomName();
-
-            await prisma.player.create({
-                data: {
-                    teamId: team.id,
-                    name: youthName,
-                    age: youthAge,
-                    naturalPosition: randomPosition,
-                    retirementAge: randomInt(31, 33),
-                    morale: 100,
-                    condition: 100,
-                    isRetired: false,
-                    birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
-                    popularity: randomInt(10, 30),
-                    weeklyWage: randomInt(5000, 15000),
-                    ...generateYouthAttributes(randomPosition, 'normal')
-                }
+            allYouthToCreate.push({
+                teamId: team.id,
+                name: randomName(),
+                age: youthAge,
+                naturalPosition: randomPosition,
+                retirementAge: randomInt(31, 33),
+                morale: 100,
+                condition: 100,
+                isRetired: false,
+                birthDate: new Date(Date.UTC(nextYear - youthAge, randomInt(0, 11), randomInt(1, 28))),
+                popularity: randomInt(10, 30),
+                weeklyWage: randomInt(5000, 15000),
+                ...generateYouthAttributes(randomPosition, 'normal')
             });
-            addedCount++;
         }
 
-        console.log(`[StartNewSeason] Added ${addedCount} youth to ${team.name} (Ranking: ${ranking}) - ${talentedCount} talented, ${normalCount} normal`);
+        console.log(`[StartNewSeason] Added ${YOUTH_PLAYERS_PER_TEAM} youth to ${team.name} (Ranking: ${ranking}) - ${talentedCount} talented, ${normalCount} normal`);
+    }
+    if (allYouthToCreate.length > 0) {
+        await prisma.player.createMany({ data: allYouthToCreate });
     }
 
     // 6.5 AI Training: upgrade facilities based on season-end reputation + balance

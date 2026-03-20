@@ -61,6 +61,9 @@ model Team {
   reputation      Int @default(50) // 0-100
   stadiumCapacity Int @default(50000) // Stadium seats
 
+  // AI Market Processing (distributed by day)
+  lastAIMarketProcessedDate DateTime?
+
   // Relations
   players        Player[]
   homeMatches    Match[]           @relation("HomeTeam")

@@ -906,25 +906,56 @@ export async function processMatchFinancials(matchId: string) {
         });
     });
 
-    // Update player popularity for all players in the match
-    for (const stat of match.playerStats) {
-        const player = await prisma.player.findUnique({
-            where: { id: stat.playerId },
-            select: { naturalPosition: true }
+    // Update player popularity for all players in the match (batched)
+    if (match.playerStats.length > 0) {
+        // Pre-fetch all players' current popularity + position in 1 query
+        const playerIds = match.playerStats.map(s => s.playerId);
+        const players = await prisma.player.findMany({
+            where: { id: { in: playerIds } },
+            select: { id: true, popularity: true, naturalPosition: true }
         });
+        const playerMap = new Map(players.map(p => [p.id, p]));
 
-        await updatePlayerPopularity(stat.playerId, {
-            goals: stat.goals,
-            assists: stat.assists,
-            isMotm: stat.id === match.motmPlayerId,
-            played: stat.minutes > 0,
-            rating: stat.rating,
-            redCards: stat.redCards,
-            tackles: stat.tacklesWon,
-            saves: stat.saves,
-            naturalPosition: player?.naturalPosition,
-            isImportantMatch: false // Can be enhanced to detect derby matches, cup finals, etc.
-        });
+        const popularityUpdates: { id: string; popularity: number }[] = [];
+        for (const stat of match.playerStats) {
+            const player = playerMap.get(stat.playerId);
+            if (!player) continue;
+
+            const position = player.naturalPosition;
+            const isGK = position === 'GK';
+            const isDefender = ['DC', 'DR', 'DL'].includes(position);
+            const isMidfield = ['MC', 'AMC', 'DMC', 'MR', 'ML'].includes(position);
+            const isForward = position.startsWith('FW');
+
+            let popularityChange = 0;
+            if (stat.minutes > 0) popularityChange += 0.2;
+            if (stat.rating >= 8) popularityChange += 0.5;
+            else if (stat.rating >= 7) popularityChange += 0.3;
+
+            if (isGK) {
+                if (stat.saves) popularityChange += Math.min(0.5, Math.floor(stat.saves / 3) * 0.2);
+            } else if (isDefender) {
+                if (stat.tacklesWon) popularityChange += Math.min(0.5, Math.floor(stat.tacklesWon / 2) * 0.3);
+            } else if (isForward || isMidfield) {
+                if (stat.goals > 0) popularityChange += Math.min(1.0, stat.goals * 0.5);
+                if (stat.assists > 0) popularityChange += Math.min(0.5, stat.assists * 0.5);
+            }
+
+            if (stat.id === match.motmPlayerId) popularityChange += 1.5;
+            if (stat.rating < 4) popularityChange -= 1.0;
+            if (stat.redCards > 0) popularityChange -= 2;
+            if (player.popularity > 80) popularityChange *= 0.5;
+
+            const newPopularity = Math.max(0, Math.min(100, player.popularity + popularityChange));
+            if (newPopularity !== player.popularity) {
+                popularityUpdates.push({ id: player.id, popularity: newPopularity });
+            }
+        }
+        if (popularityUpdates.length > 0) {
+            await prisma.$transaction(
+                popularityUpdates.map(u => prisma.player.update({ where: { id: u.id }, data: { popularity: u.popularity } }))
+            );
+        }
     }
 
     // Update team reputation
