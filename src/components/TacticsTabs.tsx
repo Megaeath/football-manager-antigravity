@@ -32,10 +32,11 @@ type PlanTacticData = {
 type TacticsTabsProps = {
     teamId: string;
     readOnly?: boolean;
+    visiblePlans?: Array<'normal' | 'behind' | 'leading'>;
 };
 
-export default function TacticsTabs({ teamId, readOnly = false }: TacticsTabsProps) {
-    const [activeTab, setActiveTab] = useState<'normal' | 'behind' | 'leading'>('normal');
+export default function TacticsTabs({ teamId, readOnly = false, visiblePlans = ['normal', 'behind', 'leading'] }: TacticsTabsProps) {
+    const [activeTab, setActiveTab] = useState<'normal' | 'behind' | 'leading'>(visiblePlans[0] || 'normal');
     const [tactics, setTactics] = useState<TacticsEntity | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -55,6 +56,12 @@ export default function TacticsTabs({ teamId, readOnly = false }: TacticsTabsPro
     useEffect(() => {
         fetchTactics();
     }, [fetchTactics]);
+
+    useEffect(() => {
+        if (!visiblePlans.includes(activeTab)) {
+            setActiveTab(visiblePlans[0] || 'normal');
+        }
+    }, [activeTab, visiblePlans]);
 
     const handleUpdate = async (formData: PlanTacticData) => {
         try {
@@ -118,11 +125,13 @@ export default function TacticsTabs({ teamId, readOnly = false }: TacticsTabsPro
         }
     };
 
+    const tabsToRender = visiblePlans.filter((tab) => tabData[tab]);
+
     return (
         <div>
             {/* Tab Buttons */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid var(--border)', paddingBottom: '12px' }}>
-                {(['normal', 'behind', 'leading'] as const).map((tab) => (
+                {tabsToRender.map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}

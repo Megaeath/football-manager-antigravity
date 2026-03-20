@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { advanceDay, getGameTime } from '@/lib/services/gameTime';
 import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
+import { autoAssignTacticalPositions } from '@/lib/services/autoTacticalPositionSelector';
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
-import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam } from '@/lib/services/aiPlaystyleService';
+import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam, syncAIPlaystyleTeamBase } from '@/lib/services/aiPlaystyleService';
 import prisma from '@/lib/prisma';
 
 async function ensureAITeamPlaystyles(userTeamId: string) {
@@ -34,6 +35,9 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
 
     // Auto-select for home team if it's AI
     if (match.homeTeamId !== userTeamId) {
+        await syncAIPlaystyleTeamBase(match.homeTeamId);
+        await autoAssignTacticalPositions(match.homeTeamId);
+
         const homeTeam = await prisma.team.findUnique({
             where: { id: match.homeTeamId },
             include: { players: true }
@@ -52,6 +56,9 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
 
     // Auto-select for away team if it's AI
     if (match.awayTeamId !== userTeamId) {
+        await syncAIPlaystyleTeamBase(match.awayTeamId);
+        await autoAssignTacticalPositions(match.awayTeamId);
+
         const awayTeam = await prisma.team.findUnique({
             where: { id: match.awayTeamId },
             include: { players: true }

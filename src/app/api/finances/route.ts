@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
+import { getDivisionFinanceMultiplier } from '@/lib/services/divisionSystem';
 
 const prisma = new PrismaClient();
 
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
             where: { id: teamId },
             include: {
                 players: true,
+                league: { select: { level: true, name: true } },
                 ClubFinance: {
                     orderBy: { createdAt: 'desc' },
                     take: 4, // Last 4 weeks
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
         const stadiumCapacity = team.stadiumCapacity || 50000;
         const maintenanceCost = stadiumCapacity * 0.5;
         const reputation = team.reputation || 50;
+        const divisionMultiplier = getDivisionFinanceMultiplier(team.league?.level || 1);
 
         // Get training facility level and weekly fee
         const trainingFacilityLevel = team.trainingFacilityLevel || 1;
@@ -91,13 +94,13 @@ export async function GET(request: NextRequest) {
         const playerPurchases = Math.abs(transferExpenseAgg._sum.amount || 0);
 
         // Revenue calculation (balanced model)
-        const sponsorship = 50000 + (reputation / 100) * 150000;
+        const sponsorship = (50000 + (reputation / 100) * 150000) * divisionMultiplier;
         const ticketSales = 0; // moved to per-match MATCHDAY events
         const famousPlayers = team.players.filter((p) => (p.popularity || 0) >= 60).length;
         const averagePopularity = team.players.length > 0
             ? team.players.reduce((sum, p) => sum + (p.popularity || 50), 0) / team.players.length
             : 50;
-        const jerseySales = (famousPlayers * 8000) + (averagePopularity * 200);
+        const jerseySales = ((famousPlayers * 8000) + (averagePopularity * 200)) * divisionMultiplier;
 
         const totalIncome = sponsorship + ticketSales + jerseySales + matchdayIncome + seasonRewards + playerSales;
         const totalExpenses = totalWages + maintenanceCost + playerPurchases + weeklyTrainingFee;
@@ -141,6 +144,11 @@ export async function GET(request: NextRequest) {
                 weeklyFee: Math.round(weeklyTrainingFee),
                 nextUpgradeCost: nextUpgradeCost,
                 isMaxLevel: trainingFacilityLevel === 9
+            },
+            division: {
+                level: team.league?.level || 1,
+                name: team.league?.name || 'Division 1',
+                multiplier: divisionMultiplier
             },
             weeklyData: {
                 income: totalIncome,

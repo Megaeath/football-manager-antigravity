@@ -3,29 +3,43 @@ import Link from 'next/link';
 import SeasonSelector from '@/components/SeasonSelector';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 import { Card } from '@/components/ui/Card';
-import { LEAGUE } from '@/lib/constants/uiLabels';
+import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
-export default async function LeaguePage({ searchParams }: { searchParams: Promise<{ season?: string }> }) {
+export default async function LeaguePage({ searchParams }: { searchParams: Promise<{ season?: string; division?: string }> }) {
     const params = await searchParams;
     const settings = await prisma.globalGameSettings.findFirst();
     const currentSeason = settings?.currentSeason || 1;
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
+    const selectedDivision = params.division ? parseInt(params.division) : 1;
 
     let standingsData: any[] = [];
     let isHistorical = selectedSeason < currentSeason;
+    let divisionName = 'Division 1';
+    let leagueId: string | null = null;
+
+    // Get league info for selected division
+    const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
+    if (league) {
+        leagueId = league.id;
+        divisionName = league.name;
+    }
 
     if (isHistorical) {
         const history = await prisma.seasonHistory.findFirst({
             where: {
-                season: selectedSeason
+                season: selectedSeason,
+                leagueId: leagueId || undefined
             }
         });
         if (history) {
             standingsData = JSON.parse(history.standings);
         }
     } else {
-        // Calculate live standings
+        // Calculate live standings - filtered by division
         const teams = await prisma.team.findMany({
+            where: {
+                leagueId: leagueId || undefined
+            },
             include: {
                 players: {
                     where: { isRetired: false }
@@ -125,12 +139,34 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
 
     return (
         <div className="p-4 md:p-5">
-            {/* Header */}
+            {/* Header with Division Selector */}
             <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between mb-6 md:mb-8">
-                <h1 className="text-2xl md:text-4xl font-bold" style={{ margin: 0 }}>
-                    {isHistorical ? `${LEAGUE.SEASON_HISTORY} ${selectedSeason}` : LEAGUE.CURRENT_STANDINGS}
-                </h1>
+                <div className="flex flex-col gap-2">
+                    <h1 className="text-2xl md:text-4xl font-bold" style={{ margin: 0 }}>
+                        {divisionName} - {isHistorical ? `Season History ${selectedSeason}` : 'Current Standings'}
+                    </h1>
+                    <div className="flex gap-2">
+                        {[1, 2, 3].map((div) => (
+                            <Link
+                                key={div}
+                                href={`/league?season=${selectedSeason}&division=${div}`}
+                                className={`px-3 py-1 rounded text-sm font-semibold transition ${
+                                    selectedDivision === div
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-300 text-black hover:bg-gray-400'
+                                }`}
+                            >
+                                Division {div}
+                            </Link>
+                        ))}
+                    </div>
+                </div>
                 <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+            </div>
+
+            <div className="mb-4 text-sm" style={{ color: 'var(--muted)' }}>
+                <span style={{ marginRight: '14px' }}>🏆/🥈/🥉 Top 3</span>
+                <span>⬇️ Bottom 3 (Relegation Zone)</span>
             </div>
 
             {/* Desktop Table */}
@@ -139,24 +175,30 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                     <thead style={{ background: 'var(--sidebar-bg)', color: 'white' }}>
                         <tr>
                             <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>#</th>
-                            <th style={{ padding: '15px', textAlign: 'left' }}>{LEAGUE.CLUB}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>{LEAGUE.PLAYED}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>{LEAGUE.WON}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>{LEAGUE.DRAWN}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>{LEAGUE.LOST}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>{LEAGUE.GOALS_FOR}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>{LEAGUE.GOALS_AGAINST}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>{LEAGUE.GOAL_DIFFERENCE}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '70px', fontWeight: 'bold' }}>{LEAGUE.POINTS}</th>
-                            <th style={{ padding: '15px', textAlign: 'center', width: '100px' }}>{LEAGUE.MANAGE}</th>
+                            <th style={{ padding: '15px', textAlign: 'left' }}>Club</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>Played</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>Won</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>Drawn</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '60px' }}>Lost</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>For</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>Against</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '70px' }}>Difference</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '70px', fontWeight: 'bold' }}>Points</th>
+                            <th style={{ padding: '15px', textAlign: 'center', width: '100px' }}>Manage</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {standingsData.map((team, index) => (
+                        {standingsData.map((team, index) => {
+                            const relegationStart = Math.max(standingsData.length - 3, 0);
+                            const isRelegation = index >= relegationStart;
+                            const podiumIcon = index === 0 ? '🏆' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
+
+                            return (
                             <tr key={team.id} style={{ 
                                 borderBottom: '1px solid var(--border)', 
                                 background: index % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
-                                ...(index === 0 ? { background: 'rgba(76, 175, 80, 0.08)' } : {})
+                                ...(index === 0 ? { background: 'rgba(76, 175, 80, 0.08)' } : {}),
+                                ...(isRelegation ? { background: 'rgba(244, 67, 54, 0.10)' } : {})
                             }}>
                                 <td style={{ padding: '15px', textAlign: 'center', fontWeight: index < 3 ? 'bold' : 'normal', color: index === 0 ? 'var(--success)' : 'inherit' }}>
                                     {index + 1}
@@ -164,7 +206,8 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                                 <td style={{ padding: '15px' }}>
                                     <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         {team.name}
-                                        {index === 0 && <span style={{ fontSize: '1.2rem' }}>🏆</span>}
+                                        {podiumIcon && <span style={{ fontSize: '1.2rem' }}>{podiumIcon}</span>}
+                                        {isRelegation && <span title="Relegation zone" style={{ fontSize: '1rem' }}>⬇️</span>}
                                     </div>
                                 </td>
                                 <td style={{ padding: '15px', textAlign: 'center' }}>{team.played}</td>
@@ -181,18 +224,24 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                                 </td>
                                 <td style={{ padding: '15px', textAlign: 'center' }}>
                                     <Link href={`/team/${team.id}`} className="btn btn-sm btn-primary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
-                                        {LEAGUE.VIEW_TEAM}
+                                        View Team
                                     </Link>
                                 </td>
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </Card>
 
             {/* Mobile Cards */}
             <div className="md:hidden flex flex-col gap-3">
-                {standingsData.map((team, index) => (
+                {standingsData.map((team, index) => {
+                    const relegationStart = Math.max(standingsData.length - 3, 0);
+                    const isRelegation = index >= relegationStart;
+                    const podiumIcon = index === 0 ? '🏆' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
+
+                    return (
                     <Card
                         key={team.id}
                         style={{
@@ -201,13 +250,16 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                                 ? '5px solid var(--success)'
                                 : index < 3
                                     ? '5px solid var(--primary)'
-                                    : '1px solid var(--border)'
+                                    : isRelegation
+                                        ? '5px solid var(--danger)'
+                                        : '1px solid var(--border)'
                         }}
                     >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                             <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>
                                 #{index + 1} {team.name}
-                                {index === 0 && <span style={{ marginLeft: '6px' }}>🏆</span>}
+                                {podiumIcon && <span style={{ marginLeft: '6px' }}>{podiumIcon}</span>}
+                                {isRelegation && <span style={{ marginLeft: '6px' }} title="Relegation zone">⬇️</span>}
                             </div>
                             <div style={{ fontWeight: 700, color: 'var(--success)', fontSize: '0.9rem' }}>
                                 ⚡ {team.power}
@@ -215,21 +267,22 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '12px' }}>
-                            <div>{LEAGUE.PLAYED} <strong style={{ color: 'var(--foreground)' }}>{team.played}</strong></div>
-                            <div>{LEAGUE.WON} <strong style={{ color: 'var(--success)' }}>{team.won}</strong></div>
-                            <div>{LEAGUE.DRAWN} <strong style={{ color: 'var(--accent)' }}>{team.drawn}</strong></div>
-                            <div>{LEAGUE.LOST} <strong style={{ color: 'var(--danger)' }}>{team.lost}</strong></div>
+                            <div>Played <strong style={{ color: 'var(--foreground)' }}>{team.played}</strong></div>
+                            <div>Won <strong style={{ color: 'var(--success)' }}>{team.won}</strong></div>
+                            <div>Drawn <strong style={{ color: 'var(--accent)' }}>{team.drawn}</strong></div>
+                            <div>Lost <strong style={{ color: 'var(--danger)' }}>{team.lost}</strong></div>
                             <div>GF <strong style={{ color: 'var(--foreground)' }}>{team.gf}</strong></div>
                             <div>GA <strong style={{ color: 'var(--foreground)' }}>{team.ga}</strong></div>
                             <div>GD <strong style={{ color: 'var(--foreground)' }}>{team.gd > 0 ? `+${team.gd}` : team.gd}</strong></div>
-                            <div>{LEAGUE.POINTS} <strong style={{ color: 'var(--foreground)', fontSize: '1rem' }}>{team.points}</strong></div>
+                            <div>Pts <strong style={{ color: 'var(--foreground)', fontSize: '1rem' }}>{team.points}</strong></div>
                         </div>
 
                         <Link href={`/team/${team.id}`} className="btn btn-primary btn-sm" style={{ width: '100%', justifyContent: 'center', padding: '8px 12px', fontSize: '0.9rem' }}>
-                            {LEAGUE.VIEW_TEAM}
+                            View Team
                         </Link>
                     </Card>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

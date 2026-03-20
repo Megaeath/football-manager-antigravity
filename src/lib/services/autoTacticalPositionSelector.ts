@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { calculatePlayerPower, toPlayerAttributes } from '../engine/playerPower';
 import type { PlayerAttributes } from '../engine/types';
+import { normalizePlaystyleTactics, resolveAIPlaystyleForTeam } from './aiPlaystyleService';
 
 /**
  * Map player database attributes to PlayerAttributes object
@@ -206,9 +207,13 @@ export async function autoAssignTacticalPositions(teamId: string): Promise<numbe
             return 0;
         }
 
+        const effectiveFormation = team.aiPlaystyleProfileId
+            ? normalizePlaystyleTactics(resolveAIPlaystyleForTeam(team).tactics).formation
+            : team.formation;
+
         // Get auto-selected lineup
         const assignments = autoSelectLineup({
-            formation: team.formation,
+            formation: effectiveFormation,
             players: team.players
         });
 

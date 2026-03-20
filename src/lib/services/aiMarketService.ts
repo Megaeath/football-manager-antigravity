@@ -10,6 +10,8 @@ import type { AIPlaystyleProfile } from './aiPlaystyleProfiles';
 type MarketTarget = { player: any; power: number };
 
 const MIN_POSITION_DEPTH = 2;
+const MIN_SQUAD_SIZE = 22;
+const MAX_SQUAD_SIZE = 30;
 const FORMATION_POSITION_REQUIREMENTS: Record<string, string[]> = {
     '4-4-2': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'],
     '4-3-3': ['GK', 'DR', 'DC', 'DL', 'MC', 'FW'],
@@ -51,6 +53,15 @@ function buildPositionDepthMap(players: Array<{ naturalPosition: string }>, form
 
 function getPositionDepth(depthMap: Map<string, number>, position: string) {
     return depthMap.get(normalizeDepthPosition(position)) || 0;
+}
+
+function getPlayerPowerValue(player: any): number {
+    return calculatePlayerPower({
+        attributes: toPlayerAttributes(player),
+        targetPosition: player.naturalPosition.split('_')[0],
+        condition: 100,
+        exp: player.exp || 0
+    }).powerWithExp;
 }
 
 function getStyleTransferFitScore(player: any, style: AIPlaystyleProfile): number {
@@ -256,8 +267,8 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
     });
     if (!team) return;
 
-    // Only release if squad is oversized (>20 players to capture typical squads)
-    if (team.players.length <= 20) return;
+    // Only release for hard cap enforcement.
+    if (team.players.length <= MAX_SQUAD_SIZE) return;
 
     const settings = await getGameTime();
     const currentSeason = settings.currentSeason;
@@ -265,52 +276,54 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
     const depthMap = buildPositionDepthMap(team.players, team.formation);
 
     let releasedCount = 0;
-    for (const player of team.players) {
+    let currentSquadSize = team.players.length;
+
+    const candidates = team.players
+        .filter((player) => {
+            if (player.transferStatus === 'LISTED') return false;
+            if (player.age <= 21) return false;
+            if ((player.lastTransferredSeason || 0) >= currentSeason) return false;
+            const playerPosition = normalizeDepthPosition(player.naturalPosition);
+            const currentDepth = getPositionDepth(depthMap, playerPosition);
+            return currentDepth > MIN_POSITION_DEPTH;
+        })
+        .map((player) => {
+            const playerPower = getPlayerPowerValue(player);
+            const ageScore = player.age >= 34 ? 5 : player.age >= 32 ? 4 : player.age >= 30 ? 3 : player.age >= 28 ? 2 : 1;
+            const powerScore = playerPower < 45 ? 5 : playerPower < 55 ? 4 : playerPower < 62 ? 3 : playerPower < 68 ? 2 : 1;
+            const wageScore = (player.weeklyWage || 0) >= 35000 ? 3 : (player.weeklyWage || 0) >= 25000 ? 2 : (player.weeklyWage || 0) >= 18000 ? 1 : 0;
+            const priority = (ageScore * 100) + (powerScore * 25) + (wageScore * 10);
+            return { player, playerPower, priority };
+        })
+        .sort((a, b) => b.priority - a.priority);
+
+    for (const candidate of candidates) {
+        if (currentSquadSize <= MAX_SQUAD_SIZE) break;
+        if (currentSquadSize <= MIN_SQUAD_SIZE) break;
+
+        const player = candidate.player;
         // Don't release if already listed or in process
         if (player.transferStatus === 'LISTED') continue;
-
-        // Protect youth/prospects from being dumped into free agency.
-        if (player.age <= 21) continue;
-
-        // Protect players who just joined this season.
-        if ((player.lastTransferredSeason || 0) >= currentSeason) continue;
 
         const playerPosition = normalizeDepthPosition(player.naturalPosition);
         const currentDepth = getPositionDepth(depthMap, playerPosition);
         if (currentDepth <= MIN_POSITION_DEPTH) continue;
 
-        const playerPower = calculatePlayerPower({
-            attributes: toPlayerAttributes(player),
-            targetPosition: player.naturalPosition.split('_')[0],
-            condition: 100,
-            exp: player.exp || 0
-        }).powerWithExp;
-
-        let shouldRelease = false;
-
-        // Very old (age >= 33): always release 
-        if (player.age >= 33) shouldRelease = true;
-
-        // Old-ish and weak (age >= 30 AND power < 55)
-        if (!shouldRelease && player.age >= 30 && playerPower < 55) shouldRelease = true;
-
-        // Backup/Weak (power < 45) - fringe squad member
-        if (!shouldRelease && playerPower < 45) shouldRelease = true;
-
-        if (shouldRelease) {
-            // Release to free agent pool (set teamId to null, clear listing)
-            await prisma.player.update({
-                where: { id: player.id },
-                data: { 
-                    teamId: null,
-                    transferStatus: 'FREE_AGENT',
-                    contractEndWeek: 0 // Clear remaining contract
-                }
-            });
-            depthMap.set(playerPosition, currentDepth - 1);
-            log(`[AI Market] ${team.name} released ${player.name} (Age ${player.age}, Power ${playerPower.toFixed(1)}) to free agent pool`);
-            releasedCount++;
-        }
+        // Release to free agent pool (set teamId to null, clear listing)
+        await prisma.player.update({
+            where: { id: player.id },
+            data: {
+                teamId: null,
+                transferStatus: 'FREE_AGENT',
+                askingPrice: null,
+                tacticalPosition: null,
+                contractEndWeek: 0 // Clear remaining contract
+            }
+        });
+        depthMap.set(playerPosition, currentDepth - 1);
+        currentSquadSize--;
+        log(`[AI Market] ${team.name} released ${player.name} (Age ${player.age}, Power ${candidate.playerPower.toFixed(1)}) to free agent pool for squad cap`);
+        releasedCount++;
     }
 
     if (releasedCount > 0) {
@@ -331,7 +344,9 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
     const depthMap = buildPositionDepthMap(team.players, team.formation);
 
     let listedCount = 0;
+    let projectedSquad = team.players.length;
     for (const player of team.players) {
+        if (projectedSquad <= MIN_SQUAD_SIZE) break;
         if (player.transferStatus === 'LISTED') continue;
         if ((player.lastTransferredSeason ?? -1) === currentSeason) continue;
 
@@ -339,12 +354,7 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
         const currentDepth = getPositionDepth(depthMap, playerPosition);
         if (currentDepth <= MIN_POSITION_DEPTH) continue;
 
-        const playerPower = calculatePlayerPower({
-            attributes: toPlayerAttributes(player),
-            targetPosition: player.naturalPosition.split('_')[0],
-            condition: 100,
-            exp: player.exp || 0
-        }).powerWithExp;
+        const playerPower = getPlayerPowerValue(player);
 
         let shouldList = false;
         
@@ -363,6 +373,7 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
                 data: { transferStatus: 'LISTED', askingPrice: value }
             });
             depthMap.set(playerPosition, currentDepth - 1);
+            projectedSquad--;
             log(`[AI Market] ${team.name} listed ${player.name} (Age ${player.age}, Power ${playerPower.toFixed(1)}) for $${value.toLocaleString()}`);
             listedCount++;
         }
@@ -511,6 +522,20 @@ async function processAIBuyingLogic(
 
     const requiredPositions = getRequiredPositionsForFormation(team.formation);
     const urgentPositions = requiredPositions.filter(pos => getPositionDepth(teamDepthMap, pos) < MIN_POSITION_DEPTH);
+    const urgentMissingCount = requiredPositions.reduce((sum, pos) => {
+        const depth = getPositionDepth(teamDepthMap, pos);
+        return sum + Math.max(0, MIN_POSITION_DEPTH - depth);
+    }, 0);
+    const squadShortage = Math.max(0, MIN_SQUAD_SIZE - team.players.length);
+
+    // Keep roster in 22-30 range unless there is urgent structural shortage.
+    if (team.players.length >= MAX_SQUAD_SIZE && urgentMissingCount === 0) {
+        log(`[AI Market] ${team.name} skipped buying (squad at cap ${team.players.length}/${MAX_SQUAD_SIZE})`);
+        return;
+    }
+
+    const bidsToMake = Math.max(1, Math.min(4, Math.max(squadShortage, urgentMissingCount, urgentPositions.length > 0 ? 1 : 0)));
+    let bidsPlaced = 0;
 
     if (isTopTier) {
         // Title contenders: prioritize famous + in-form + Top 3 ranking players, ignore power gate
@@ -553,14 +578,28 @@ async function processAIBuyingLogic(
             return scoreB - scoreA;
         });
 
-        const shortList = sortedPreferred.slice(0, Math.min(5, sortedPreferred.length));
+        const shortList = sortedPreferred.slice(0, Math.min(8, sortedPreferred.length));
         if (shortList.length > 0) {
-            const t = shortList[Math.floor(Math.random() * shortList.length)];
+            for (const t of shortList) {
+                if (bidsPlaced >= bidsToMake) break;
+                if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE) break;
+
+                const targetPos = normalizeDepthPosition(t.player.naturalPosition);
+                if (urgentPositions.length > 0 && !urgentPositions.includes(targetPos)) {
+                    continue;
+                }
+
             const isFreeAgent = !t.player.teamId;
             const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
             const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
             const urgentNote = urgentPositions.length > 0 ? `, Urgent:${urgentPositions.join('/')}` : '';
             log(`[AI Market] ${team.name} (Top 1-5) bid for ${t.player.name} (${source}, Pop:${t.player.popularity || 50}, RankTop3:${rankingTop3Ids.has(t.player.id) ? 'Y' : 'N'}${urgentNote}): ${res.success ? 'Success' : res.message}`);
+
+                if (res.success) {
+                    teamDepthMap.set(targetPos, getPositionDepth(teamDepthMap, targetPos) + 1);
+                    bidsPlaced++;
+                }
+            }
         }
     } else {
         // All non-top teams: evaluate every position in current game data
@@ -598,6 +637,9 @@ async function processAIBuyingLogic(
         });
 
         for (const { pos, avgPower, hasNoDepth, depth, isUrgent } of positionPriority) {
+            if (bidsPlaced >= bidsToMake) break;
+            if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE && !isUrgent) break;
+
             const posTargets = targets.filter(lp => {
                 const targetPos = getPositionKey(lp.player.naturalPosition);
                 const normalizedTargetPos = normalizeDepthPosition(targetPos);
@@ -616,7 +658,10 @@ async function processAIBuyingLogic(
                 const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
                 const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
                 log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)}, Depth:${depth}, Need2:${isUrgent ? 'Y' : 'N'}, NoDepth:${hasNoDepth ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
-                break;
+                if (res.success) {
+                    teamDepthMap.set(pos, getPositionDepth(teamDepthMap, pos) + 1);
+                    bidsPlaced++;
+                }
             }
         }
     }

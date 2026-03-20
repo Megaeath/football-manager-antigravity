@@ -10,9 +10,12 @@ datasource db {
 model League {
   id      String          @id @default(cuid())
   name    String
+  level   Int             @default(1)
   season  Int             @default(1)
   teams   Team[]
   history SeasonHistory[]
+
+  @@unique([level, season])
 }
 
 model GlobalGameSettings {
@@ -40,6 +43,7 @@ model Team {
   name     String
   leagueId String?
   league   League? @relation(fields: [leagueId], references: [id])
+  lastDivisionChangeSeason Int?
 
   // Tactics
   formation        String @default("4-4-2")

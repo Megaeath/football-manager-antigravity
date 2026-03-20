@@ -3,17 +3,20 @@ import SeasonSelector from '@/components/SeasonSelector';
 import { getGameTime } from '@/lib/services/gameTime';
 import RankingsClient from './RankingsClient';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
 export default async function RankingsPage({
     searchParams
 }: {
-    searchParams: Promise<{ season?: string; tab?: string }>
+    searchParams: Promise<{ season?: string; tab?: string; division?: string }>
 }) {
     const params = await searchParams;
     const settings = await getGameTime();
     const currentSeason = settings.currentSeason;
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
     const activeTab = params.tab || 'goals';
+    const selectedDivision = params.division ? parseInt(params.division) : 1;
+    const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
 
     // Aggregate stats for the season
     const rawStats: any[] = await prisma.$queryRaw`
@@ -62,8 +65,10 @@ export default async function RankingsPage({
         FROM PlayerMatchStats pms
         JOIN Match m ON pms.matchId = m.id
         JOIN Player p ON pms.playerId = p.id
-        JOIN Team t ON p.teamId = t.id
+                JOIN Team t ON p.teamId = t.id
+                JOIN League l ON t.leagueId = l.id
         WHERE m.season = ${selectedSeason}
+                    AND l.level = ${league?.level || 1}
         GROUP BY p.id
         HAVING SUM(pms.minutes) > 0
     `;
@@ -149,5 +154,5 @@ export default async function RankingsPage({
         { id: 'cards', name: 'Cards', icon: '🟨' },
     ];
 
-    return <RankingsClient stats={sortedStats} tabs={tabs} currentSeason={currentSeason} selectedSeason={selectedSeason} activeTab={activeTab} />;
+    return <RankingsClient stats={sortedStats} tabs={tabs} currentSeason={currentSeason} selectedSeason={selectedSeason} activeTab={activeTab} selectedDivision={selectedDivision} />;
 }

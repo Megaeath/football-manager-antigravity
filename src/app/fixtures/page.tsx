@@ -6,22 +6,26 @@ import Link from 'next/link';
 import { formatDateLong } from '@/lib/dateFormat';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { FIXTURES, MATCH, LEAGUE } from '@/lib/constants/uiLabels';
+import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
 export default async function FixturesPage({
     searchParams
 }: {
-    searchParams: Promise<{ season?: string; teamId?: string }>
+    searchParams: Promise<{ season?: string; teamId?: string; division?: string }>
 }) {
     const params = await searchParams;
     const settings = await getGameTime();
     const currentSeason = settings.currentSeason;
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
     const selectedTeamId = params.teamId || '';
+    const selectedDivision = params.division ? parseInt(params.division) : 1;
+    const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
 
     // Fetch matches for the season
     const matches = await prisma.match.findMany({
         where: {
             season: selectedSeason,
+            ...(league ? { homeTeam: { is: { leagueId: league.id } } } : {}),
             ...(selectedTeamId ? {
                 OR: [
                     { homeTeamId: selectedTeamId },
@@ -37,6 +41,7 @@ export default async function FixturesPage({
     });
 
     const teams = await prisma.team.findMany({
+        where: league ? { leagueId: league.id } : undefined,
         select: { id: true, name: true },
         orderBy: { name: 'asc' }
     });
@@ -54,7 +59,28 @@ export default async function FixturesPage({
             {/* Header */}
             <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between">
                 <h1 className="text-3xl md:text-5xl font-bold" style={{ margin: 0 }}>📅 {FIXTURES.TITLE}</h1>
-                <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {[1, 2, 3].map((division) => (
+                            <Link
+                                key={division}
+                                href={`/fixtures?season=${selectedSeason}&division=${division}${selectedTeamId ? `&teamId=${selectedTeamId}` : ''}`}
+                                style={{
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    textDecoration: 'none',
+                                    background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
+                                    color: selectedDivision === division ? 'white' : 'inherit',
+                                    border: '1px solid var(--border)',
+                                    fontWeight: 600
+                                }}
+                            >
+                                D{division}
+                            </Link>
+                        ))}
+                    </div>
+                </div>
             </div>
 
             <TeamFilter teams={teams} selectedTeamId={selectedTeamId} selectedSeason={selectedSeason} />

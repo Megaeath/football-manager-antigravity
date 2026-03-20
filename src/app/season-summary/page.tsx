@@ -4,6 +4,8 @@ import SeasonSelector from '@/components/SeasonSelector';
 import { calculateSeasonAwards } from '@/lib/services/seasonAwards';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { LEAGUE } from '@/lib/constants/uiLabels';
+import Link from 'next/link';
+import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
 export const revalidate = 0;
 
@@ -23,15 +25,19 @@ type StandingRow = {
 export default async function SeasonSummaryPage({
     searchParams
 }: {
-    searchParams: Promise<{ season?: string }>;
+    searchParams: Promise<{ season?: string; division?: string }>;
 }) {
     const params = await searchParams;
     const settings = await getGameTime();
     const currentSeason = settings.currentSeason;
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
+    const selectedDivision = params.division ? parseInt(params.division) : 1;
+    const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
+
+    if (!league) return <div className="card">No league data found</div>;
 
     const history = await prisma.seasonHistory.findFirst({
-        where: { season: selectedSeason }
+        where: { season: selectedSeason, leagueId: league.id }
     });
 
     const seasonYear = history?.year ?? settings.currentDate.getUTCFullYear();
@@ -39,14 +45,9 @@ export default async function SeasonSummaryPage({
     const standings: StandingRow[] = history
         ? JSON.parse(history.standings)
         : await (async () => {
-            const league = await prisma.league.findFirst();
-            if (!league) return [];
             const { standings } = await calculateSeasonAwards(league.id, selectedSeason, seasonYear);
             return standings as StandingRow[];
         })();
-
-    const league = await prisma.league.findFirst();
-    if (!league) return <div className="card">No league data found</div>;
 
     const { awards, rewards } = await calculateSeasonAwards(league.id, selectedSeason, seasonYear);
 
@@ -56,9 +57,30 @@ export default async function SeasonSummaryPage({
             <div className="hero-gradient" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                     <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🏆 Season Summary</h1>
-                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Season {selectedSeason} Awards & Standings</p>
+                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Season {selectedSeason} · {league.name}</p>
                 </div>
-                <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {[1, 2, 3].map((division) => (
+                            <Link
+                                key={division}
+                                href={`/season-summary?season=${selectedSeason}&division=${division}`}
+                                style={{
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    textDecoration: 'none',
+                                    background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
+                                    color: selectedDivision === division ? 'white' : 'inherit',
+                                    border: '1px solid var(--border)',
+                                    fontWeight: 600
+                                }}
+                            >
+                                D{division}
+                            </Link>
+                        ))}
+                    </div>
+                </div>
             </div>
 
             {/* Awards */}
@@ -88,7 +110,7 @@ export default async function SeasonSummaryPage({
             {/* Standings Table */}
             <Card>
                 <CardHeader>
-                    <CardTitle>📊 Final Standings & Rewards</CardTitle>
+                    <CardTitle>📊 Final Standings & Rewards · {league.name}</CardTitle>
                 </CardHeader>
                 <div className="hidden md:block overflow-x-auto">
                     <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>

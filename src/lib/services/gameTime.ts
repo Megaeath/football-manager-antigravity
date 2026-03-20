@@ -2,10 +2,11 @@ import prisma from '@/lib/prisma';
 import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
-import { applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
+import { applyPromotionRelegation, applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
 import { processBiddingRules, processAcceptedTransfers } from '../engine/market';
 import { processWeeklyTraining } from './training';
 import { processAllAITeamsWeeklyTraining, upgradeAITeamFacilities } from './aiTrainingService';
+import { ensureDivisionLeagues } from './divisionSystem';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -179,10 +180,12 @@ export async function getGameTime() {
         });
 
         // Initial fixture generation for all leagues
-        const leagues = await prisma.league.findMany();
+        const leagues = await ensureDivisionLeagues(1);
         for (const league of leagues) {
             await generateSeasonFixtures(league.id, 1, 2026);
         }
+    } else {
+        await ensureDivisionLeagues(settings.currentSeason);
     }
     return settings;
 }
@@ -374,7 +377,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     console.log('[StartNewSeason] Season start date:', seasonStartDate.toISOString());
 
     // 1. Archive Standings
-    const leagues = await prisma.league.findMany();
+    const leagues = await ensureDivisionLeagues(currentSeason);
     for (const league of leagues) {
         const teams = await prisma.team.findMany({
             where: { leagueId: league.id },
@@ -414,6 +417,9 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
 
     // 2.1 Apply end-of-season EXP rules (age efficiency, seasonal cap, bonuses/penalties, annual decay)
     await applySeasonExpAdjustments(currentSeason, currentYear);
+
+    // 2.2 Promotion / relegation between divisions
+    await applyPromotionRelegation(currentSeason);
 
     // 3. Reset Player Season Stats
     await prisma.player.updateMany({

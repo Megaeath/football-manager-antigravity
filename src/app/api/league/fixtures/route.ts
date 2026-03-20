@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
         const dateStr = searchParams.get('date');
+        const divisionStr = searchParams.get('division');
+        const seasonStr = searchParams.get('season');
+        const division = divisionStr ? parseInt(divisionStr) : null;
+        const season = seasonStr ? parseInt(seasonStr) : null;
+        const league = division ? await getLeagueByDivisionLevel(division, season || undefined) : null;
 
         const query: any = {
             include: {
@@ -14,21 +20,22 @@ export async function GET(req: Request) {
             orderBy: { date: 'asc' }
         };
 
-        if (dateStr) {
-            const date = new Date(dateStr);
-            const utcYear = date.getUTCFullYear();
-            const utcMonth = date.getUTCMonth();
-            const utcDate = date.getUTCDate();
-
-            // Create strictly UTC range from midnight to midnight
-            const startDate = new Date(Date.UTC(utcYear, utcMonth, utcDate));
-            const endDate = new Date(Date.UTC(utcYear, utcMonth, utcDate + 1));
-
+        if (dateStr || league || season) {
             query.where = {
-                date: {
-                    gte: startDate,
-                    lt: endDate
-                }
+                ...(season ? { season } : {}),
+                ...(league ? { homeTeam: { is: { leagueId: league.id } } } : {}),
+                ...(dateStr ? (() => {
+                    const date = new Date(dateStr);
+                    const utcYear = date.getUTCFullYear();
+                    const utcMonth = date.getUTCMonth();
+                    const utcDate = date.getUTCDate();
+                    return {
+                        date: {
+                            gte: new Date(Date.UTC(utcYear, utcMonth, utcDate)),
+                            lt: new Date(Date.UTC(utcYear, utcMonth, utcDate + 1))
+                        }
+                    };
+                })() : {})
             };
         }
 

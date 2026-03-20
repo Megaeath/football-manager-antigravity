@@ -1,6 +1,7 @@
 import { PrismaClient, Player, Team } from '@prisma/client';
 import { calculatePlayerPower, toPlayerAttributes } from './playerPower';
 import type { PlayerAttributes } from './types';
+import { getDivisionFinanceMultiplier } from '../services/divisionSystem';
 
 const prisma = new PrismaClient();
 
@@ -160,7 +161,10 @@ export async function calculateWeeklyAccounting(teamId: string): Promise<{
 }> {
     const team = await prisma.team.findUnique({
         where: { id: teamId },
-        include: { players: true }
+        include: {
+            players: true,
+            league: { select: { level: true } }
+        }
     });
 
     if (!team) {
@@ -171,7 +175,8 @@ export async function calculateWeeklyAccounting(teamId: string): Promise<{
 
     // Sponsorship: guaranteed weekly base + reputation scaling
     // Range target: 50,000 (low reputation) -> 200,000 (elite reputation)
-    const sponsorship = 50000 + (team.reputation / 100) * 150000;
+    const divisionMultiplier = getDivisionFinanceMultiplier(team.league?.level || 1);
+    const sponsorship = (50000 + (team.reputation / 100) * 150000) * divisionMultiplier;
 
     // Ticket sales are now matchday-based (handled in processMatchFinancials as MATCHDAY events)
     // Keep weekly ticket sales at 0 to avoid double-counting.
@@ -181,7 +186,7 @@ export async function calculateWeeklyAccounting(teamId: string): Promise<{
     const famousPlayers = team.players.filter((p) => p.popularity >= 60).length;
     const totalPopularity = team.players.reduce((sum, p) => sum + p.popularity, 0);
     const avgPopularity = team.players.length > 0 ? totalPopularity / team.players.length : 0;
-    const jerseySales = (famousPlayers * 8000) + (avgPopularity * 200);
+    const jerseySales = ((famousPlayers * 8000) + (avgPopularity * 200)) * divisionMultiplier;
 
     const totalIncome = sponsorship + ticketSales + jerseySales;
 

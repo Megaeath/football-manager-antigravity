@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { getDivisionFinanceMultiplier } from './divisionSystem';
 import { simulateMatch } from '../engine/match';
 import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes, MatchPrepConfig } from '../engine/types';
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
@@ -104,13 +105,23 @@ function clampChance(v: number): number {
     return clamp(v, INJURY_MIN_CHANCE, INJURY_MAX_CHANCE);
 }
 
-function getRankRevenueRatio(rank: number): number {
+function getRankRevenueRatio(rank: number, divisionLevel: number = 1): number {
     // Rank 1 = 50%, then -2% per rank, floor at 10%
-    return Math.max(50 - ((Math.max(1, rank) - 1) * 2), 10) / 100;
+    return (Math.max(50 - ((Math.max(1, rank) - 1) * 2), 10) / 100) * getDivisionFinanceMultiplier(divisionLevel);
 }
 
-async function getTeamLeagueRank(teamId: string, season: number): Promise<number> {
+async function getTeamLeagueRank(teamId: string, season: number): Promise<{ rank: number; divisionLevel: number }> {
+    const targetTeam = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { league: { select: { id: true, level: true } } }
+    });
+
+    if (!targetTeam?.leagueId) {
+        return { rank: 1, divisionLevel: 1 };
+    }
+
     const teams = await prisma.team.findMany({
+        where: { leagueId: targetTeam.leagueId },
         select: { id: true, name: true }
     });
 
@@ -184,7 +195,10 @@ async function getTeamLeagueRank(teamId: string, season: number): Promise<number
     });
 
     const rankIndex = table.findIndex((row) => row.teamId === teamId);
-    return rankIndex >= 0 ? rankIndex + 1 : Math.max(1, table.length);
+    return {
+        rank: rankIndex >= 0 ? rankIndex + 1 : Math.max(1, table.length),
+        divisionLevel: targetTeam.league?.level || 1
+    };
 }
 
 function rollInjuryForMatch(player: { stamina: number; strength: number }, stat: EnginePlayerMatchStats): { weeks: number; severity: 'MINOR' | 'MODERATE' | 'MAJOR' } | null {
@@ -385,7 +399,7 @@ export async function processMatch(matchId: string) {
         id: matchDB.homeTeam.id,
         name: matchDB.homeTeam.name,
         tactics: {
-            formation: matchDB.homeTeam.formation,
+            formation: matchDB.homeTactics_formation || matchDB.homeTeam.formation,
             mentality: matchDB.homeTactics_mentality || matchDB.homeTeam.mentality,
             passing: matchDB.homeTactics_passing || matchDB.homeTeam.passing,
             tackling: matchDB.homeTactics_tackling || matchDB.homeTeam.tackling,
@@ -394,7 +408,7 @@ export async function processMatch(matchId: string) {
         },
         tacticalPlans: {
             normal: {
-                formation: matchDB.homeTeam.formation,
+                formation: matchDB.homeTeam.tactics?.normalFormation || matchDB.homeTeam.formation,
                 mentality: matchDB.homeTeam.tactics?.normalMentality || matchDB.homeTeam.mentality,
                 passing: matchDB.homeTeam.tactics?.normalPassing || matchDB.homeTeam.passing,
                 tackling: matchDB.homeTeam.tactics?.normalTackling || matchDB.homeTeam.tackling,
@@ -402,7 +416,7 @@ export async function processMatch(matchId: string) {
                 creative_freedom: matchDB.homeTeam.tactics?.normalCreative_freedom || matchDB.homeTeam.creative_freedom
             },
             behind: {
-                formation: matchDB.homeTeam.formation,
+                formation: matchDB.homeTeam.tactics?.behindFormation || matchDB.homeTeam.formation,
                 mentality: matchDB.homeTeam.tactics?.behindMentality || matchDB.homeTeam.mentality,
                 passing: matchDB.homeTeam.tactics?.behindPassing || matchDB.homeTeam.passing,
                 tackling: matchDB.homeTeam.tactics?.behindTackling || matchDB.homeTeam.tackling,
@@ -410,7 +424,7 @@ export async function processMatch(matchId: string) {
                 creative_freedom: matchDB.homeTeam.tactics?.behindCreative_freedom || matchDB.homeTeam.creative_freedom
             },
             leading: {
-                formation: matchDB.homeTeam.formation,
+                formation: matchDB.homeTeam.tactics?.leadingFormation || matchDB.homeTeam.formation,
                 mentality: matchDB.homeTeam.tactics?.leadingMentality || matchDB.homeTeam.mentality,
                 passing: matchDB.homeTeam.tactics?.leadingPassing || matchDB.homeTeam.passing,
                 tackling: matchDB.homeTeam.tactics?.leadingTackling || matchDB.homeTeam.tackling,
@@ -425,7 +439,7 @@ export async function processMatch(matchId: string) {
         id: matchDB.awayTeam.id,
         name: matchDB.awayTeam.name,
         tactics: {
-            formation: matchDB.awayTeam.formation,
+            formation: matchDB.awayTactics_formation || matchDB.awayTeam.formation,
             mentality: matchDB.awayTactics_mentality || matchDB.awayTeam.mentality,
             passing: matchDB.awayTactics_passing || matchDB.awayTeam.passing,
             tackling: matchDB.awayTactics_tackling || matchDB.awayTeam.tackling,
@@ -434,7 +448,7 @@ export async function processMatch(matchId: string) {
         },
         tacticalPlans: {
             normal: {
-                formation: matchDB.awayTeam.formation,
+                formation: matchDB.awayTeam.tactics?.normalFormation || matchDB.awayTeam.formation,
                 mentality: matchDB.awayTeam.tactics?.normalMentality || matchDB.awayTeam.mentality,
                 passing: matchDB.awayTeam.tactics?.normalPassing || matchDB.awayTeam.passing,
                 tackling: matchDB.awayTeam.tactics?.normalTackling || matchDB.awayTeam.tackling,
@@ -442,7 +456,7 @@ export async function processMatch(matchId: string) {
                 creative_freedom: matchDB.awayTeam.tactics?.normalCreative_freedom || matchDB.awayTeam.creative_freedom
             },
             behind: {
-                formation: matchDB.awayTeam.formation,
+                formation: matchDB.awayTeam.tactics?.behindFormation || matchDB.awayTeam.formation,
                 mentality: matchDB.awayTeam.tactics?.behindMentality || matchDB.awayTeam.mentality,
                 passing: matchDB.awayTeam.tactics?.behindPassing || matchDB.awayTeam.passing,
                 tackling: matchDB.awayTeam.tactics?.behindTackling || matchDB.awayTeam.tackling,
@@ -450,7 +464,7 @@ export async function processMatch(matchId: string) {
                 creative_freedom: matchDB.awayTeam.tactics?.behindCreative_freedom || matchDB.awayTeam.creative_freedom
             },
             leading: {
-                formation: matchDB.awayTeam.formation,
+                formation: matchDB.awayTeam.tactics?.leadingFormation || matchDB.awayTeam.formation,
                 mentality: matchDB.awayTeam.tactics?.leadingMentality || matchDB.awayTeam.mentality,
                 passing: matchDB.awayTeam.tactics?.leadingPassing || matchDB.awayTeam.passing,
                 tackling: matchDB.awayTeam.tactics?.leadingTackling || matchDB.awayTeam.tackling,
@@ -788,16 +802,16 @@ export async function processMatchFinancials(matchId: string) {
     // - Attendance depends on home rank: rank 1 = 50%, then -2% each rank (floor 10%)
     // - Home receives 100% of gate
     // - Away receives 50% * away-rank-ratio share of home gate
-    const [homeRank, awayRank] = await Promise.all([
+    const [homeRankInfo, awayRankInfo] = await Promise.all([
         getTeamLeagueRank(match.homeTeamId, match.season),
         getTeamLeagueRank(match.awayTeamId, match.season)
     ]);
 
     const ticketPrice = 10;
-    const homeAttendanceRate = getRankRevenueRatio(homeRank);
+    const homeAttendanceRate = getRankRevenueRatio(homeRankInfo.rank, homeRankInfo.divisionLevel);
     const homeGateRevenue = Math.round((match.homeTeam.stadiumCapacity || 50000) * homeAttendanceRate * ticketPrice);
 
-    const awayRankRatio = getRankRevenueRatio(awayRank);
+    const awayRankRatio = getRankRevenueRatio(awayRankInfo.rank, awayRankInfo.divisionLevel);
     const awayRevenueShare = 0.5 * awayRankRatio;
     const awayGateRevenue = Math.round(homeGateRevenue * awayRevenueShare);
 
@@ -817,7 +831,7 @@ export async function processMatchFinancials(matchId: string) {
                 teamId: match.homeTeamId,
                 type: 'MATCHDAY',
                 amount: homeGateRevenue,
-                description: `Matchday home gate (${Math.round(homeAttendanceRate * 100)}% attendance, rank ${homeRank})`
+                description: `Matchday home gate (${Math.round(homeAttendanceRate * 100)}% attendance, rank ${homeRankInfo.rank})`
             }
         });
 
@@ -826,7 +840,7 @@ export async function processMatchFinancials(matchId: string) {
                 teamId: match.awayTeamId,
                 type: 'MATCHDAY',
                 amount: awayGateRevenue,
-                description: `Away share from matchday gate (${Math.round(awayRevenueShare * 100)}% of home gate, away rank ${awayRank})`
+                description: `Away share from matchday gate (${Math.round(awayRevenueShare * 100)}% of home gate, away rank ${awayRankInfo.rank})`
             }
         });
     });
@@ -860,8 +874,8 @@ export async function processMatchFinancials(matchId: string) {
         homeResult,
         awayResult,
         matchday: {
-            homeRank,
-            awayRank,
+            homeRank: homeRankInfo.rank,
+            awayRank: awayRankInfo.rank,
             homeAttendanceRate,
             homeGateRevenue,
             awayRevenueShare,

@@ -7,6 +7,7 @@ import {
     type AIPlaystyleProfile,
     type AIPlaystyleTactics,
 } from './aiPlaystyleProfiles';
+import prisma from '@/lib/prisma';
 
 type TeamIdentity = {
     id: string;
@@ -99,4 +100,72 @@ export function resolveAIPlaystyleForTeam(team: TeamIdentity): AIPlaystyleProfil
         return getAIPlaystyleById(team.aiPlaystyleProfileId);
     }
     return pickDeterministicAIPlaystyle(team.id);
+}
+
+export async function syncAIPlaystyleTeamBase(teamId: string) {
+    const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: { tactics: true }
+    });
+
+    if (!team || !team.aiPlaystyleProfileId) {
+        return null;
+    }
+
+    const playstyle = resolveAIPlaystyleForTeam(team);
+    const normalized = normalizePlaystyleTactics(playstyle.tactics);
+    const previousFormation = team.formation;
+
+    await prisma.$transaction([
+        prisma.team.update({
+            where: { id: teamId },
+            data: {
+                formation: normalized.formation,
+                mentality: normalized.mentality,
+                passing: normalized.passing,
+                tackling: normalized.tackling,
+                attacking_focus: normalized.attacking_focus,
+                creative_freedom: normalized.creative_freedom,
+            }
+        }),
+        prisma.teamTactics.upsert({
+            where: { teamId },
+            update: {
+                normalFormation: normalized.formation,
+                normalMentality: normalized.mentality,
+                normalPassing: normalized.passing,
+                normalTackling: normalized.tackling,
+                normalAttacking_focus: normalized.attacking_focus,
+                normalCreative_freedom: normalized.creative_freedom,
+            },
+            create: {
+                teamId,
+                normalFormation: normalized.formation,
+                normalMentality: normalized.mentality,
+                normalPassing: normalized.passing,
+                normalTackling: normalized.tackling,
+                normalAttacking_focus: normalized.attacking_focus,
+                normalCreative_freedom: normalized.creative_freedom,
+                behindFormation: team.tactics?.behindFormation || previousFormation,
+                behindMentality: team.tactics?.behindMentality || 'ALL_OUT_ATTACK',
+                behindPassing: team.tactics?.behindPassing || 'DIRECT',
+                behindTackling: team.tactics?.behindTackling || 'HARD',
+                behindAttacking_focus: team.tactics?.behindAttacking_focus || 'WINGS',
+                behindCreative_freedom: team.tactics?.behindCreative_freedom || 'MAXIMUM',
+                leadingFormation: team.tactics?.leadingFormation || previousFormation,
+                leadingMentality: team.tactics?.leadingMentality || 'ULTRA_DEFENSIVE',
+                leadingPassing: team.tactics?.leadingPassing || 'SHORT',
+                leadingTackling: team.tactics?.leadingTackling || 'HARD',
+                leadingAttacking_focus: team.tactics?.leadingAttacking_focus || 'CENTER',
+                leadingCreative_freedom: team.tactics?.leadingCreative_freedom || 'NORMAL',
+            }
+        })
+    ]);
+
+    return {
+        teamId,
+        formation: normalized.formation,
+        formationChanged: previousFormation !== normalized.formation,
+        playstyleId: playstyle.id,
+    };
 }

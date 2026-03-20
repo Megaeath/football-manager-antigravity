@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import TeamClient from './TeamClient';
 import { getGameTime } from '@/lib/services/gameTime';
+import { autoAssignTacticalPositions } from '@/lib/services/autoTacticalPositionSelector';
+import { syncAIPlaystyleTeamBase } from '@/lib/services/aiPlaystyleService';
 
 const prisma = new PrismaClient();
 
@@ -9,6 +11,11 @@ export const revalidate = 0; // Disable caching for this page
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const settings = await getGameTime();
+
+    if (id !== (settings.userTeamId || '')) {
+        await syncAIPlaystyleTeamBase(id);
+        await autoAssignTacticalPositions(id);
+    }
     
     const team = await prisma.team.findUnique({
         where: { id: id },
@@ -18,7 +25,8 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                 orderBy: { tacticalPosition: 'desc' }
             },
             homeMatches: { include: { awayTeam: true, homeTeam: true, playerStats: true } },
-            awayMatches: { include: { homeTeam: true, awayTeam: true, playerStats: true } }
+            awayMatches: { include: { homeTeam: true, awayTeam: true, playerStats: true } },
+            league: { select: { name: true, level: true } }
         }
     });
 
@@ -106,5 +114,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         currentSeason={settings.currentSeason}
         nextMatch={nextMatch as any}
         userTeamId={settings.userTeamId || ''}
+        divisionLevel={team.league?.level || 1}
+        divisionName={team.league?.name || 'Division 1'}
     />;
 }

@@ -3,6 +3,7 @@
 ## Overview
 
 Implemented automatic player role and tactical position assignment for AI teams at two key moments:
+
 1. **Game Start**: First time the game is accessed (on any action)
 2. **Season Start**: Every day 1 of a new season (auto-assignment for all AI teams)
 
@@ -13,6 +14,7 @@ This ensures AI teams always have properly optimized lineups based on player sui
 ## Features Implemented
 
 ### 1. Auto-Tactical Position Assignment
+
 **File**: `src/lib/services/autoTacticalPositionSelector.ts` (NEW)
 
 - Analyzes team formation (4-4-2, 4-3-3, 5-3-2, 4-5-1)
@@ -25,13 +27,16 @@ This ensures AI teams always have properly optimized lineups based on player sui
 - Respects goalkeepers (prioritizes GK for GK slots)
 
 **Exports**:
+
 - `autoAssignTacticalPositions(teamId)` - Single team assignment
 - `autoAssignTacticalPositionsForAllAITeams(excludeTeamId?)` - Bulk assignment
 
 ### 2. Season Start Auto-Assignment
+
 **File**: `src/lib/services/gameTime.ts` (UPDATED)
 
 In `startNewSeason()` function:
+
 ```typescript
 // Step 7b: AI Tactical Position Auto-Assignment
 const { autoAssignTacticalPositionsForAllAITeams } = await import('./autoTacticalPositionSelector');
@@ -41,15 +46,18 @@ await autoAssignTacticalPositionsForAllAITeams(settings.userTeamId || undefined)
 Called after role auto-assignment to ensure fresh assignments for each season.
 
 ### 3. Game Startup Auto-Assignment
+
 **File**: `src/app/api/game/process/route.ts` (UPDATED)
 
 On first game action:
+
 - Checks if AI teams are missing player roles
 - Checks if AI teams are missing tactical positions
 - Calls auto-assignment functions if needed
 - Non-blocking: errors don't fail the request
 
 **Initialization Logic**:
+
 ```typescript
 // Initialize AI team assignments on first access (if missing)
 const teamWithoutRoles = await prisma.player.findFirst({
@@ -68,14 +76,17 @@ if (teamWithoutPositions) {
 ```
 
 ### 4. Optional Manual Initialization API
+
 **File**: `src/app/api/game/init-ai-teams/route.ts` (NEW)
 
 POST endpoint to manually trigger initialization:
+
 ```bash
 curl -X POST http://localhost:3000/api/game/init-ai-teams
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -90,7 +101,9 @@ Response:
 ## How It Works
 
 ### Player Suitability Calculation
+
 Uses existing `calculatePlayerPower()` function from engine:
+
 1. Get all available players not yet assigned
 2. For each position slot, calculate suitability score for each player:
    - Base: PlayerPower with targetPosition
@@ -100,12 +113,14 @@ Uses existing `calculatePlayerPower()` function from engine:
 4. Mark as used and move to next slot
 
 ### Formation Support
+
 - **4-4-2**: GK, DR, DC_R, DC_L, DL, MR, MC_R, MC_L, ML, FW_R, FW_L
 - **4-3-3**: GK, DR, DC_R, DC_L, DL, DMC, MC_R, MC_L, FW_R, FW_C, FW_L
 - **5-3-2**: GK, DR, DC_R, DC_C, DC_L, DL, MC_R, MC_C, MC_L, FW_R, FW_L
 - **4-5-1**: GK, DR, DC_R, DC_L, DL, MR, MC_R, MC_C, MC_L, ML, FW_C
 
 ### User Team Exclusion
+
 - User (typically Arsenal) never has auto-assignment
 - Passed as `excludeTeamId` parameter throughout
 - Allows manual squad management for player team
@@ -116,6 +131,7 @@ Uses existing `calculatePlayerPower()` function from engine:
 ## Integration Points
 
 ### Season Transitions
+
 ```
 Old Season Ends → Calculate Standings
 → Reset Season Stats
@@ -127,6 +143,7 @@ Old Season Ends → Calculate Standings
 ```
 
 ### Game Startup
+
 ```
 First Action (any button click)
 → Game Process API Called
@@ -136,6 +153,7 @@ First Action (any button click)
 ```
 
 ### Daily Match Processing
+
 - Auto-assignment check is non-blocking
 - If already assigned, check completes instantly
 - No performance impact on existing matches
@@ -145,9 +163,11 @@ First Action (any button click)
 ## Testing & Verification
 
 ### Build Status
+
 ✅ Compiled successfully in 1228.5ms
 
 ### Verification Steps
+
 1. Start new game (default Arsenal user team)
 2. Click any action (e.g., "Next Match" button)
 3. Check database: AI team players should have tactical positions assigned
@@ -155,6 +175,7 @@ First Action (any button click)
 5. Advance to season 2: All positions should be reassigned fresh
 
 ### Database Checks
+
 ```sql
 -- Verify assignments exist
 SELECT COUNT(*) FROM Player WHERE teamId NOT IN (user_team) AND tacticalPosition IS NOT NULL;
@@ -180,11 +201,13 @@ SELECT tacticalPosition, COUNT(*) FROM Player WHERE teamId = 'ai_team_id' GROUP 
 ## User Impact
 
 ### Before Implementation
+
 - Game starts: AI teams have no tactical positions
 - Season 2+: AI teams inherit old positions
 - Manual lineup selection required per match for AI
 
 ### After Implementation
+
 - Game starts: AI teams auto-assigned optimal positions
 - Season 2+: AI teams get fresh position assignments aligned with current squad
 - Automatic: No manual intervention needed
@@ -195,11 +218,13 @@ SELECT tacticalPosition, COUNT(*) FROM Player WHERE teamId = 'ai_team_id' GROUP 
 ## Performance Considerations
 
 ### Computational Cost
+
 - **Per Game Start**: Single database query to check missing assignments (instant if already assigned)
 - **Per Season**: Bulk assignment of 15 teams × 11 positions = 165 player updates in transaction (< 1 second)
 - **Per Match**: Zero overhead (check bypassed if already assigned)
 
 ### Database Operations
+
 - All assignments done in transaction for consistency
 - Single pass per team (no repeated checks)
 - Index on `(teamId, tacticalPosition)` used for checks

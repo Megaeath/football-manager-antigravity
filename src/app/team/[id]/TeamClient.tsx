@@ -125,7 +125,9 @@ export default function TeamClient({
     transferHistory = [],
     currentSeason = 1,
     nextMatch,
-    userTeamId = ''
+    userTeamId = '',
+    divisionLevel = 1,
+    divisionName = 'Division 1'
 }: {
     team: Team;
     matches: Match[];
@@ -133,6 +135,8 @@ export default function TeamClient({
     currentSeason?: number;
     nextMatch?: NextMatch;
     userTeamId?: string;
+    divisionLevel?: number;
+    divisionName?: string;
 }) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -143,6 +147,7 @@ export default function TeamClient({
     const [transferFilter, setTransferFilter] = useState<'all' | 'in' | 'out'>('all');
     const [trainingState, setTrainingState] = useState<TrainingState | null>(null);
     const [trainingLoading, setTrainingLoading] = useState(false);
+    const isAITeamView = team.id !== userTeamId;
 
     const openPlayerModal = (playerId: string) => {
         router.push(`/team/${team.id}?playerId=${playerId}`);
@@ -314,7 +319,7 @@ export default function TeamClient({
                     <div>
                         <h1 style={{ color: 'white', margin: 0, fontSize: '2rem' }}>{team.name}</h1>
                         <div style={{ marginTop: '8px', color: 'rgba(255,255,255,0.7)' }}>
-                            {team.location} • Founded {team.founded}
+                            {divisionName} • {team.location} • Founded {team.founded}
                         </div>
                         {(() => {
                             const rep = getClubReputation(team.reputation || 0);
@@ -702,7 +707,16 @@ export default function TeamClient({
                                 Formation: {team.formation}
                             </span>
                         </div>
-                        <TacticsTabs teamId={team.id} readOnly={team.id !== userTeamId} />
+                        {isAITeamView && (
+                            <div style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--muted)', padding: '0.75rem', background: 'var(--hover-bg)', borderRadius: '8px', borderLeft: '3px solid var(--primary)' }}>
+                                แผนปกติของทีม AI ถูกยึดจาก AI Playstyle อัตโนมัติ ส่วนหน้าจอนี้จะแสดงเฉพาะแผนนำและแผนตาม
+                            </div>
+                        )}
+                        <TacticsTabs
+                            teamId={team.id}
+                            readOnly={team.id !== userTeamId}
+                            visiblePlans={isAITeamView ? ['behind', 'leading'] : ['normal', 'behind', 'leading']}
+                        />
                     </div>
                 </div>
 

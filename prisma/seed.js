@@ -10,6 +10,12 @@ const TEAM_NAMES = [
     "Nottingham Forest", "Southampton", "Tottenham Hotspur", "West Ham United", "Wolves"
 ]
 
+const DIVISION_TEAM_NAMES = [
+    TEAM_NAMES,
+    TEAM_NAMES.map((name) => `${name} B`),
+    TEAM_NAMES.map((name) => `${name} C`)
+]
+
 const FIRST_NAMES = [
     "James", "Bukayo", "Kevin", "Erling", "Mohamed", "Martin", "Marcus", "Bruno", "Virgil", "Declan",
     "Cole", "Ollie", "Jack", "Phil", "Trent", "Alisson", "Ederson", "Ruben", "William", "Gabriel",
@@ -111,7 +117,7 @@ function generateAttributes(position) {
 // --- MAIN SEED FUNCTION ---
 
 async function main() {
-    console.log('--- 🚀 Starting Full Seed (Premier League 2026) ---')
+    console.log('--- 🚀 Starting Full Seed (3 Divisions, 2026) ---')
 
     // 1. ล้างข้อมูลเก่าตามลำดับ (ป้องกัน FK Constraint Error)
     // หมายเหตุ: Match มี relation จาก PlayerActionLog/MatchEvent/PlayerMatchStats
@@ -138,24 +144,28 @@ async function main() {
     await prisma.globalGameSettings.deleteMany()
 
     // 2. สร้างลีค
-    const league = await prisma.league.create({
-        data: { name: 'Premier League', season: 2026 }
-    })
+    const leagues = await Promise.all([
+        prisma.league.create({ data: { name: 'Division 1', level: 1, season: 1 } }),
+        prisma.league.create({ data: { name: 'Division 2', level: 2, season: 1 } }),
+        prisma.league.create({ data: { name: 'Division 3', level: 3, season: 1 } })
+    ])
 
     // 3. สร้างทีมและนักเตะ
-    for (const teamName of TEAM_NAMES) {
-        const team = await prisma.team.create({
-            data: {
-                name: teamName,
-                leagueId: league.id,
-                formation: "4-4-2",
-                mentality: "NORMAL",
-                passing: "MIXED",
-                tackling: "NORMAL",
-                attacking_focus: "MIXED",
-                creative_freedom: "NORMAL"
-            }
-        })
+    for (const [index, divisionTeams] of DIVISION_TEAM_NAMES.entries()) {
+        const league = leagues[index]
+        for (const teamName of divisionTeams) {
+            const team = await prisma.team.create({
+                data: {
+                    name: teamName,
+                    leagueId: league.id,
+                    formation: "4-4-2",
+                    mentality: "NORMAL",
+                    passing: "MIXED",
+                    tackling: "NORMAL",
+                    attacking_focus: "MIXED",
+                    creative_freedom: "NORMAL"
+                }
+            })
 
         // เทมเพลตนักเตะในทีม (23 คน)
         const squadTemplate = [
@@ -200,8 +210,9 @@ async function main() {
             }
         })
 
-        await prisma.player.createMany({ data: playersData })
-        console.log(`✓ ${teamName} created with ${playersData.length} players`)
+            await prisma.player.createMany({ data: playersData })
+            console.log(`✓ ${teamName} created with ${playersData.length} players`)
+        }
     }
 
     // 4. ตั้งค่า Global Game Settings (Arsenal เป็นทีมเริ่มต้น)
@@ -217,42 +228,44 @@ async function main() {
     })
 
     // 5. สร้างตารางการแข่งขัน (Fixtures) - 38 นัดต่อทีม
-    const allTeams = await prisma.team.findMany({ select: { id: true } })
-    let teamIds = allTeams.map(t => t.id)
-    const fixtures = []
-    const seasonStart = new Date(Date.UTC(2026, 1, 1)) 
+    let totalMatches = 0
+    for (const league of leagues) {
+        const allTeams = await prisma.team.findMany({ where: { leagueId: league.id }, select: { id: true } })
+        let teamIds = allTeams.map(t => t.id)
+        const fixtures = []
+        const seasonStart = new Date(Date.UTC(2026, 1, 1)) 
 
-    // Round Robin Algorithm
-    for (let r = 0; r < 19; r++) {
-        for (let i = 0; i < 10; i++) {
-            const matchDate = new Date(seasonStart)
-            matchDate.setUTCDate(seasonStart.getUTCDate() + (r * 7))
-            fixtures.push({
-                date: matchDate,
-                homeTeamId: teamIds[i],
-                awayTeamId: teamIds[19 - i],
-                isPlayed: false,
-                season: 1
-            })
+        for (let r = 0; r < 19; r++) {
+            for (let i = 0; i < 10; i++) {
+                const matchDate = new Date(seasonStart)
+                matchDate.setUTCDate(seasonStart.getUTCDate() + (r * 7))
+                fixtures.push({
+                    date: matchDate,
+                    homeTeamId: teamIds[i],
+                    awayTeamId: teamIds[19 - i],
+                    isPlayed: false,
+                    season: 1
+                })
+            }
+            teamIds.splice(1, 0, teamIds.pop())
         }
-        teamIds.splice(1, 0, teamIds.pop()) // หมุนทีม
+
+        const secondHalf = fixtures.map(f => {
+            const d = new Date(f.date)
+            d.setUTCDate(d.getUTCDate() + (20 * 7))
+            return {
+                ...f,
+                date: d,
+                homeTeamId: f.awayTeamId,
+                awayTeamId: f.homeTeamId
+            }
+        })
+
+        totalMatches += fixtures.length * 2
+        await prisma.match.createMany({ data: [...fixtures, ...secondHalf] })
     }
 
-    // นัดที่ 2 (สลับเจ้าบ้าน)
-    const secondHalf = fixtures.map(f => {
-        const d = new Date(f.date)
-        d.setUTCDate(d.getUTCDate() + (20 * 7))
-        return {
-            ...f,
-            date: d,
-            homeTeamId: f.awayTeamId,
-            awayTeamId: f.homeTeamId
-        }
-    })
-
-    await prisma.match.createMany({ data: [...fixtures, ...secondHalf] })
-
-    console.log(`--- 🌱 Seed Completed! Generated ${TEAM_NAMES.length} teams and ${fixtures.length * 2} matches. ---`)
+    console.log(`--- 🌱 Seed Completed! Generated ${TEAM_NAMES.length * 3} teams and ${totalMatches} matches. ---`)
 }
 
 main()

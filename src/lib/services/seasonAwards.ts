@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { applyAgeEfficiency, calculateMatchExp, getAnnualDecay, getSeasonalExpCap } from '@/lib/engine/experience';
+import { getDivisionRewardMultiplier } from './divisionSystem';
 
 const LEAGUE_PRIZE_POOL = 30000000;
 const TV_RIGHTS_SHARE = 5000000;
@@ -41,6 +42,11 @@ export async function calculateSeasonStandings(leagueId: string, season: number)
 export async function calculateSeasonAwards(leagueId: string, season: number, year: number) {
     const standings = await calculateSeasonStandings(leagueId, season);
     const teamIds = standings.map(s => s.id);
+    const league = await prisma.league.findUnique({
+        where: { id: leagueId },
+        select: { level: true, name: true }
+    });
+    const divisionMultiplier = getDivisionRewardMultiplier(league?.level || 1);
 
     const playerStats = await prisma.playerMatchStats.groupBy({
         by: ['playerId', 'teamId'],
@@ -154,17 +160,19 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
 
     const rewards = standings.map((team, idx) => {
         const positionWeight = standings.length - idx;
-        const positionPrize = Math.round((positionWeight / totalWeight) * LEAGUE_PRIZE_POOL);
-        const tvShare = TV_RIGHTS_SHARE;
+        const positionPrize = Math.round((positionWeight / totalWeight) * LEAGUE_PRIZE_POOL * divisionMultiplier);
+        const tvShare = Math.round(TV_RIGHTS_SHARE * divisionMultiplier);
         const jerseySales = jerseySalesMap.get(team.id) || 0;
         const roster = teamMap.get(team.id)?.players || [];
         const avgPopularity = roster.length > 0 ? roster.reduce((sum, p) => sum + p.popularity, 0) / roster.length : 0;
         const targetJerseySales = Math.round((avgPopularity / 100) * roster.length * 500 * 52);
-        const commercialBonus = jerseySales >= targetJerseySales ? COMMERCIAL_BONUS : 0;
+        const commercialBonus = jerseySales >= targetJerseySales ? Math.round(COMMERCIAL_BONUS * divisionMultiplier) : 0;
 
         return {
             teamId: team.id,
             teamName: team.name,
+            divisionLevel: league?.level || 1,
+            divisionName: league?.name || 'Division 1',
             position: idx + 1,
             positionPrize,
             tvShare,
@@ -241,10 +249,59 @@ export async function applySeasonRewards(season: number, year: number) {
     }
 }
 
+export async function applyPromotionRelegation(season: number) {
+    const leagues = await prisma.league.findMany({
+        where: { season },
+        orderBy: { level: 'asc' }
+    });
+
+    for (let index = 0; index < leagues.length - 1; index++) {
+        const upperLeague = leagues[index];
+        const lowerLeague = leagues[index + 1];
+
+        const [upperStandings, lowerStandings] = await Promise.all([
+            calculateSeasonStandings(upperLeague.id, season),
+            calculateSeasonStandings(lowerLeague.id, season)
+        ]);
+
+        const relegated = upperStandings.slice(-3);
+        const promoted = lowerStandings.slice(0, 3);
+
+        if (relegated.length < 3 || promoted.length < 3) continue;
+
+        await prisma.$transaction([
+            ...relegated.map((team) => prisma.team.update({
+                where: { id: team.id },
+                data: { leagueId: lowerLeague.id, lastDivisionChangeSeason: season + 1 }
+            })),
+            ...promoted.map((team) => prisma.team.update({
+                where: { id: team.id },
+                data: { leagueId: upperLeague.id, lastDivisionChangeSeason: season + 1 }
+            }))
+        ]);
+
+        await prisma.news.createMany({
+            data: [
+                ...promoted.map((team) => ({
+                    title: `${team.name} promoted`,
+                    content: `${team.name} earned promotion to ${upperLeague.name} for season ${season + 1}.`,
+                    type: 'PROMOTION'
+                })),
+                ...relegated.map((team) => ({
+                    title: `${team.name} relegated`,
+                    content: `${team.name} dropped to ${lowerLeague.name} for season ${season + 1}.`,
+                    type: 'RELEGATION'
+                }))
+            ]
+        });
+    }
+}
+
 export async function applySeasonExpAdjustments(season: number, year: number) {
     const leagues = await prisma.league.findMany();
 
     for (const league of leagues) {
+        const leagueLevel = league.level || 1;
         const { standings, awards } = await calculateSeasonAwards(league.id, season, year);
         const teamIds = standings.map(s => s.id);
         if (teamIds.length === 0) continue;
@@ -324,10 +381,20 @@ export async function applySeasonExpAdjustments(season: number, year: number) {
         const championPlayers = championTeamId ? Array.from(participantByTeam.get(championTeamId) || []) : [];
         for (const pid of championPlayers) addBonus(pid, 10);
 
-        const relegatedTeams = standings.slice(-Math.min(3, standings.length)).map(s => s.id);
-        for (const relegatedTeamId of relegatedTeams) {
-            const relegatedPlayers = Array.from(participantByTeam.get(relegatedTeamId) || []);
-            for (const pid of relegatedPlayers) addBonus(pid, -30);
+        if (leagueLevel > 1) {
+            const promotedTeams = standings.slice(0, Math.min(3, standings.length)).map(s => s.id);
+            for (const promotedTeamId of promotedTeams) {
+                const promotedPlayers = Array.from(participantByTeam.get(promotedTeamId) || []);
+                for (const pid of promotedPlayers) addBonus(pid, 30);
+            }
+        }
+
+        if (leagueLevel < 3) {
+            const relegatedTeams = standings.slice(-Math.min(3, standings.length)).map(s => s.id);
+            for (const relegatedTeamId of relegatedTeams) {
+                const relegatedPlayers = Array.from(participantByTeam.get(relegatedTeamId) || []);
+                for (const pid of relegatedPlayers) addBonus(pid, -30);
+            }
         }
 
         for (const [playerId, rawSeason] of rawByPlayer.entries()) {
