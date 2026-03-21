@@ -10,18 +10,22 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.positioning = 2;
         weights.agility = 2;
         weights.composure = 1;
+        weights.throw = 1;
+        weights.teamwork = 1;
     } else if (['DC', 'CD'].includes(targetPosition)) {
         weights.tackling = 3;
         weights.heading = 3;
         weights.positioning = 2;
         weights.strength = 2;
         weights.bravery = 1;
+        weights.balance = 2;
+        weights.teamwork = 1;
     } else if (['DR', 'DL', 'FB'].includes(targetPosition)) {
         weights.tackling = 2;
         weights.pace = 3;
         weights.stamina = 2;
         weights.positioning = 1;
-        weights.crossing = 1;
+        weights.crossing = 2;
         weights.passing = 1;
     } else if (['DMC', 'DM'].includes(targetPosition)) {
         // Defensive Midfielder = ball-winner + deep playmaker bridge
@@ -42,24 +46,37 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.stamina = 2;
         weights.teamwork = 2;
         weights.dribbling = 1;
+        weights.composure = 1;
+        weights.strength = 1;
+        weights.positioning = 1;
+        weights.bravery = 1;
+        weights._mcPenalty = 0; // -5% for MC power calculation
     } else if (['MR', 'ML', 'W'].includes(targetPosition)) {
         weights.pace = 3;
         weights.dribbling = 3;
         weights.passing = 2;
-        weights.acceleration = 2;
+        weights.acceleration = 3;
         weights.stamina = 1;
+        weights.crossing = 3;
+        weights.agility = 2;
     } else if (['AMC', 'AM'].includes(targetPosition)) {
         weights.passing = 3;
         weights.dribbling = 3;
         weights.vision = 3;
         weights.shooting = 2;
         weights.composure = 1;
+        weights.positioning = 2;
+        weights.teamwork = 2;
     } else if (['FW', 'ST', 'FWC', 'FWR', 'FWL'].includes(targetPosition)) {
         weights.shooting = 3;
         weights.heading = 2;
         weights.pace = 2;
         weights.composure = 2;
         weights.positioning = 2;
+        weights.balance = 1;
+        weights.acceleration = 1;
+        weights.agility = 1;
+        weights._fwBonus = 10; // +10% for FW power calculation
     }
 
     // Calculate weighted sum of attributes that matter for the position
@@ -85,7 +102,12 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
 
     if (totalWeight === 0) return 50;
 
-    const baseScore = (weightedSum / totalWeight / 20) * 100;
+    let baseScore = (weightedSum / totalWeight / 20) * 100;
+
+    // Apply position-specific multipliers (not counted in weights)
+    const fwBonus = (weights as any)._fwBonus || 0; // +10% for FW
+    const mcPenalty = (weights as any)._mcPenalty || 0; // -5% for MC
+    baseScore = baseScore * (1 + (fwBonus + mcPenalty) / 100);
 
     // --- Role profile correction ---
     // Helps prevent ball-winning/connector midfielders from being rated as better DC than MC.
