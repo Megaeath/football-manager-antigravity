@@ -2,6 +2,8 @@ import prisma from '@/lib/prisma';
 import { BreadcrumbRegister } from '@/components/BreadcrumbContext';
 import { PlayerContent } from './PlayerContent';
 import { getExpBonus, getExpMultiplier } from '@/lib/engine/experience';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { applyMarketValuePowerBands } from '@/lib/engine/financial';
 
 async function getPlayer(id: string) {
     const player = await prisma.player.findUnique({
@@ -53,9 +55,41 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
     if (player.age >= 32) {
         ageMultiplier = Math.pow(0.9, player.age - 32);
     }
-    const marketValue = Math.round(
+    const rawMarketValue = Math.round(
         (Math.pow(overallRating, 2) * (player.popularity || 50)) / 1000 * ageMultiplier * 50000
     );
+
+    const power = calculatePlayerPower({
+        attributes: toPlayerAttributes({
+            handling: player.handling,
+            tackling: player.tackling,
+            passing: player.passing,
+            shooting: player.shooting,
+            heading: player.heading,
+            dribbling: player.dribbling,
+            crossing: player.crossing,
+            setPieces: player.setPieces,
+            throw: player.throw,
+            aggression: player.aggression,
+            positioning: player.positioning,
+            vision: player.vision,
+            bravery: player.bravery,
+            leadership: player.leadership,
+            teamwork: player.teamwork,
+            composure: player.composure,
+            pace: player.pace,
+            acceleration: player.acceleration,
+            stamina: player.stamina,
+            strength: player.strength,
+            agility: player.agility,
+            balance: player.balance
+        }),
+        targetPosition: (player.naturalPosition || 'GK').split('_')[0],
+        condition: 100,
+        exp: player.exp || 0
+    }).powerWithExp;
+
+    const marketValue = applyMarketValuePowerBands(rawMarketValue, power);
 
     // Prepare attribute data for client component
     const exp = player.exp || 0;

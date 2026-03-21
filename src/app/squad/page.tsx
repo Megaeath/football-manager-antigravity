@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { PlayerAttributes } from '../../lib/engine/types';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { applyMarketValuePowerBands } from '@/lib/engine/financial';
 import SquadClient from './SquadClient';
 import { Suspense } from 'react';
 import { getGameTime } from '@/lib/services/gameTime';
@@ -131,16 +132,13 @@ export default async function SquadPage() {
             ? Number((p.matchStats.reduce((sum, stat) => sum + stat.rating, 0) / p.matchStats.length).toFixed(2))
             : 0;
         
-        const basePrice = power * power * 1000;
         const ageMultiplier = p.age <= 25 ? 1.2 : p.age >= 32 ? 0.6 : 1.0;
-        
         const playerPopularityMultiplier = 0.8 + (p.popularity / 100) * 1.0;
         const clubReputationMultiplier = 0.7 + ((team.reputation || 50) / 100) * 0.8;
-        
         const formMultiplier = 0.5 + (Math.min(avgRating, 10) / 10) * 1.0;
-        
-        let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
-        marketValue = Math.min(marketValue, 200000000);
+
+        const rawValue = Math.round(power * power * 1000 * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
+        const marketValue = applyMarketValuePowerBands(rawValue, power);
 
         return {
             id: p.id,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { applyMarketValuePowerBands } from '@/lib/engine/financial';
 
 export async function GET(
     req: Request,
@@ -9,6 +10,13 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
+        const { searchParams } = new URL(req.url);
+        const competition = (searchParams.get('competition') || 'all').toLowerCase();
+        const competitionFilter = competition === 'league'
+            ? { competitionType: 'LEAGUE' as const }
+            : competition === 'cup'
+                ? { competitionType: 'CUP' as const }
+                : {};
 
         // Get game settings and all seasons
         const settings = await prisma.globalGameSettings.findUnique({
@@ -25,7 +33,10 @@ export async function GET(
                     orderBy: { date: 'desc' }
                 },
                 matchStats: {
-                    include: { match: { select: { id: true, date: true, season: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, homeTeam: { select: { name: true } }, awayTeam: { select: { name: true } } } } },
+                    where: {
+                        match: competitionFilter
+                    },
+                    include: { match: { select: { id: true, date: true, season: true, competitionType: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, homeTeam: { select: { name: true } }, awayTeam: { select: { name: true } } } } },
                     orderBy: { match: { date: 'desc' } },
                     take: 100
                 }
@@ -38,7 +49,10 @@ export async function GET(
 
         // Get all seasons for this player
         const allSeasons = await prisma.playerMatchStats.findMany({
-            where: { playerId: id },
+            where: {
+                playerId: id,
+                match: competitionFilter
+            },
             distinct: ['matchId'],
             select: {
                 match: { select: { season: true } }
@@ -49,7 +63,10 @@ export async function GET(
 
         // Overall average rating (same basis used for players list pricing consistency)
         const overallRatingAgg = await prisma.playerMatchStats.aggregate({
-            where: { playerId: id },
+            where: {
+                playerId: id,
+                match: competitionFilter
+            },
             _avg: { rating: true }
         });
         const overallAvgRating = overallRatingAgg._avg.rating
@@ -64,7 +81,8 @@ export async function GET(
                         playerId: id,
                         match: {
                             season: season,
-                            isPlayed: true
+                            isPlayed: true,
+                            ...competitionFilter
                         }
                     },
                     _sum: {
@@ -161,7 +179,7 @@ export async function GET(
         const formMultiplier = 0.5 + (overallAvgRating / 10) * 1.0;
         
         let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
-        marketValue = Math.min(marketValue, 200000000);
+        marketValue = applyMarketValuePowerBands(marketValue, power);
 
         return NextResponse.json({
             ...player,
@@ -171,7 +189,8 @@ export async function GET(
             currentSeason,
             availableSeasons: seasons,
             seasonStats: seasonStatsArray,
-            exp: player.exp || 0
+            exp: player.exp || 0,
+            competition
         });
     } catch (e: any) {
         console.error(e);

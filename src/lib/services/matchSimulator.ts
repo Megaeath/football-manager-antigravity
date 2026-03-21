@@ -105,6 +105,61 @@ function clampChance(v: number): number {
     return clamp(v, INJURY_MIN_CHANCE, INJURY_MAX_CHANCE);
 }
 
+function resolveKnockoutTie(homeScore: number, awayScore: number): {
+    homeScore: number;
+    awayScore: number;
+    wentToExtraTime: boolean;
+    wentToPenalties: boolean;
+    penaltyHome: number | null;
+    penaltyAway: number | null;
+} {
+    // No tie-break needed if there is already a winner in normal time.
+    if (homeScore !== awayScore) {
+        return {
+            homeScore,
+            awayScore,
+            wentToExtraTime: false,
+            wentToPenalties: false,
+            penaltyHome: null,
+            penaltyAway: null
+        };
+    }
+
+    // Simulate extra-time as low-scoring add-on.
+    const etHome = Math.random() < 0.35 ? randomIntInclusive(0, 1) : 0;
+    const etAway = Math.random() < 0.35 ? randomIntInclusive(0, 1) : 0;
+    const etHomeScore = homeScore + etHome;
+    const etAwayScore = awayScore + etAway;
+
+    if (etHomeScore !== etAwayScore) {
+        return {
+            homeScore: etHomeScore,
+            awayScore: etAwayScore,
+            wentToExtraTime: true,
+            wentToPenalties: false,
+            penaltyHome: null,
+            penaltyAway: null
+        };
+    }
+
+    // Still level after ET -> penalties.
+    let penaltyHome = 3 + randomIntInclusive(0, 3);
+    let penaltyAway = 3 + randomIntInclusive(0, 3);
+    while (penaltyHome === penaltyAway) {
+        penaltyHome = 3 + randomIntInclusive(0, 3);
+        penaltyAway = 3 + randomIntInclusive(0, 3);
+    }
+
+    return {
+        homeScore: etHomeScore,
+        awayScore: etAwayScore,
+        wentToExtraTime: true,
+        wentToPenalties: true,
+        penaltyHome,
+        penaltyAway
+    };
+}
+
 function getRankRevenueRatio(rank: number, divisionLevel: number = 1): number {
     // Rank 1 = 50%, then -2% per rank, floor at 10%
     return (Math.max(50 - ((Math.max(1, rank) - 1) * 2), 10) / 100) * getDivisionFinanceMultiplier(divisionLevel);
@@ -484,6 +539,20 @@ export async function processMatch(matchId: string) {
         : null;
 
     const result = simulateMatch(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
+    const isCupKnockout = matchDB.competitionType === 'CUP' && matchDB.competitionPhase === 'KNOCKOUT';
+    const tieBreakResult = isCupKnockout && result.homeScore === result.awayScore
+        ? resolveKnockoutTie(result.homeScore, result.awayScore)
+        : {
+            homeScore: result.homeScore,
+            awayScore: result.awayScore,
+            wentToExtraTime: false,
+            wentToPenalties: false,
+            penaltyHome: null,
+            penaltyAway: null
+        };
+
+    const finalHomeScore = tieBreakResult.homeScore;
+    const finalAwayScore = tieBreakResult.awayScore;
 
     const defaultTeamStats = {
         possession: 50,
@@ -538,11 +607,15 @@ export async function processMatch(matchId: string) {
         await (tx.match as any).update({
             where: { id: matchId },
             data: {
-                homeScore: result.homeScore,
-                awayScore: result.awayScore,
+                homeScore: finalHomeScore,
+                awayScore: finalAwayScore,
                 isPlayed: true,
                 stats: JSON.stringify(mergedTeamStats),
-                motmPlayerId: motm ? motm.playerId : null
+                motmPlayerId: motm ? motm.playerId : null,
+                wentToExtraTime: tieBreakResult.wentToExtraTime,
+                wentToPenalties: tieBreakResult.wentToPenalties,
+                penaltyHome: tieBreakResult.penaltyHome,
+                penaltyAway: tieBreakResult.penaltyAway
             }
         });
 
@@ -678,8 +751,8 @@ export async function processMatch(matchId: string) {
                 if (!player) continue; // Skip if player not found
             
                 const isMotm = motm?.playerId === stat.playerId;
-            const cleanSheet = (stat.teamId === matchDB.homeTeamId && result.awayScore === 0) ||
-                              (stat.teamId === matchDB.awayTeamId && result.homeScore === 0);
+            const cleanSheet = (stat.teamId === matchDB.homeTeamId && finalAwayScore === 0) ||
+                              (stat.teamId === matchDB.awayTeamId && finalHomeScore === 0);
             
             const expGain = calculateMatchExp({
                 playerId: stat.playerId,
@@ -787,10 +860,14 @@ export async function processMatch(matchId: string) {
             );
         }
 
-        const winnerTeamId = result.homeScore > result.awayScore
+        const winnerTeamId = finalHomeScore > finalAwayScore
             ? matchDB.homeTeamId
-            : result.awayScore > result.homeScore
+            : finalAwayScore > finalHomeScore
                 ? matchDB.awayTeamId
+                : (tieBreakResult.wentToPenalties && (tieBreakResult.penaltyHome || 0) !== (tieBreakResult.penaltyAway || 0))
+                    ? ((tieBreakResult.penaltyHome || 0) > (tieBreakResult.penaltyAway || 0)
+                        ? matchDB.homeTeamId
+                        : matchDB.awayTeamId)
                 : null;
 
         if (winnerTeamId) {
@@ -833,6 +910,12 @@ export async function processMatch(matchId: string) {
 
     return {
         ...result,
+        homeScore: finalHomeScore,
+        awayScore: finalAwayScore,
+        wentToExtraTime: tieBreakResult.wentToExtraTime,
+        wentToPenalties: tieBreakResult.wentToPenalties,
+        penaltyHome: tieBreakResult.penaltyHome,
+        penaltyAway: tieBreakResult.penaltyAway,
         teamStats: mergedTeamStats,
         homeTeamName: (matchDB as any).homeTeam.name,
         awayTeamName: (matchDB as any).awayTeam.name,

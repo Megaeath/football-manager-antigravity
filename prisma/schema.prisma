@@ -79,6 +79,7 @@ model Team {
   transfersTo    TransferHistory[] @relation("TransferTo")
   trainingAssignments TrainingAssignment[]
   trainingLedgers     TrainingWeeklyLedger[]
+  swissStandings      SwissStanding[]
 }
 
 model Player {
@@ -228,11 +229,19 @@ model Match {
   id         String   @id @default(cuid())
   date       DateTime
   season     Int      @default(1)
+  competitionType String @default("LEAGUE") // LEAGUE | CUP
+  competitionPhase String? // SWISS | KNOCKOUT
+  competitionRound Int?
+  cupTournamentId  String?
   homeTeamId String
   awayTeamId String
   homeScore  Int?
   awayScore  Int?
   isPlayed   Boolean  @default(false)
+  wentToExtraTime Boolean @default(false)
+  wentToPenalties Boolean @default(false)
+  penaltyHome Int?
+  penaltyAway Int?
 
   // Match-Specific Tactics (override team default tactics)
   homeTactics_formation        String?
@@ -260,10 +269,65 @@ model Match {
 
   homeTeam Team @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam Team @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  cupTournament CupTournament? @relation(fields: [cupTournamentId], references: [id])
 
   events      MatchEvent[]
   playerStats PlayerMatchStats[]
   actionLogs  PlayerActionLog[]
+
+  @@index([season, competitionType, date])
+  @@index([cupTournamentId, competitionRound])
+}
+
+model CupTournament {
+  id            String   @id @default(cuid())
+  season        Int      @unique
+  status        String   @default("ACTIVE") // ACTIVE | FINISHED
+  phase         String   @default("SWISS") // SWISS | KNOCKOUT
+  currentRound  Int      @default(1)
+  startDate     DateTime
+  finishedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  matches       Match[]
+  standings     SwissStanding[]
+  matchHistory  SwissMatchHistory[]
+}
+
+model SwissStanding {
+  id            String   @id @default(cuid())
+  tournamentId  String
+  teamId        String
+  played        Int      @default(0)
+  win           Int      @default(0)
+  draw          Int      @default(0)
+  loss          Int      @default(0)
+  points        Int      @default(0)
+  gd            Int      @default(0)
+  gf            Int      @default(0)
+  buchholzScore Int      @default(0)
+  form          String   @default("")
+  updatedAt     DateTime @updatedAt
+
+  tournament CupTournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team       Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, teamId])
+  @@index([tournamentId, points, buchholzScore, gd, gf])
+}
+
+model SwissMatchHistory {
+  id            String   @id @default(cuid())
+  tournamentId  String
+  teamAId       String
+  teamBId       String
+  createdAt     DateTime @default(now())
+
+  tournament CupTournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, teamAId, teamBId])
+  @@index([tournamentId])
 }
 
 model MatchEvent {

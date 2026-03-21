@@ -2,8 +2,8 @@ import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
 import SeasonSelector from '@/components/SeasonSelector';
 import { calculateSeasonAwards } from '@/lib/services/seasonAwards';
+import { calculateCupRewards } from '@/lib/services/cupRewards';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
-import { LEAGUE } from '@/lib/constants/uiLabels';
 import Link from 'next/link';
 import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 
@@ -25,31 +25,85 @@ type StandingRow = {
 export default async function SeasonSummaryPage({
     searchParams
 }: {
-    searchParams: Promise<{ season?: string; division?: string }>;
+    searchParams: Promise<{ season?: string; division?: string; competition?: string }>;
 }) {
     const params = await searchParams;
     const settings = await getGameTime();
     const currentSeason = settings.currentSeason;
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
     const selectedDivision = params.division ? parseInt(params.division) : 1;
-    const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
+    const competition = (params.competition || 'all').toLowerCase() as 'all' | 'league' | 'cup';
 
-    if (!league) return <div className="card">No league data found</div>;
+    const isLeague = competition === 'league';
+    const isCup = competition === 'cup';
+    const isAll = competition === 'all';
 
-    const history = await prisma.seasonHistory.findFirst({
-        where: { season: selectedSeason, leagueId: league.id }
+    // League data — only needed in league/all mode
+    const league = (isLeague || isAll) ? await getLeagueByDivisionLevel(selectedDivision, selectedSeason) : null;
+
+    if ((isLeague || isAll) && !league) {
+        return <div className="card">No league data found for Division {selectedDivision}</div>;
+    }
+
+    const seasonYear = settings.currentDate.getUTCFullYear();
+
+    // League standings & awards — only when we have a league
+    let standings: StandingRow[] = [];
+    let awards: Awaited<ReturnType<typeof calculateSeasonAwards>>['awards'] = {} as never;
+    let rewards: Awaited<ReturnType<typeof calculateSeasonAwards>>['rewards'] = [];
+
+    if (league) {
+        const history = await prisma.seasonHistory.findFirst({
+            where: { season: selectedSeason, leagueId: league.id }
+        });
+
+        standings = history
+            ? JSON.parse(history.standings)
+            : (await calculateSeasonAwards(league.id, selectedSeason, seasonYear)).standings as StandingRow[];
+
+        const seasonData = await calculateSeasonAwards(league.id, selectedSeason, seasonYear);
+        awards = seasonData.awards;
+        rewards = seasonData.rewards;
+    }
+
+    // Cup data — always load
+    const cupRewards = await calculateCupRewards(selectedSeason);
+
+    // Cup champion from final match
+    const cupFinal = await (prisma.match as any).findFirst({
+        where: { season: selectedSeason, competitionType: 'CUP', competitionPhase: 'KNOCKOUT', competitionRound: 4, isPlayed: true },
+        include: { homeTeam: { select: { id: true, name: true } }, awayTeam: { select: { id: true, name: true } } }
     });
+    let cupChampion: { id: string; name: string } | null = null;
+    let cupRunnerUp: { id: string; name: string } | null = null;
+    if (cupFinal) {
+        const hScore = cupFinal.homeScore ?? 0;
+        const aScore = cupFinal.awayScore ?? 0;
+        const homeWon = hScore > aScore || (hScore === aScore && (cupFinal.penaltyHome ?? 0) > (cupFinal.penaltyAway ?? 0));
+        cupChampion = homeWon ? cupFinal.homeTeam : cupFinal.awayTeam;
+        cupRunnerUp = homeWon ? cupFinal.awayTeam : cupFinal.homeTeam;
+    }
 
-    const seasonYear = history?.year ?? settings.currentDate.getUTCFullYear();
+    // Combined rewards for "all" mode
+    const rewardMap = new Map<string, { teamName: string; league: number; cup: number }>();
+    rewards.forEach((r) => {
+        rewardMap.set(r.teamId, { teamName: r.teamName, league: r.total, cup: 0 });
+    });
+    cupRewards.forEach((r) => {
+        const existing = rewardMap.get(r.teamId);
+        rewardMap.set(r.teamId, {
+            teamName: existing?.teamName || r.teamName,
+            league: existing?.league || 0,
+            cup: (existing?.cup || 0) + r.reward
+        });
+    });
+    const combinedRewards = [...rewardMap.entries()]
+        .map(([teamId, item]) => ({ teamId, teamName: item.teamName, league: item.league, cup: item.cup, total: item.league + item.cup }))
+        .sort((a, b) => b.total - a.total);
 
-    const standings: StandingRow[] = history
-        ? JSON.parse(history.standings)
-        : await (async () => {
-            const { standings } = await calculateSeasonAwards(league.id, selectedSeason, seasonYear);
-            return standings as StandingRow[];
-        })();
-
-    const { awards, rewards } = await calculateSeasonAwards(league.id, selectedSeason, seasonYear);
+    const subtitle = isCup
+        ? `Season ${selectedSeason} · Cup`
+        : `Season ${selectedSeason} · ${league?.name ?? ''}`;
 
     return (
         <div className="flex flex-col gap-6 md:gap-8">
@@ -57,38 +111,92 @@ export default async function SeasonSummaryPage({
             <div className="hero-gradient" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                     <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>🏆 Season Summary</h1>
-                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Season {selectedSeason} · {league.name}</p>
+                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>{subtitle}</p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {[1, 2, 3].map((division) => (
-                            <Link
-                                key={division}
-                                href={`/season-summary?season=${selectedSeason}&division=${division}`}
-                                style={{
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    textDecoration: 'none',
-                                    background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
-                                    color: selectedDivision === division ? 'white' : 'inherit',
-                                    border: '1px solid var(--border)',
-                                    fontWeight: 600
-                                }}
-                            >
-                                D{division}
-                            </Link>
-                        ))}
-                    </div>
-                </div>
+                <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
             </div>
 
-            {/* Awards */}
+            {/* Competition tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {([['all', '🌐 All'], ['league', '🏟️ League'], ['cup', '🏆 Cup']] as const).map(([comp, label]) => (
+                    <Link
+                        key={comp}
+                        href={`/season-summary?season=${selectedSeason}&division=${selectedDivision}&competition=${comp}`}
+                        style={{
+                            padding: '8px 18px',
+                            borderRadius: '20px',
+                            textDecoration: 'none',
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            background: competition === comp ? 'var(--primary)' : 'var(--card-bg)',
+                            color: competition === comp ? 'white' : 'inherit',
+                            border: '1px solid var(--border)'
+                        }}
+                    >
+                        {label}
+                    </Link>
+                ))}
+            </div>
+
+            {/* Division tabs — league/all mode only */}
+            {!isCup && (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 600 }}>Division:</span>
+                    {[1, 2, 3].map((div) => (
+                        <Link
+                            key={div}
+                            href={`/season-summary?season=${selectedSeason}&division=${div}&competition=${competition}`}
+                            style={{
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                textDecoration: 'none',
+                                background: selectedDivision === div ? 'var(--primary)' : 'var(--card-bg)',
+                                color: selectedDivision === div ? 'white' : 'inherit',
+                                border: '1px solid var(--border)',
+                                fontWeight: 600
+                            }}
+                        >
+                            D{div}
+                        </Link>
+                    ))}
+                </div>
+            )}
+
+            {/* Cup Champion Banner */}
+            {(isCup || isAll) && cupChampion && (
+                <div style={{
+                    background: 'linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)',
+                    borderRadius: '16px',
+                    padding: '2rem',
+                    textAlign: 'center',
+                    color: 'white',
+                    boxShadow: '0 8px 32px rgba(180,83,9,0.4)'
+                }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🏆</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+                        Season {selectedSeason} Cup Champion
+                    </div>
+                    <div style={{ fontSize: '2rem', fontWeight: 800 }}>{cupChampion.name}</div>
+                    {cupRunnerUp && (
+                        <div style={{ marginTop: '0.75rem', opacity: 0.8, fontSize: '0.9rem' }}>
+                            🥈 Runner-up: <strong>{cupRunnerUp.name}</strong>
+                            {cupFinal?.wentToPenalties && (
+                                <span style={{ marginLeft: '8px', fontSize: '0.8rem', opacity: 0.75 }}>
+                                    ({cupFinal.penaltyHome}–{cupFinal.penaltyAway} on pens)
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* League Awards */}
+            {!isCup && league && (
             <Card>
                 <CardHeader>
-                    <CardTitle>🏅 Season Awards</CardTitle>
+                    <CardTitle>🏅 Season Awards · {league.name}</CardTitle>
                 </CardHeader>
-                <div className="grid-auto-fit-sm" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
                     <div style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--primary-light)' }}>
                         <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase' }}>🥅 Golden Boot</div>
                         <div style={{ fontWeight: 'bold', marginTop: '6px', fontSize: '1.1rem' }}>{awards.goldenBoot?.playerName || '-'}</div>
@@ -106,8 +214,62 @@ export default async function SeasonSummaryPage({
                     </div>
                 </div>
             </Card>
+            )}
+
+            {/* Cup Rewards */}
+            {(isCup || isAll) && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>🥇 Cup Rewards</CardTitle>
+                    </CardHeader>
+                    {cupRewards.length === 0 ? (
+                        <div style={{ color: 'var(--muted)', padding: '1rem 0' }}>Cup rewards are not available yet for this season.</div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: '0.5rem' }}>
+                            {cupRewards.map((r, idx) => (
+                                <div key={`${r.teamId}-${idx}`} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.9rem',
+                                    background: r.stage === 'CHAMPION' ? 'rgba(245,158,11,0.08)' : 'transparent'
+                                }}>
+                                    <span>
+                                        {r.stage === 'CHAMPION' && '🏆 '}
+                                        {r.stage === 'RUNNER_UP' && '🥈 '}
+                                        {r.stage === 'SEMI_FINALIST' && '🥉 '}
+                                        <strong>{r.teamName}</strong>
+                                        <span style={{ marginLeft: '8px', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                                            {r.stage.replace(/_/g, ' ')}
+                                        </span>
+                                    </span>
+                                    <b style={{ color: 'var(--success)' }}>+{formatCurrency(r.reward)}</b>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </Card>
+            )}
+
+            {/* Overall Rewards (All mode) */}
+            {isAll && combinedRewards.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>💰 Overall Rewards (League + Cup)</CardTitle>
+                    </CardHeader>
+                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                        {combinedRewards.map((r) => (
+                            <div key={r.teamId} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.65rem 0.8rem', alignItems: 'center' }}>
+                                <b>{r.teamName}</b>
+                                <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>League: {formatCurrency(r.league)}</span>
+                                <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Cup: {formatCurrency(r.cup)}</span>
+                                <span style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(r.total)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            )}
 
             {/* Standings Table */}
+            {!isCup && league && standings.length > 0 && (
             <Card>
                 <CardHeader>
                     <CardTitle>📊 Final Standings & Rewards · {league.name}</CardTitle>
@@ -185,6 +347,7 @@ export default async function SeasonSummaryPage({
                     })}
                 </div>
             </Card>
+            )}
         </div>
     );
 }

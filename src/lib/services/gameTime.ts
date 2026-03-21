@@ -3,10 +3,12 @@ import type { GlobalGameSettings } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
 import { applyPromotionRelegation, applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
+import { applyCupRewards } from './cupRewards';
 import { processBiddingRules, processAcceptedTransfers } from '../engine/market';
 import { processWeeklyTraining } from './training';
 import { processAllAITeamsWeeklyTraining, upgradeAITeamFacilities } from './aiTrainingService';
 import { ensureDivisionLeagues } from './divisionSystem';
+import { initializeCupTournamentForSeason } from './SwissTournament';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -184,8 +186,16 @@ export async function getGameTime() {
         for (const league of leagues) {
             await generateSeasonFixtures(league.id, 1, 2026);
         }
+        await initializeCupTournamentForSeason(1);
     } else {
         await ensureDivisionLeagues(settings.currentSeason);
+
+        // Ensure cup exists for current season (safe no-op when already initialized)
+        try {
+            await initializeCupTournamentForSeason(settings.currentSeason);
+        } catch (error) {
+            console.error('[GameTime] Failed to ensure cup tournament for current season:', error);
+        }
     }
     return settings;
 }
@@ -422,7 +432,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     const nextSeason = currentSeason + 1;
     const currentYear = settings.currentDate.getUTCFullYear();
     const nextYear = currentYear + 1;
-    const seasonStartDate = new Date(Date.UTC(nextYear, 0, 1));
+    const seasonStartDate = new Date(Date.UTC(nextYear, 1, 1));
 
     console.log('[StartNewSeason] Current season:', currentSeason, 'Next season:', nextSeason);
     console.log('[StartNewSeason] Current year:', currentYear, 'Next year:', nextYear);
@@ -434,8 +444,8 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         const teams = await prisma.team.findMany({
             where: { leagueId: league.id },
             include: {
-                homeMatches: { where: { season: currentSeason, isPlayed: true } },
-                awayMatches: { where: { season: currentSeason, isPlayed: true } }
+                homeMatches: { where: { season: currentSeason, isPlayed: true, competitionType: 'LEAGUE' } },
+                awayMatches: { where: { season: currentSeason, isPlayed: true, competitionType: 'LEAGUE' } }
             }
         });
 
@@ -466,6 +476,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
 
     // 2. Apply End-of-Season Rewards
     await applySeasonRewards(currentSeason, currentYear);
+    await applyCupRewards(currentSeason, currentYear);
 
     // 2.1 Apply end-of-season EXP rules (age efficiency, seasonal cap, bonuses/penalties, annual decay)
     await applySeasonExpAdjustments(currentSeason, currentYear);
@@ -495,6 +506,9 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         console.log('[StartNewSeason] Generating fixtures for league:', league.id, 'Season:', nextSeason, 'Year:', nextYear);
         await generateSeasonFixtures(league.id, nextSeason, nextYear);
     }
+
+    // Initialize cup tournament after all league fixtures are generated
+    await initializeCupTournamentForSeason(nextSeason);
 
     // 5. Handle Retirements
     const playersToRetire = await prisma.player.findMany({
@@ -544,7 +558,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
 
     if (lastSeason > 0) {
         const matches = await prisma.match.findMany({
-            where: { season: lastSeason, isPlayed: true }
+            where: { season: lastSeason, isPlayed: true, competitionType: 'LEAGUE' }
         });
 
         // Calculate standings (points per team)

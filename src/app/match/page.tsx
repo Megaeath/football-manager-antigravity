@@ -40,6 +40,13 @@ type MatchData = {
     playerStats: Record<string, any>;
     motmPlayerId?: string;
     teamStats?: any;
+    competitionType?: string;
+    competitionPhase?: string;
+    competitionRound?: number;
+    wentToExtraTime?: boolean;
+    wentToPenalties?: boolean;
+    penaltyHome?: number | null;
+    penaltyAway?: number | null;
 };
 
 type MatchActionAnalytics = {
@@ -681,7 +688,7 @@ function MatchContent() {
     if (!gameInfo) return <div className="card">Loadingข้อมูล...</div>;
 
     const userTeamId = gameInfo.userTeamId;
-    const userMatch = todaysMatches.find(m => m.homeTeam.id === userTeamId || m.awayTeam.id === gameInfo.userTeamId);
+    const userMatch = todaysMatches.find(m => m.homeTeam?.id === userTeamId || m.awayTeam?.id === gameInfo.userTeamId);
 
     const isUserPlayingToday = !!userMatch;
     const userMatchPlayed = userMatch?.isPlayed ?? false;
@@ -961,7 +968,18 @@ function MatchContent() {
                                     <span title="Man of the Match awarding" style={{ position: 'absolute', top: '-10px', right: '-40px', fontSize: '1.5rem' }} className="md:text-4xl">🌟</span>
                                 )}
                             </div>
-                            <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.75rem', marginTop: '8px' }} className="md:text-sm">Full Time Result</div>
+                            {matchData.wentToPenalties && matchData.penaltyHome !== null && matchData.penaltyAway !== null ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginTop: '8px' }}>
+                                    <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.75rem' }} className="md:text-sm">Full Time (After Penalties)</div>
+                                    <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '4px 14px', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '2px' }} className="md:text-base">
+                                        🥅 {matchData.penaltyHome} – {matchData.penaltyAway} PKs
+                                    </div>
+                                </div>
+                            ) : matchData.wentToExtraTime ? (
+                                <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.75rem', marginTop: '8px' }} className="md:text-sm">Full Time (After Extra Time)</div>
+                            ) : (
+                                <div style={{ opacity: 0.7, textTransform: 'uppercase', fontSize: '0.75rem', marginTop: '8px' }} className="md:text-sm">Full Time Result</div>
+                            )}
                         </div>
                         <div style={{ flex: 1 }} className="md:text-right">
                             <div style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', marginBottom: '4px' }}>AWAY</div>

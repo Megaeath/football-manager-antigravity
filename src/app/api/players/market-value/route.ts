@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { applyMarketValuePowerBands } from '@/lib/engine/financial';
 
 const prisma = new PrismaClient();
 
@@ -47,9 +49,41 @@ function calculateMarketValue(player: any): number {
 
     // Formula: (overall² × popularity / 1000) × ageMultiplier × 50000
     const baseValue = (Math.pow(overall, 2) * popularity) / 1000;
-    const marketValue = baseValue * ageMultiplier * 50000;
+    const rawMarketValue = Math.round(baseValue * ageMultiplier * 50000);
 
-    return Math.round(marketValue);
+    const attrs = toPlayerAttributes({
+        handling: player.handling,
+        tackling: player.tackling,
+        passing: player.passing,
+        shooting: player.shooting,
+        heading: player.heading,
+        dribbling: player.dribbling,
+        crossing: player.crossing,
+        setPieces: player.setPieces,
+        throw: player.throw,
+        aggression: player.aggression,
+        positioning: player.positioning,
+        vision: player.vision,
+        bravery: player.bravery,
+        leadership: player.leadership,
+        teamwork: player.teamwork,
+        composure: player.composure,
+        pace: player.pace,
+        acceleration: player.acceleration,
+        stamina: player.stamina,
+        strength: player.strength,
+        agility: player.agility,
+        balance: player.balance
+    });
+
+    const power = calculatePlayerPower({
+        attributes: attrs,
+        targetPosition: (player.naturalPosition || 'GK').split('_')[0],
+        condition: 100,
+        exp: player.exp || 0
+    }).powerWithExp;
+
+    return applyMarketValuePowerBands(rawMarketValue, power);
 }
 
 export async function GET(request: NextRequest) {

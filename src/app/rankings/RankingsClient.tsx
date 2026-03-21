@@ -36,7 +36,8 @@ export default function RankingsClient({
     currentSeason,
     selectedSeason,
     activeTab,
-    selectedDivision
+    selectedDivision,
+    selectedCompetition
 }: {
     stats: Stat[];
     tabs: Tab[];
@@ -44,8 +45,14 @@ export default function RankingsClient({
     selectedSeason: number;
     activeTab: string;
     selectedDivision: number;
+    selectedCompetition: string;
 }) {
     const router = useRouter();
+
+    const isCup = selectedCompetition === 'cup';
+    const subtitle = isCup
+        ? `Season ${selectedSeason} · Cup · All Divisions`
+        : `Season ${selectedSeason} · Division ${selectedDivision}`;
 
     return (
         <div className="flex flex-col gap-6 md:gap-8">
@@ -53,38 +60,67 @@ export default function RankingsClient({
             <div className="hero-gradient" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                     <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>📊 Player Rankings</h1>
-                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>Season {selectedSeason} · Division {selectedDivision}</p>
+                    <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>{subtitle}</p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {[1, 2, 3].map((division) => (
-                            <Link
-                                key={division}
-                                href={`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${division}`}
-                                style={{
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    textDecoration: 'none',
-                                    background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
-                                    color: selectedDivision === division ? 'white' : 'inherit',
-                                    border: '1px solid var(--border)',
-                                    fontWeight: 600
-                                }}
-                            >
-                                D{division}
-                            </Link>
-                        ))}
-                    </div>
-                </div>
+                <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
             </div>
+
+            {/* Competition tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {([
+                    ['all', '🌐 All'],
+                    ['league', '🏟️ League'],
+                    ['cup', '🏆 Cup']
+                ] as const).map(([comp, label]) => (
+                    <Link
+                        key={comp}
+                        href={`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&competition=${comp}`}
+                        style={{
+                            padding: '8px 18px',
+                            borderRadius: '20px',
+                            textDecoration: 'none',
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            background: selectedCompetition === comp ? 'var(--primary)' : 'var(--card-bg)',
+                            color: selectedCompetition === comp ? 'white' : 'inherit',
+                            border: '1px solid var(--border)'
+                        }}
+                    >
+                        {label}
+                    </Link>
+                ))}
+            </div>
+
+            {/* Division tabs — hidden in Cup mode */}
+            {!isCup && (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 600 }}>Division:</span>
+                    {[1, 2, 3].map((division) => (
+                        <Link
+                            key={division}
+                            href={`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${division}&competition=${selectedCompetition}`}
+                            style={{
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                textDecoration: 'none',
+                                background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
+                                color: selectedDivision === division ? 'white' : 'inherit',
+                                border: '1px solid var(--border)',
+                                fontWeight: 600
+                            }}
+                        >
+                            D{division}
+                        </Link>
+                    ))}
+                </div>
+            )}
 
             {/* Tabs */}
             <div style={{ display: 'flex', background: 'var(--card-bg)', borderRadius: '12px', padding: '4px', border: '1px solid var(--border)', overflowX: 'auto' }}>
                 {tabs.map(tab => (
                     <Link
                         key={tab.id}
-                        href={`/rankings?season=${selectedSeason}&tab=${tab.id}&division=${selectedDivision}`}
+                        href={`/rankings?season=${selectedSeason}&tab=${tab.id}&division=${selectedDivision}&competition=${selectedCompetition}`}
                         style={{
                             flex: 1, textAlign: 'center', padding: '12px 16px', borderRadius: '8px',
                             background: activeTab === tab.id ? 'var(--primary)' : 'transparent',
@@ -129,7 +165,7 @@ export default function RankingsClient({
                                     </td>
                                     <td style={{ padding: '16px' }}>
                                         <button
-                                            onClick={() => router.push(`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&playerId=${p.playerId}`)}
+                                            onClick={() => router.push(`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&competition=${selectedCompetition}&playerId=${p.playerId}`)}
                                             style={{ color: 'var(--primary)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: '600' }}
                                         >
                                             {p.playerName}

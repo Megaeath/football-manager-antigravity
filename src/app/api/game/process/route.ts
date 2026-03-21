@@ -4,6 +4,7 @@ import { processMatch, processMatchFinancials } from '@/lib/services/matchSimula
 import { autoAssignTacticalPositions } from '@/lib/services/autoTacticalPositionSelector';
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
 import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam, syncAIPlaystyleTeamBase } from '@/lib/services/aiPlaystyleService';
+import { drawNextSwissRoundIfReady } from '@/lib/services/SwissTournament';
 import prisma from '@/lib/prisma';
 
 async function ensureAITeamPlaystyles(userTeamId: string) {
@@ -80,6 +81,21 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
             where: { id: match.id },
             data: updates
         });
+    }
+}
+
+async function tryAdvanceCupRound(matchId: string) {
+    const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        select: { cupTournamentId: true, competitionType: true }
+    });
+
+    if (!match || match.competitionType !== 'CUP' || !match.cupTournamentId) return;
+
+    try {
+        await drawNextSwissRoundIfReady(match.cupTournamentId);
+    } catch (error) {
+        console.error('[Process API] Cup progression check failed:', error);
     }
 }
 
@@ -190,6 +206,7 @@ export async function POST(req: Request) {
                 } catch (error) {
                     console.error('Failed to process match financials:', error);
                 }
+                await tryAdvanceCupRound(matchId);
             }
             
             return NextResponse.json(result);
@@ -211,6 +228,7 @@ export async function POST(req: Request) {
                 } catch (error) {
                     console.error('Failed to process match financials:', error);
                 }
+                await tryAdvanceCupRound(matchId);
             }
             
             return NextResponse.json(result);
@@ -274,6 +292,7 @@ export async function POST(req: Request) {
                     } catch (error) {
                         console.error('Failed to process match financials:', error);
                     }
+                    await tryAdvanceCupRound(match.id);
                 }
             }
 

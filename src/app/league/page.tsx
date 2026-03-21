@@ -45,10 +45,10 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
                     where: { isRetired: false }
                 },
                 homeMatches: {
-                    where: { season: selectedSeason, isPlayed: true }
+                    where: { season: selectedSeason, isPlayed: true, competitionType: 'LEAGUE' }
                 },
                 awayMatches: {
-                    where: { season: selectedSeason, isPlayed: true }
+                    where: { season: selectedSeason, isPlayed: true, competitionType: 'LEAGUE' }
                 }
             }
         });

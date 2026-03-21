@@ -26,6 +26,7 @@ type MatchStatType = {
     match: {
         id: string;
         season: number;
+        competitionType?: string;
         homeTeamId: string;
         homeTeam: { name: string };
         awayTeam: { name: string };
@@ -66,11 +67,18 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
     const [loading, setLoading] = useState(true);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
     const [seasonAnalytics, setSeasonAnalytics] = useState<any>(null);
+    const [selectedCompetition, setSelectedCompetition] = useState<'all' | 'league' | 'cup'>('all');
 
     // Group stats by season and team
     const statsGrouped = useMemo(() => {
         const groups: Record<string, any> = {};
-        player.matchStats.forEach(stat => {
+        const filteredStats = player.matchStats.filter((stat) => {
+            const comp = (stat.match.competitionType || 'LEAGUE').toLowerCase();
+            if (selectedCompetition === 'all') return true;
+            return comp === selectedCompetition;
+        });
+
+        filteredStats.forEach(stat => {
             const key = `${stat.match.season}-${stat.teamId}`;
             if (!groups[key]) {
                 groups[key] = {
@@ -91,7 +99,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             groups[key].stats.push(stat);
         });
         return Object.values(groups).sort((a, b) => b.season - a.season);
-    }, [player.matchStats]);
+    }, [player.matchStats, selectedCompetition]);
 
     // Fetch user team ID
     useEffect(() => {
@@ -111,13 +119,19 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
 
     useEffect(() => {
         const fetchAnalytics = async () => {
-            if (!player.matchStats || player.matchStats.length === 0) return;
-            const latestSeason = Math.max(...player.matchStats.map(s => s.match.season || 0));
+            const eligibleStats = player.matchStats.filter((s) => {
+                const comp = (s.match.competitionType || 'LEAGUE').toLowerCase();
+                if (selectedCompetition === 'all') return true;
+                return comp === selectedCompetition;
+            });
+
+            if (!eligibleStats || eligibleStats.length === 0) return;
+            const latestSeason = Math.max(...eligibleStats.map(s => s.match.season || 0));
             if (!latestSeason) return;
 
             setAnalyticsLoading(true);
             try {
-                const res = await fetch(`/api/player/${player.id}/analytics?season=${latestSeason}`);
+                const res = await fetch(`/api/player/${player.id}/analytics?season=${latestSeason}&competition=${selectedCompetition}`);
                 const data = await res.json();
                 setSeasonAnalytics(data);
             } catch (error) {
@@ -127,7 +141,7 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             }
         };
         fetchAnalytics();
-    }, [player.id, player.matchStats]);
+    }, [player.id, player.matchStats, selectedCompetition]);
 
     const AttributeItem = ({ label, value, bonus = 0 }: { label: string; value: number; bonus?: number }) => {
         const displayValue = Math.min(value + bonus, 20);
@@ -246,6 +260,30 @@ export function PlayerContent({ player, attributeData }: { player: PlayerType; a
             {activeTab === 'statistics' && (
                 <div className="card">
                     <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Seasonal/Club Statistics</h3>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'league', label: 'League' },
+                            { id: 'cup', label: 'Cup' }
+                        ].map((mode) => (
+                            <button
+                                key={mode.id}
+                                onClick={() => setSelectedCompetition(mode.id as 'all' | 'league' | 'cup')}
+                                style={{
+                                    padding: '0.4rem 0.75rem',
+                                    borderRadius: '999px',
+                                    border: '1px solid var(--border)',
+                                    background: selectedCompetition === mode.id ? 'var(--primary)' : 'var(--card-bg)',
+                                    color: selectedCompetition === mode.id ? 'white' : 'inherit',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: '0.8rem'
+                                }}
+                            >
+                                {mode.label}
+                            </button>
+                        ))}
+                    </div>
                     {seasonAnalytics?.seasonSummary && (
                         <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', background: 'rgba(var(--primary-rgb), 0.03)' }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>ภาพรวมจาก Raw Actions (Season {seasonAnalytics.season})</div>

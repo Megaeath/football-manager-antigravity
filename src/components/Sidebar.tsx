@@ -101,6 +101,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         { name: 'Squad', href: '/squad', icon: '📋' },
         { name: 'Fixtures', href: '/fixtures', icon: '📅' },
         { name: 'League', href: '/league', icon: '🏆' },
+        { name: 'Cup', href: '/cup', icon: '🥇' },
         { name: 'Market', href: '/market', icon: '💱' },
         { name: 'News', href: '/news', icon: '📰' },
         { name: 'Season Summary', href: '/season-summary', icon: '🏅' },

@@ -7,6 +7,25 @@ const TV_RIGHTS_SHARE = 5000000;
 const ACHIEVEMENT_BONUS = 5000000;
 const COMMERCIAL_BONUS = 3000000;
 
+let competitionTypeSupportCache: boolean | null = null;
+
+async function canUseCompetitionTypeFilter(): Promise<boolean> {
+    if (competitionTypeSupportCache !== null) return competitionTypeSupportCache;
+
+    try {
+        await prisma.match.findFirst({
+            where: { competitionType: 'LEAGUE' },
+            select: { id: true }
+        });
+        competitionTypeSupportCache = true;
+    } catch (error: any) {
+        const message = String(error?.message || '');
+        competitionTypeSupportCache = !message.includes('Unknown argument `competitionType`');
+    }
+
+    return competitionTypeSupportCache;
+}
+
 const seasonDateRange = (year: number) => {
     const start = new Date(Date.UTC(year, 0, 1));
     const end = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
@@ -14,11 +33,24 @@ const seasonDateRange = (year: number) => {
 };
 
 export async function calculateSeasonStandings(leagueId: string, season: number) {
+    const canFilterByCompetition = await canUseCompetitionTypeFilter();
     const teams = await prisma.team.findMany({
         where: { leagueId },
         include: {
-            homeMatches: { where: { season, isPlayed: true } },
-            awayMatches: { where: { season, isPlayed: true } }
+            homeMatches: {
+                where: {
+                    season,
+                    isPlayed: true,
+                    ...(canFilterByCompetition ? { competitionType: 'LEAGUE' } : {})
+                }
+            },
+            awayMatches: {
+                where: {
+                    season,
+                    isPlayed: true,
+                    ...(canFilterByCompetition ? { competitionType: 'LEAGUE' } : {})
+                }
+            }
         }
     });
 
@@ -40,6 +72,7 @@ export async function calculateSeasonStandings(leagueId: string, season: number)
 }
 
 export async function calculateSeasonAwards(leagueId: string, season: number, year: number) {
+    const canFilterByCompetition = await canUseCompetitionTypeFilter();
     const standings = await calculateSeasonStandings(leagueId, season);
     const teamIds = standings.map(s => s.id);
     const league = await prisma.league.findUnique({
@@ -52,7 +85,11 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         by: ['playerId', 'teamId'],
         where: {
             teamId: { in: teamIds },
-            match: { season, isPlayed: true }
+            match: {
+                season,
+                isPlayed: true,
+                ...(canFilterByCompetition ? { competitionType: 'LEAGUE' } : {})
+            }
         },
         _sum: { goals: true, assists: true },
         _avg: { rating: true },
@@ -89,6 +126,7 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         where: {
             season,
             isPlayed: true,
+            ...(canFilterByCompetition ? { competitionType: 'LEAGUE' } : {}),
             OR: [
                 { homeTeamId: { in: teamIds } },
                 { awayTeamId: { in: teamIds } }
@@ -298,6 +336,7 @@ export async function applyPromotionRelegation(season: number) {
 }
 
 export async function applySeasonExpAdjustments(season: number, year: number) {
+    const canFilterByCompetition = await canUseCompetitionTypeFilter();
     const leagues = await prisma.league.findMany();
 
     for (const league of leagues) {
@@ -307,7 +346,12 @@ export async function applySeasonExpAdjustments(season: number, year: number) {
         if (teamIds.length === 0) continue;
 
         const matches = await prisma.match.findMany({
-            where: { season, isPlayed: true, OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] },
+            where: {
+                season,
+                isPlayed: true,
+                ...(canFilterByCompetition ? { competitionType: 'LEAGUE' } : {}),
+                OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }]
+            },
             select: { id: true, homeScore: true, awayScore: true, homeTeamId: true, awayTeamId: true, motmPlayerId: true }
         });
         const matchMap = new Map(matches.map(m => [m.id, m]));

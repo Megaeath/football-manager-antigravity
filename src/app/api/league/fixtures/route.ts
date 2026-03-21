@@ -8,6 +8,7 @@ export async function GET(req: Request) {
         const dateStr = searchParams.get('date');
         const divisionStr = searchParams.get('division');
         const seasonStr = searchParams.get('season');
+        const competition = (searchParams.get('competition') || 'league').toLowerCase();
         const division = divisionStr ? parseInt(divisionStr) : null;
         const season = seasonStr ? parseInt(seasonStr) : null;
         const league = division ? await getLeagueByDivisionLevel(division, season || undefined) : null;
@@ -20,8 +21,15 @@ export async function GET(req: Request) {
             orderBy: { date: 'asc' }
         };
 
-        if (dateStr || league || season) {
+        const competitionWhere = competition === 'cup'
+            ? { competitionType: 'CUP' }
+            : competition === 'all'
+                ? {}
+                : { competitionType: 'LEAGUE' };
+
+        if (dateStr || league || season || competition !== 'all') {
             query.where = {
+                ...competitionWhere,
                 ...(season ? { season } : {}),
                 ...(league ? { homeTeam: { is: { leagueId: league.id } } } : {}),
                 ...(dateStr ? (() => {

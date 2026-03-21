@@ -7,6 +7,8 @@ const prisma = new PrismaClient();
  * Each team plays every other team twice (Home and Away).
  */
 export async function generateSeasonFixtures(leagueId: string, season: number, startYear: number) {
+    const MATCH_INTERVAL_DAYS = 5;
+
     const teams = await prisma.team.findMany({
         where: { leagueId },
         select: { id: true }
@@ -24,7 +26,7 @@ export async function generateSeasonFixtures(leagueId: string, season: number, s
     const halfSize = numTeams / 2;
 
     const fixtures = [];
-    const startDate = new Date(Date.UTC(startYear, 0, 1)); // Jan 1st UTC
+    const startDate = new Date(Date.UTC(startYear, 1, 1)); // Feb 1st UTC
 
     // Round Robin - First half of season
     for (let round = 0; round < numRounds; round++) {
@@ -35,11 +37,12 @@ export async function generateSeasonFixtures(leagueId: string, season: number, s
             if (home !== 'BYE' && away !== 'BYE') {
                 // Schedule on Saturdays (simplified) - Always UTC midnight
                 const matchDate = new Date(startDate.getTime());
-                matchDate.setUTCDate(startDate.getUTCDate() + (round * 7));
+                matchDate.setUTCDate(startDate.getUTCDate() + (round * MATCH_INTERVAL_DAYS));
 
                 fixtures.push({
                     date: matchDate,
                     season,
+                    competitionType: 'LEAGUE',
                     homeTeamId: home,
                     awayTeamId: away,
                     isPlayed: false
@@ -53,7 +56,7 @@ export async function generateSeasonFixtures(leagueId: string, season: number, s
     // Second half of season (Reverse Home/Away)
     const secondHalfFixtures = fixtures.map(f => {
         const reverseDate = new Date(f.date.getTime());
-        reverseDate.setUTCDate(f.date.getUTCDate() + (numRounds * 7));
+        reverseDate.setUTCDate(f.date.getUTCDate() + (numRounds * MATCH_INTERVAL_DAYS));
         return {
             ...f,
             date: reverseDate,

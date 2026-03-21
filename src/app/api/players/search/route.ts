@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import type { PlayerAttributes } from '@/lib/engine/types';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { applyMarketValuePowerBands } from '@/lib/engine/financial';
 
 export async function GET() {
     try {
@@ -70,7 +71,7 @@ export async function GET() {
             const formMultiplier = 0.5 + (avgRating / 10) * 1.0;
             
             let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
-            marketValue = Math.min(marketValue, 200000000);
+            marketValue = applyMarketValuePowerBands(marketValue, power);
 
             return {
                 id: player.id,

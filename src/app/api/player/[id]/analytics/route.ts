@@ -40,6 +40,7 @@ export async function GET(
         const { searchParams } = new URL(req.url);
         const seasonParam = searchParams.get('season');
         const matchId = searchParams.get('matchId');
+        const competition = (searchParams.get('competition') || 'all').toLowerCase();
 
         const where: any = { playerId: id };
         if (matchId) {
@@ -47,6 +48,13 @@ export async function GET(
         } else if (seasonParam) {
             const season = parseInt(seasonParam, 10);
             where.match = { season };
+        }
+
+        if (competition === 'league' || competition === 'cup') {
+            where.match = {
+                ...(where.match || {}),
+                competitionType: competition.toUpperCase()
+            };
         }
 
         const logs = await ((prisma as any).playerActionLog).findMany({
@@ -141,6 +149,7 @@ export async function GET(
             playerId: id,
             matchId: matchId || null,
             season: seasonParam ? parseInt(seasonParam, 10) : null,
+            competition,
             logCount: logs.length,
             seasonSummary,
             byMatch,

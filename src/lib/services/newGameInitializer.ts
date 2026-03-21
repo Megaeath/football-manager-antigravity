@@ -1,6 +1,8 @@
 import prisma from '@/lib/prisma';
 import { getDivisionName } from './divisionSystem';
 import { AI_PLAYSTYLE_PROFILES } from './aiPlaystyleProfiles';
+import { generateSeasonFixtures } from './fixtureGenerator';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 type PlayerAttributeSet = {
     handling: number;
@@ -93,6 +95,7 @@ const LAST_NAMES = [
 
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const clampStat = (v: number) => Math.max(1, Math.min(20, v));
 
 function pickRandomAIPlaystyleId() {
     if (AI_PLAYSTYLE_PROFILES.length === 0) {
@@ -206,6 +209,78 @@ function generateAttributes(position: string): PlayerAttributeSet {
     return base;
 }
 
+function calculateSeedPower(attrs: PlayerAttributeSet, naturalPosition: string, exp = 0): number {
+    const targetPosition = naturalPosition.split('_')[0];
+    return calculatePlayerPower({
+        attributes: toPlayerAttributes(attrs),
+        targetPosition,
+        condition: 100,
+        exp
+    }).powerWithExp;
+}
+
+function generateSuperstarAttributes(position: string, naturalPosition: string): { attrs: PlayerAttributeSet; exp: number } {
+    let bestAttrs = generateAttributes(position);
+    let bestExp = 0;
+    let bestPower = calculateSeedPower(bestAttrs, naturalPosition, bestExp);
+
+    for (let i = 0; i < 50; i++) {
+        const exp = randomInt(50, 110);
+        const candidate = generateAttributes(position);
+
+        // Global boost for elite baseline
+        (Object.keys(candidate) as Array<keyof PlayerAttributeSet>).forEach((k) => {
+            if (k === 'handling' && position !== 'GK') return;
+            candidate[k] = clampStat(candidate[k] + randomInt(2, 5));
+        });
+
+        // Position-specific elite profile
+        if (position === 'GK') {
+            candidate.handling = randomInt(18, 20);
+            candidate.positioning = randomInt(16, 20);
+            candidate.composure = randomInt(16, 20);
+            candidate.bravery = randomInt(16, 20);
+        } else if (position === 'DC') {
+            candidate.tackling = randomInt(17, 20);
+            candidate.heading = randomInt(17, 20);
+            candidate.strength = randomInt(16, 20);
+            candidate.positioning = randomInt(16, 20);
+            candidate.composure = randomInt(15, 20);
+        } else if (position === 'MC') {
+            candidate.passing = randomInt(17, 20);
+            candidate.vision = randomInt(17, 20);
+            candidate.teamwork = randomInt(16, 20);
+            candidate.composure = randomInt(16, 20);
+            candidate.stamina = randomInt(16, 20);
+        } else if (position === 'FW') {
+            candidate.shooting = randomInt(18, 20);
+            candidate.composure = randomInt(17, 20);
+            candidate.positioning = randomInt(16, 20);
+            candidate.acceleration = randomInt(16, 20);
+            candidate.pace = randomInt(16, 20);
+        } else {
+            // MR/ML/DR/DL
+            candidate.pace = randomInt(16, 20);
+            candidate.acceleration = randomInt(16, 20);
+            candidate.dribbling = randomInt(16, 20);
+            candidate.crossing = randomInt(16, 20);
+            candidate.stamina = randomInt(16, 20);
+        }
+
+        const power = calculateSeedPower(candidate, naturalPosition, exp);
+        if (power > bestPower) {
+            bestAttrs = candidate;
+            bestExp = exp;
+            bestPower = power;
+        }
+        if (power >= 80) {
+            return { attrs: candidate, exp };
+        }
+    }
+
+    return { attrs: bestAttrs, exp: bestExp };
+}
+
 export async function initializeNewGame(userTeamName: string) {
     await prisma.playerActionLog.deleteMany();
     await prisma.playerMatchStats.deleteMany();
@@ -268,8 +343,12 @@ export async function initializeNewGame(userTeamName: string) {
 
             const assigned = { GK: 0, DR: 0, DL: 0, DC: 0, MR: 0, ML: 0, MC: 0, FW: 0 };
 
-            const playersData = squadTemplate.map((p) => {
-                const stats = generateAttributes(p.pos);
+            const superstarIndex = randomInt(0, squadTemplate.length - 1);
+
+            const playersData = squadTemplate.map((p, idx) => {
+                const isSuperstar = idx === superstarIndex;
+                const superstar = isSuperstar ? generateSuperstarAttributes(p.pos, p.nat) : null;
+                const stats = superstar?.attrs || generateAttributes(p.pos);
 
                 let tacPos: string | null = null;
                 if (p.pos === 'GK' && assigned.GK < 1) { tacPos = 'GK'; assigned.GK++; }
@@ -281,17 +360,22 @@ export async function initializeNewGame(userTeamName: string) {
                 else if (p.pos === 'MC' && assigned.MC < 2) { tacPos = assigned.MC === 0 ? 'MC_L' : 'MC_R'; assigned.MC++; }
                 else if (p.pos === 'FW' && assigned.FW < 2) { tacPos = assigned.FW === 0 ? 'FW_L' : 'FW_R'; assigned.FW++; }
 
-                const age = randomInt(18, 35);
+                const age = isSuperstar ? randomInt(26, 33) : randomInt(18, 35);
+                const retirementAge = isSuperstar
+                    ? randomInt(Math.max(age + 3, 35), 40)
+                    : randomInt(31, 33);
                 return {
                     teamId: team.id,
                     name: buildUniqueName(usedNames),
                     age,
                     naturalPosition: p.nat,
-                    retirementAge: randomInt(31, 33),
+                    retirementAge,
                     tacticalPosition: tacPos,
                     morale: 100,
                     condition: 100,
                     isRetired: false,
+                    popularity: isSuperstar ? randomInt(65, 90) : randomInt(8, 35),
+                    exp: superstar?.exp || 0,
                     birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
                     ...stats
                 };
@@ -333,38 +417,9 @@ export async function initializeNewGame(userTeamName: string) {
             where: { leagueId: league.id },
             select: { id: true }
         });
-        const teamIds = divisionTeams.map((t) => t.id);
-        const fixtures: Array<{ date: Date; homeTeamId: string; awayTeamId: string; isPlayed: boolean; season: number }> = [];
-        const seasonStart = new Date(Date.UTC(2026, 1, 1));
-
-        for (let round = 0; round < 19; round++) {
-            for (let i = 0; i < 10; i++) {
-                const matchDate = new Date(seasonStart);
-                matchDate.setUTCDate(seasonStart.getUTCDate() + (round * 7));
-                fixtures.push({
-                    date: matchDate,
-                    homeTeamId: teamIds[i],
-                    awayTeamId: teamIds[19 - i],
-                    isPlayed: false,
-                    season: 1
-                });
-            }
-            teamIds.splice(1, 0, teamIds.pop() as string);
-        }
-
-        const secondHalf = fixtures.map((fixture) => {
-            const date = new Date(fixture.date);
-            date.setUTCDate(date.getUTCDate() + (20 * 7));
-            return {
-                ...fixture,
-                date,
-                homeTeamId: fixture.awayTeamId,
-                awayTeamId: fixture.homeTeamId
-            };
-        });
-
-        matchCount += fixtures.length * 2;
-        await prisma.match.createMany({ data: [...fixtures, ...secondHalf] });
+        await generateSeasonFixtures(league.id, 1, 2026);
+        const teamCount = divisionTeams.length;
+        matchCount += teamCount * (teamCount - 1);
     }
 
     return {

@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import SeasonSelector from '@/components/SeasonSelector';
 import { getGameTime } from '@/lib/services/gameTime';
 import RankingsClient from './RankingsClient';
@@ -8,7 +9,7 @@ import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
 export default async function RankingsPage({
     searchParams
 }: {
-    searchParams: Promise<{ season?: string; tab?: string; division?: string }>
+    searchParams: Promise<{ season?: string; tab?: string; division?: string; competition?: string }>
 }) {
     const params = await searchParams;
     const settings = await getGameTime();
@@ -16,10 +17,22 @@ export default async function RankingsPage({
     const selectedSeason = params.season ? parseInt(params.season) : currentSeason;
     const activeTab = params.tab || 'goals';
     const selectedDivision = params.division ? parseInt(params.division) : 1;
+    const selectedCompetition = (params.competition || 'all').toLowerCase();
     const league = await getLeagueByDivisionLevel(selectedDivision, selectedSeason);
 
+    const competitionClause = selectedCompetition === 'league'
+        ? Prisma.sql`AND m.competitionType = 'LEAGUE'`
+        : selectedCompetition === 'cup'
+            ? Prisma.sql`AND m.competitionType = 'CUP'`
+            : Prisma.sql``;
+
+    // Cup = all divisions together, so skip the league level filter
+    const divisionClause = selectedCompetition === 'cup'
+        ? Prisma.sql``
+        : Prisma.sql`AND l.level = ${league?.level || 1}`;
+
     // Aggregate stats for the season
-    const rawStats: any[] = await prisma.$queryRaw`
+    const rawStats: any[] = await prisma.$queryRaw(Prisma.sql`
         SELECT 
             p.id as playerId,
             p.name as playerName,
@@ -68,10 +81,11 @@ export default async function RankingsPage({
                 JOIN Team t ON p.teamId = t.id
                 JOIN League l ON t.leagueId = l.id
         WHERE m.season = ${selectedSeason}
-                    AND l.level = ${league?.level || 1}
+                  ${divisionClause}
+                  ${competitionClause}
         GROUP BY p.id
         HAVING SUM(pms.minutes) > 0
-    `;
+            `);
 
     // Convert BigInts to Numbers and calculate power
     const stats = rawStats.map(s => {
@@ -154,5 +168,15 @@ export default async function RankingsPage({
         { id: 'cards', name: 'Cards', icon: '🟨' },
     ];
 
-    return <RankingsClient stats={sortedStats} tabs={tabs} currentSeason={currentSeason} selectedSeason={selectedSeason} activeTab={activeTab} selectedDivision={selectedDivision} />;
+    return (
+        <RankingsClient
+            stats={sortedStats}
+            tabs={tabs}
+            currentSeason={currentSeason}
+            selectedSeason={selectedSeason}
+            activeTab={activeTab}
+            selectedDivision={selectedDivision}
+            selectedCompetition={selectedCompetition}
+        />
+    );
 }

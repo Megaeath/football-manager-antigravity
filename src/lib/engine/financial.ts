@@ -5,6 +5,31 @@ import { getDivisionFinanceMultiplier } from '../services/divisionSystem';
 
 const prisma = new PrismaClient();
 
+const envNum = (key: string, fallback: number) => {
+    const raw = process.env[key];
+    if (!raw) return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : fallback;
+};
+
+const MV_SUPERSTAR_THRESHOLD = envNum('MV_SUPERSTAR_THRESHOLD', 70);
+const MV_SUPERSTAR_BASE = envNum('MV_SUPERSTAR_BASE', 100_000_000);
+const MV_SUPERSTAR_PER_POWER = envNum('MV_SUPERSTAR_PER_POWER', 8_000_000);
+
+const MV_BAND_85_BASE = envNum('MV_BAND_85_BASE', 50_000_000);
+const MV_BAND_85_PER_POWER = envNum('MV_BAND_85_PER_POWER', 6_000_000);
+
+const MV_BAND_80_BASE = envNum('MV_BAND_80_BASE', 30_000_000);
+const MV_BAND_80_PER_POWER = envNum('MV_BAND_80_PER_POWER', 4_000_000);
+
+const MV_BAND_70_BASE = envNum('MV_BAND_70_BASE', 5_000_000);
+const MV_BAND_70_PER_POWER = envNum('MV_BAND_70_PER_POWER', 2_000_000);
+
+const MV_BAND_60_MIN = envNum('MV_BAND_60_MIN', 1_000_000);
+const MV_BAND_60_MAX = envNum('MV_BAND_60_MAX', 5_000_000);
+
+const MV_CAP = envNum('MV_CAP', 400_000_000);
+
 /**
  * Calculate overall player rating (1-20) from attributes
  */
@@ -17,6 +42,33 @@ export function calculatePlayerOverall(player: Player): number {
                       player.agility + player.balance) / 6;
     
     return (technical + mental + physical) / 3;
+}
+
+export function applyMarketValuePowerBands(rawValue: number, power: number): number {
+    let value = Math.round(rawValue);
+
+    // Main premium rule (now configurable; default starts at 70+)
+    if (power >= MV_SUPERSTAR_THRESHOLD) {
+        const floor = MV_SUPERSTAR_BASE + Math.round((power - MV_SUPERSTAR_THRESHOLD) * MV_SUPERSTAR_PER_POWER);
+        value = Math.max(value, floor);
+    } else if (power >= 85) {
+        const floor = MV_BAND_85_BASE + Math.round((power - 85) * MV_BAND_85_PER_POWER);
+        value = Math.max(value, floor);
+    } else if (power >= 80) {
+        const floor = MV_BAND_80_BASE + Math.round((power - 80) * MV_BAND_80_PER_POWER);
+        value = Math.max(value, floor);
+    } else if (power >= 70) {
+        const floor = MV_BAND_70_BASE + Math.round((power - 70) * MV_BAND_70_PER_POWER);
+        value = Math.max(value, floor);
+    } else if (power >= 60) {
+        // 60-70 range: configurable clamp
+        const t = (power - 60) / 10;
+        const floor = Math.round(MV_BAND_60_MIN + t * (MV_BAND_60_MAX - MV_BAND_60_MIN));
+        value = Math.max(value, floor);
+        value = Math.min(value, MV_BAND_60_MAX);
+    }
+
+    return Math.min(value, MV_CAP);
 }
 
 /**
@@ -283,7 +335,7 @@ export async function evaluateMarketValue(player: Player): Promise<number> {
     const formMultiplier = 0.5 + (avgRating / 10) * 1.0;
     
     let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
-    marketValue = Math.min(marketValue, 200000000);
+    marketValue = applyMarketValuePowerBands(marketValue, power);
 
     return marketValue;
 }
