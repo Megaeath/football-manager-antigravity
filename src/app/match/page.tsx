@@ -4,7 +4,6 @@ import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
-import { usePageLoader } from '@/components/PageLoaderProvider';
 
 // Types
 type TeamMatchStats = {
@@ -74,7 +73,6 @@ function MatchContent() {
     const searchParams = useSearchParams();
     const queryMatchId = searchParams.get('matchId');
     const router = useRouter();
-    const { showLoader, hideLoader } = usePageLoader();
 
     const [gameInfo, setGameInfo] = useState<any>(null);
     const [todaysMatches, setTodaysMatches] = useState<MatchData[]>([]);
@@ -284,30 +282,6 @@ function MatchContent() {
         } catch (e) {
             alert('Simulation failed: ' + e);
         } finally {
-            setLoading(false);
-        }
-    };
-
-    const nextProcess = async () => {
-        setLoading(true);
-        showLoader('Processing match...');
-        try {
-            const res = await fetch('/api/game/process', {
-                method: 'POST',
-                body: JSON.stringify({ action: 'next_process' })
-            });
-            const data = await res.json();
-
-            if (data.success) {
-                setMatchData(null);
-                await fetchData();
-                router.replace('/match', { scroll: false });
-                return;
-            }
-        } catch (e) {
-            alert('Next process failed: ' + e);
-        } finally {
-            hideLoader();
             setLoading(false);
         }
     };
@@ -694,21 +668,6 @@ function MatchContent() {
     const userMatchPlayed = userMatch?.isPlayed ?? false;
     const unplayedMatches = todaysMatches.filter(m => !m.isPlayed);
 
-    // Show next process if: 
-    // 1. Everything is played
-    // 2. OR User is not playing today
-    // 3. OR User has played their match already
-    // 4. Always show if no matches at all (off-day or new season without matches scheduled)
-    const showNextProcess = unplayedMatches.length === 0 || !isUserPlayingToday || userMatchPlayed || todaysMatches.length === 0;
-    
-    console.log('[Match Page] Button Logic:', {
-        todaysMatchesCount: todaysMatches.length,
-        unplayedMatchesCount: unplayedMatches.length,
-        isUserPlayingToday,
-        userMatchPlayed,
-        showNextProcess
-    });
-
     const getSubstitutionInfo = (teamId: string) => {
         const subs = (matchData?.events || []).filter((e: any) => e.type === 'SUB' && e.teamId === teamId);
         const subInIds = new Set(subs.map((e: any) => e.playerId).filter(Boolean));
@@ -792,13 +751,6 @@ function MatchContent() {
                 <div>
                     <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ Match Day</h2>
                 </div>
-
-                {showNextProcess && (
-                    <button onClick={nextProcess} disabled={loading} className="btn btn-primary md:w-auto md:py-3 md:px-6 md:text-base" style={{ padding: '10px 16px', fontSize: '0.9rem', background: 'var(--accent)', width: '100%' }}>
-                        {loading ? 'Processing...' :
-                            unplayedMatches.length > 0 ? '⏩ Simulate other teams and advance' : '🏁 Advance to next day'}
-                    </button>
-                )}
             </div>
 
             {/* IF NO MATCHES TODAY */}
