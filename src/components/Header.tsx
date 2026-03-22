@@ -1,15 +1,19 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { formatDateLong } from '@/lib/dateFormat';
 import NextProcessButton from '@/components/NextProcessButton';
+import { usePageLoader } from '@/components/PageLoaderProvider';
 
 interface HeaderProps {
     onMenuClick: () => void;
 }
 
 export default function Header({ onMenuClick }: HeaderProps) {
+    const router = useRouter();
+    const { showLoader, hideLoader } = usePageLoader();
     const [gameDate, setGameDate] = useState<string>('');
     const [season, setSeason] = useState<number>(1);
     const [loggingOut, setLoggingOut] = useState(false);
@@ -98,10 +102,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
                         disabled={loggingOut}
                         onClick={async () => {
                             setLoggingOut(true);
+                            showLoader('Signing out...');
                             try {
                                 await fetch('/api/auth/logout', { method: 'POST' });
-                                window.location.href = '/login';
+                                router.push('/login', { scroll: false });
                             } finally {
+                                hideLoader();
                                 setLoggingOut(false);
                             }
                         }}

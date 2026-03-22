@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { usePageLoader } from '@/components/PageLoaderProvider';
 
 interface NextProcessButtonProps {
     compact?: boolean;
@@ -9,15 +10,12 @@ interface NextProcessButtonProps {
 
 export default function NextProcessButton({ compact = false }: NextProcessButtonProps) {
     const [loading, setLoading] = useState(false);
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    const router = useRouter();
+    const { showLoader, hideLoader } = usePageLoader();
 
     const handleNextProcess = async () => {
         setLoading(true);
-        let keepLoadingUntilRedirect = false;
+        showLoader('Processing match...');
         try {
             const res = await fetch('/api/game/process', {
                 method: 'POST',
@@ -27,15 +25,14 @@ export default function NextProcessButton({ compact = false }: NextProcessButton
 
             if (data?.success) {
                 if (data.requiresUserAction) {
-                    keepLoadingUntilRedirect = true;
                     alert('You have a match today! Please proceed to the match page');
                     const matchId = data.userMatchId ? `?matchId=${data.userMatchId}` : '';
-                    window.location.href = `/match${matchId}`;
+                    router.push(`/match${matchId}`, { scroll: false });
                     return;
                 }
 
-                keepLoadingUntilRedirect = true;
-                window.location.href = '/';
+                router.push('/', { scroll: false });
+                router.refresh();
                 return;
             }
 
@@ -43,42 +40,13 @@ export default function NextProcessButton({ compact = false }: NextProcessButton
         } catch (e) {
             alert('Next process failed: ' + e);
         } finally {
-            if (!keepLoadingUntilRedirect) {
-                setLoading(false);
-            }
+            hideLoader();
+            setLoading(false);
         }
     };
 
     return (
         <>
-            {mounted && loading && createPortal(
-                <div
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        background: 'rgba(15, 23, 42, 0.45)',
-                        zIndex: 99999,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backdropFilter: 'blur(2px)'
-                    }}
-                >
-                    <div
-                        style={{
-                            background: 'white',
-                            borderRadius: '12px',
-                            padding: '1rem 1.25rem',
-                            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-                            fontWeight: 700,
-                            color: 'var(--accent)'
-                        }}
-                    >
-                        ⏳ Processing match...
-                    </div>
-                </div>,
-                document.body
-            )}
             <button
                 onClick={handleNextProcess}
                 disabled={loading}

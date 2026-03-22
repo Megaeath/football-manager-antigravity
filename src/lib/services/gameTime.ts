@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import type { GlobalGameSettings } from '@prisma/client';
+import type { GlobalGameSettings, Prisma } from '@prisma/client';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { processWeeklyFinances, autoRenewContracts, processInactivePlayerPopularityDecay, processAgeBasedExpDecay } from '../engine/financial';
 import { applyPromotionRelegation, applySeasonExpAdjustments, applySeasonRewards } from './seasonAwards';
@@ -132,11 +132,13 @@ function generateYouthAttributes(naturalPosition: string, quality: 'talented' | 
 async function generateMonthlyFreeAgentProspects(currentDate: Date, count: number = 3) {
     let talentedCount = 0;
     let normalCount = 0;
+    const month = currentDate.getUTCMonth() + 1;
+    const canGenerateTalented = month % 2 === 0; // talented only in even months: 2,4,...,12
 
     for (let i = 0; i < count; i++) {
         const position = PLAYER_POSITIONS[randomInt(0, PLAYER_POSITIONS.length - 1)];
         const age = randomInt(16, 19);
-        const quality: 'talented' | 'normal' = Math.random() < 0.45 ? 'talented' : 'normal';
+        const quality: 'talented' | 'normal' = canGenerateTalented && Math.random() < 0.45 ? 'talented' : 'normal';
 
         await prisma.player.create({
             data: {
@@ -311,11 +313,11 @@ export async function advanceDay() {
         const weekKey = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7));
 
         // Weekly injury recovery progression
-        await (prisma.player as any).updateMany({
+        await prisma.player.updateMany({
             where: { injuryWeeksRemaining: { gt: 0 } },
             data: { injuryWeeksRemaining: { decrement: 1 } }
         });
-        await (prisma.player as any).updateMany({
+        await prisma.player.updateMany({
             where: { injuryWeeksRemaining: 0, injurySeverity: { not: null } },
             data: { injurySeverity: null }
         });
@@ -371,7 +373,7 @@ export async function advanceDay() {
         // Find teams that haven't been processed in the last 14 days
         const fourteenDaysAgo = new Date(nextDate);
         fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 14);
-        
+
         const overdueTeams = await prisma.team.findMany({
             where: {
                 id: { not: settings.userTeamId || undefined },
@@ -393,7 +395,7 @@ export async function advanceDay() {
             console.log(`[GameTime] Processing AI Market for ${toProcess.length}/${overdueTeams.length} overdue teams...`);
 
             const { processAIMarketForTeam } = await import('./aiMarketService');
-            
+
             // Process in series with atomic date updates to avoid race conditions
             for (const team of toProcess) {
                 try {
@@ -521,7 +523,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     });
 
     const retiredPlayerIds: string[] = [];
-    const retirementReplacements: any[] = [];
+    const retirementReplacements: Prisma.PlayerCreateManyInput[] = [];
     for (const player of playersToRetire) {
         if (player.age >= player.retirementAge) {
             retiredPlayerIds.push(player.id);
@@ -601,7 +603,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     // All teams get 3 youth players
     const YOUTH_PLAYERS_PER_TEAM = 3;
 
-    const allYouthToCreate: any[] = [];
+    const allYouthToCreate: Prisma.PlayerCreateManyInput[] = [];
     for (const team of allTeams) {
         const teamStanding = standings.find(s => s.teamId === team.id);
         const ranking = teamStanding?.ranking || allTeams.indexOf(team) + 1;
@@ -665,7 +667,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     // 7. AI Role & Tactical Position Auto-Assignment
     const finalDate = nextDate ?? seasonStartDate;
     console.log('[StartNewSeason] Step 7: AI Role Auto-Assignment');
-    
+
     // Auto-assign player roles for all AI teams
     try {
         const { autoAssignRolesForAllAITeams } = await import('./aiRoleSelector');
@@ -684,7 +686,7 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
     } catch (error) {
         console.error('[StartNewSeason] Failed to auto-assign tactical positions:', error);
     }
-    
+
     console.log('[StartNewSeason] Step 8: Updating global settings');
     console.log('[StartNewSeason] Final date:', finalDate.toISOString());
     console.log('[StartNewSeason] New season:', nextSeason);

@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { usePageLoader } from '@/components/PageLoaderProvider';
 
 // Types
 type TeamMatchStats = {
@@ -73,6 +74,7 @@ function MatchContent() {
     const searchParams = useSearchParams();
     const queryMatchId = searchParams.get('matchId');
     const router = useRouter();
+    const { showLoader, hideLoader } = usePageLoader();
 
     const [gameInfo, setGameInfo] = useState<any>(null);
     const [todaysMatches, setTodaysMatches] = useState<MatchData[]>([]);
@@ -288,7 +290,7 @@ function MatchContent() {
 
     const nextProcess = async () => {
         setLoading(true);
-        let keepLoadingUntilRedirect = false;
+        showLoader('Processing match...');
         try {
             const res = await fetch('/api/game/process', {
                 method: 'POST',
@@ -298,17 +300,15 @@ function MatchContent() {
 
             if (data.success) {
                 setMatchData(null);
-                // Force a hard reload to ensure fresh data after season transition
-                keepLoadingUntilRedirect = true;
-                window.location.href = '/match';
+                await fetchData();
+                router.replace('/match', { scroll: false });
                 return;
             }
         } catch (e) {
             alert('Next process failed: ' + e);
         } finally {
-            if (!keepLoadingUntilRedirect) {
-                setLoading(false);
-            }
+            hideLoader();
+            setLoading(false);
         }
     };
 

@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import SeasonSelector from '@/components/SeasonSelector';
 import PlayerModal from '@/components/PlayerModal';
+import { usePageLoader } from '@/components/PageLoaderProvider';
 
 interface Stat {
     playerId: string;
@@ -48,6 +48,16 @@ export default function RankingsClient({
     selectedCompetition: string;
 }) {
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const { showLoader } = usePageLoader();
+
+    const navigateWithParams = (next: Record<string, string>) => {
+        showLoader('Loading rankings...');
+        const params = new URLSearchParams(searchParams);
+        Object.entries(next).forEach(([k, v]) => params.set(k, v));
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    };
 
     const isCup = selectedCompetition === 'cup';
     const subtitle = isCup
@@ -62,7 +72,11 @@ export default function RankingsClient({
                     <h1 className="text-2xl md:text-4xl" style={{ margin: 0 }}>📊 Player Rankings</h1>
                     <p style={{ margin: '0.5rem 0 0 0', opacity: 0.9 }}>{subtitle}</p>
                 </div>
-                <SeasonSelector currentSeason={currentSeason} selectedSeason={selectedSeason} />
+                <SeasonSelector
+                    currentSeason={currentSeason}
+                    selectedSeason={selectedSeason}
+                    onBeforeNavigate={() => showLoader('Loading rankings...')}
+                />
             </div>
 
             {/* Competition tabs */}
@@ -72,9 +86,10 @@ export default function RankingsClient({
                     ['league', '🏟️ League'],
                     ['cup', '🏆 Cup']
                 ] as const).map(([comp, label]) => (
-                    <Link
+                    <button
                         key={comp}
-                        href={`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&competition=${comp}`}
+                        type="button"
+                        onClick={() => navigateWithParams({ season: String(selectedSeason), tab: activeTab, division: String(selectedDivision), competition: comp })}
                         style={{
                             padding: '8px 18px',
                             borderRadius: '20px',
@@ -83,11 +98,12 @@ export default function RankingsClient({
                             fontSize: '0.9rem',
                             background: selectedCompetition === comp ? 'var(--primary)' : 'var(--card-bg)',
                             color: selectedCompetition === comp ? 'white' : 'inherit',
-                            border: '1px solid var(--border)'
+                            border: '1px solid var(--border)',
+                            cursor: 'pointer'
                         }}
                     >
                         {label}
-                    </Link>
+                    </button>
                 ))}
             </div>
 
@@ -96,9 +112,10 @@ export default function RankingsClient({
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 600 }}>Division:</span>
                     {[1, 2, 3].map((division) => (
-                        <Link
+                        <button
                             key={division}
-                            href={`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${division}&competition=${selectedCompetition}`}
+                            type="button"
+                            onClick={() => navigateWithParams({ season: String(selectedSeason), tab: activeTab, division: String(division), competition: selectedCompetition })}
                             style={{
                                 padding: '6px 14px',
                                 borderRadius: '8px',
@@ -106,11 +123,12 @@ export default function RankingsClient({
                                 background: selectedDivision === division ? 'var(--primary)' : 'var(--card-bg)',
                                 color: selectedDivision === division ? 'white' : 'inherit',
                                 border: '1px solid var(--border)',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                cursor: 'pointer'
                             }}
                         >
                             D{division}
-                        </Link>
+                        </button>
                     ))}
                 </div>
             )}
@@ -118,19 +136,22 @@ export default function RankingsClient({
             {/* Tabs */}
             <div style={{ display: 'flex', background: 'var(--card-bg)', borderRadius: '12px', padding: '4px', border: '1px solid var(--border)', overflowX: 'auto' }}>
                 {tabs.map(tab => (
-                    <Link
+                    <button
                         key={tab.id}
-                        href={`/rankings?season=${selectedSeason}&tab=${tab.id}&division=${selectedDivision}&competition=${selectedCompetition}`}
+                        type="button"
+                        onClick={() => navigateWithParams({ season: String(selectedSeason), tab: tab.id, division: String(selectedDivision), competition: selectedCompetition })}
                         style={{
                             flex: 1, textAlign: 'center', padding: '12px 16px', borderRadius: '8px',
                             background: activeTab === tab.id ? 'var(--primary)' : 'transparent',
                             color: activeTab === tab.id ? 'white' : 'inherit',
                             fontWeight: '600', transition: 'all 0.2s', textDecoration: 'none',
-                            whiteSpace: 'nowrap', fontSize: '0.9rem'
+                            whiteSpace: 'nowrap', fontSize: '0.9rem',
+                            border: 'none',
+                            cursor: 'pointer'
                         }}
                     >
                         {tab.icon} {tab.name}
-                    </Link>
+                    </button>
                 ))}
             </div>
 
@@ -165,7 +186,10 @@ export default function RankingsClient({
                                     </td>
                                     <td style={{ padding: '16px' }}>
                                         <button
-                                            onClick={() => router.push(`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&competition=${selectedCompetition}&playerId=${p.playerId}`)}
+                                            onClick={() => {
+                                                showLoader('Loading player...');
+                                                router.push(`/rankings?season=${selectedSeason}&tab=${activeTab}&division=${selectedDivision}&competition=${selectedCompetition}&playerId=${p.playerId}`, { scroll: false });
+                                            }}
                                             style={{ color: 'var(--primary)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: '600' }}
                                         >
                                             {p.playerName}

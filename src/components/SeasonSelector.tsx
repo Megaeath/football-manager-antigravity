@@ -6,9 +6,10 @@ import { LEAGUE } from '@/lib/constants/uiLabels';
 interface SeasonSelectorProps {
     currentSeason: number;
     selectedSeason: number;
+    onBeforeNavigate?: () => void;
 }
 
-export default function SeasonSelector({ currentSeason, selectedSeason }: SeasonSelectorProps) {
+export default function SeasonSelector({ currentSeason, selectedSeason, onBeforeNavigate }: SeasonSelectorProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -16,9 +17,10 @@ export default function SeasonSelector({ currentSeason, selectedSeason }: Season
     const seasons = Array.from({ length: currentSeason }, (_, i) => i + 1);
 
     const handleSeasonChange = (season: string) => {
+        onBeforeNavigate?.();
         const params = new URLSearchParams(searchParams);
         params.set('season', season);
-        router.push(`${pathname}?${params.toString()}`);
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
     };
 
     return (
