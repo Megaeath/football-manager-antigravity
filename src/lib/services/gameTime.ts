@@ -287,20 +287,6 @@ export async function advanceDay() {
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
 
-    // Bootstrap: if there are no free-agent youth at all, create an initial pool immediately
-    // This helps existing saves start seeing the new system before the next 15th day of month.
-    try {
-        const freeYouthCount = await prisma.player.count({
-            where: { teamId: null, isRetired: false, age: { gte: 16, lte: 19 } }
-        });
-        if (freeYouthCount === 0) {
-            console.log('[GameTime] Bootstrap: no free-agent youth found, generating initial 3 prospects...');
-            await generateMonthlyFreeAgentProspects(nextDate, 3);
-        }
-    } catch (error) {
-        console.error('[GameTime] Failed bootstrap free-agent youth generation:', error);
-    }
-
     console.log('[GameTime] Advancing from', settings.currentDate.toISOString(), 'to', nextDate.toISOString());
     console.log('[GameTime] Is new year?', isNewYear);
 
