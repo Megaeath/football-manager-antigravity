@@ -791,11 +791,6 @@ function MatchContent() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="md:flex-row md:justify-between md:items-flex-end">
                 <div>
                     <h2 style={{ fontSize: '1.5rem', margin: 0 }} className="md:text-2xl">⚽ Match Day</h2>
-                    <p style={{ color: 'var(--muted)', marginTop: '4px', fontSize: '0.9rem' }} className="md:text-base">
-                        {new Date(gameInfo.currentDate).toLocaleDateString('th-TH', {
-                            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                        })}
-                    </p>
                 </div>
 
                 {showNextProcess && (

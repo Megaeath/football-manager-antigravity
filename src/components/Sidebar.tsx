@@ -118,7 +118,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const SidebarContent = () => (
         <>
             <div style={{ padding: '16px 14px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <h1 style={{ fontSize: '1.1rem', margin: 0, color: 'white', letterSpacing: '0.6px' }}>FM TEXT ⚽</h1>
+                <h1 style={{ fontSize: '1.1rem', margin: 0, color: 'white', letterSpacing: '0.6px' }}>FM ⚽</h1>
             </div>
 
             <nav style={{

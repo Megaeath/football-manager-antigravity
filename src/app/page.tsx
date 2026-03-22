@@ -1,18 +1,14 @@
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
-import NextProcessButton from '@/components/NextProcessButton';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
-import { formatDateLong, formatDateShort } from '@/lib/dateFormat';
+import { formatDateShort } from '@/lib/dateFormat';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { NAVIGATION, LEAGUE, SQUAD, FINANCES, MATCH, PLAYERS, HOME } from '@/lib/constants/uiLabels';
 
 export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
-
-    // Use AD (Gregorian) format with English locale
-    const dateStr = formatDateLong(gameDate);
 
     // Get settings to find user team
     const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
@@ -219,30 +215,6 @@ export default async function Home() {
 
     return (
         <div className="flex flex-col gap-6 md:gap-8">
-            {/* Hero Header */}
-            <div className="hero-gradient flex flex-col gap-4 md:flex-row md:justify-between md:items-start">
-                <div className="min-w-0">
-                    <h1 className="text-2xl md:text-4xl font-extrabold" style={{ margin: 0 }}>⚽ FOOTBALL MANAGER</h1>
-                    <p className="text-base md:text-lg" style={{ margin: '12px 0 0 0', opacity: 0.9 }}>
-                        {userTeam ? `Lead ${userTeam.name} to Championship Glory` : 'Prepare Your Team for What\'s Coming'}
-                    </p>
-                </div>
-                <div className="w-full md:w-auto text-right" style={{
-                    background: 'rgba(255,255,255,0.15)',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(255,255,255,0.3)'
-                }}>
-                    <div className="text-xs uppercase" style={{ opacity: 0.8, marginBottom: '4px' }}>{HOME.CURRENT_DATE}</div>
-                    <div className="text-lg md:text-xl font-bold">{dateStr}</div>
-                    <div className="text-xs mt-2" style={{ opacity: 0.8 }}>{HOME.SEASON} {settings?.currentSeason || 1}</div>
-                    <div className="mt-3">
-                        <NextProcessButton />
-                    </div>
-                </div>
-            </div>
-
             {/* User Team Overview Cards */}
             {userTeam && (
                 <div className="grid-auto-fit-md" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>

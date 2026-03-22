@@ -79,7 +79,14 @@ export default function NextProcessButton() {
                 onClick={handleNextProcess}
                 disabled={loading}
                 className="btn btn-primary"
-                style={{ padding: '10px 16px', fontSize: '0.95rem', background: 'var(--accent)' }}
+                style={{
+                    padding: '12px 20px',
+                    fontSize: '1rem',
+                    fontWeight: 800,
+                    background: 'var(--accent)',
+                    borderRadius: '10px',
+                    boxShadow: '0 6px 16px rgba(0,0,0,0.18)'
+                }}
             >
                 {loading ? 'Processing...' : '🏁 Advance to Next Day'}
             </button>

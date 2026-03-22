@@ -168,41 +168,50 @@ function generateAttributes(position: string): PlayerAttributeSet {
     base.stamina = randomInt(12, 17);
 
     if (position === 'DC') {
-        base.tackling = randomInt(15, 20);
-        base.heading = randomInt(15, 20);
-        base.strength = randomInt(15, 20);
-        base.positioning = randomInt(14, 19);
+        base.tackling = randomInt(11, 20);
+        base.heading = randomInt(11, 18);
+        base.strength = randomInt(7, 18);
+        base.positioning = randomInt(14, 18);
+        base.teamwork = randomInt(7, 18);
+        base.balance = randomInt(13, 18);
     }
 
     if (position === 'MC') {
         base.passing = randomInt(15, 20);
         base.vision = randomInt(14, 20);
-        base.teamwork = randomInt(14, 19);
+        base.teamwork = randomInt(5, 19);
+        base.dribbling = randomInt(5, 15);
+        base.stamina = randomInt(12,17);
+        base.bravery = randomInt(5, 17);
+        base.tackling = randomInt(5, 15);
     }
 
     if (position === 'FW') {
-        base.shooting = randomInt(15, 20);
-        base.pace = randomInt(13, 18);
-        base.acceleration = randomInt(14, 19);
-        base.composure = randomInt(14, 19);
+        base.shooting = randomInt(13, 20);
+        base.pace = randomInt(11, 18);
+        base.acceleration = randomInt(11, 19);
+        base.composure = randomInt(11, 19);
+        base.agility = randomInt(13, 18);
+        base.positioning = randomInt(5, 18);
+        base.balance = randomInt(7, 17);
     }
 
     const isWinger = position === 'MR' || position === 'ML';
     const isFullBack = position === 'DR' || position === 'DL';
 
     if (isWinger) {
-        base.dribbling = randomInt(15, 20);
-        base.crossing = randomInt(15, 20);
-        base.pace = randomInt(15, 20);
-        base.acceleration = randomInt(15, 20);
-        base.agility = randomInt(14, 19);
+        base.dribbling = randomInt(11, 20);
+        base.crossing = randomInt(11, 20);
+        base.pace = randomInt(11, 20);
+        base.acceleration = randomInt(11, 20);
+        base.agility = randomInt(11, 19);
     }
 
     if (isFullBack) {
-        base.crossing = randomInt(13, 18);
-        base.tackling = randomInt(13, 18);
-        base.pace = randomInt(14, 19);
-        base.stamina = randomInt(15, 20);
+        base.crossing = randomInt(11, 18);
+        base.tackling = randomInt(11, 18);
+        base.pace = randomInt(11, 19);
+        base.stamina = randomInt(7, 20);
         base.throw = randomInt(15, 20);
     }
 
@@ -228,11 +237,11 @@ function generateSuperstarAttributes(position: string, naturalPosition: string):
         const exp = randomInt(50, 110);
         const candidate = generateAttributes(position);
 
-        // Global boost for elite baseline
-        (Object.keys(candidate) as Array<keyof PlayerAttributeSet>).forEach((k) => {
-            if (k === 'handling' && position !== 'GK') return;
-            candidate[k] = clampStat(candidate[k] + randomInt(2, 5));
-        });
+        // // Global boost for elite baseline
+        // (Object.keys(candidate) as Array<keyof PlayerAttributeSet>).forEach((k) => {
+        //     if (k === 'handling' && position !== 'GK') return;
+        //     candidate[k] = clampStat(candidate[k] + randomInt(2, 5));
+        // });
 
         // Position-specific elite profile
         if (position === 'GK') {
@@ -374,7 +383,7 @@ export async function initializeNewGame(userTeamName: string) {
                     morale: 100,
                     condition: 100,
                     isRetired: false,
-                    popularity: isSuperstar ? randomInt(65, 90) : randomInt(8, 35),
+                    popularity: isSuperstar ? randomInt(10, 30) : randomInt(0, 10),
                     exp: superstar?.exp || 0,
                     birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
                     ...stats
