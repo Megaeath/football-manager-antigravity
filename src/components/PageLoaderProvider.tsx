@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 type PageLoaderContextValue = {
   showLoader: (message?: string) => void;
@@ -11,25 +10,18 @@ type PageLoaderContextValue = {
 const PageLoaderContext = createContext<PageLoaderContextValue | null>(null);
 
 export function PageLoaderProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [visible, setVisible] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [message, setMessage] = useState('Processing...');
+  const visible = pendingCount > 0;
 
   const showLoader = useCallback((nextMessage?: string) => {
     setMessage(nextMessage || 'Processing...');
-    setVisible(true);
+    setPendingCount((prev) => prev + 1);
   }, []);
 
   const hideLoader = useCallback(() => {
-    setVisible(false);
+    setPendingCount((prev) => Math.max(0, prev - 1));
   }, []);
-
-  // Auto-hide after successful route change to avoid stale overlays.
-  useEffect(() => {
-    if (!visible) return;
-    const timer = setTimeout(() => setVisible(false), 250);
-    return () => clearTimeout(timer);
-  }, [pathname, visible]);
 
   const value = useMemo(() => ({ showLoader, hideLoader }), [showLoader, hideLoader]);
 

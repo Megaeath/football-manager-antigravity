@@ -547,14 +547,14 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         <div>
             {fromMatch && matchId && upcomingMatch && (
                 <div className="card" style={{ marginBottom: '1.5rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }} className="md:flex-row md:items-center md:justify-between">
-                        <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <h3 style={{ margin: 0 }}>Ready to start the match?</h3>
-                            <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
+                            <span style={{ color: 'var(--muted)' }}>
                                 Opponent: <strong>{upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeam.name : upcomingMatch.homeTeam.name}</strong>
-                            </p>
+                            </span>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }} className="md:flex-row">
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <button
                                 onClick={() => {
                                     const opponentId = upcomingMatch.homeTeamId === teamId ? upcomingMatch.awayTeamId : upcomingMatch.homeTeamId;
@@ -562,11 +562,11 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 }}
                                 className="btn btn-secondary"
                                 disabled={loading}
-                                style={{ width: '100%' }}
+                                style={{ width: 'auto' }}
                             >
                                 🔍 ดูOpponent
                             </button>
-                            <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary" style={{ width: '100%' }}>
+                            <button onClick={handleStartMatch} disabled={loading} className="btn btn-primary" style={{ width: 'auto' }}>
                                 {loading ? 'Starting match...' : 'Start Match'}
                             </button>
                         </div>
