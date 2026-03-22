@@ -181,7 +181,7 @@ function generateAttributes(position: string): PlayerAttributeSet {
         base.vision = randomInt(14, 20);
         base.teamwork = randomInt(5, 19);
         base.dribbling = randomInt(5, 15);
-        base.stamina = randomInt(12,17);
+        base.stamina = randomInt(12, 17);
         base.bravery = randomInt(5, 17);
         base.tackling = randomInt(5, 15);
     }
@@ -249,31 +249,60 @@ function generateSuperstarAttributes(position: string, naturalPosition: string):
             candidate.positioning = randomInt(16, 20);
             candidate.composure = randomInt(16, 20);
             candidate.bravery = randomInt(16, 20);
+            candidate.agility = randomInt(16, 20);
+            candidate.stamina = randomInt(14, 20);
         } else if (position === 'DC') {
             candidate.tackling = randomInt(17, 20);
             candidate.heading = randomInt(17, 20);
             candidate.strength = randomInt(16, 20);
             candidate.positioning = randomInt(16, 20);
             candidate.composure = randomInt(15, 20);
+            candidate.stamina = randomInt(15, 20);
+            candidate.balance = randomInt(15, 20);
+            candidate.strength = randomInt(16, 20);
         } else if (position === 'MC') {
             candidate.passing = randomInt(17, 20);
             candidate.vision = randomInt(17, 20);
             candidate.teamwork = randomInt(16, 20);
             candidate.composure = randomInt(16, 20);
             candidate.stamina = randomInt(16, 20);
+            candidate.dribbling = randomInt(14, 20);
+            candidate.teamwork = randomInt(16, 20);
+            candidate.bravery = randomInt(14, 20);
+            candidate.tackling = randomInt(14, 20);
         } else if (position === 'FW') {
             candidate.shooting = randomInt(18, 20);
             candidate.composure = randomInt(17, 20);
-            candidate.positioning = randomInt(16, 20);
+            candidate.positioning = randomInt(14, 20);
+            candidate.acceleration = randomInt(14, 20);
+            candidate.pace = randomInt(14, 20);
+            candidate.agility = randomInt(14, 20);
+            candidate.stamina = randomInt(14, 20);
+            candidate.heading = randomInt(14, 20);
+            candidate.balance = randomInt(14, 20);
+            candidate.strength = randomInt(14, 20);
+        } else if (position === 'DR' || position === 'DL') {
+ candidate.pace = randomInt(16, 20);
             candidate.acceleration = randomInt(16, 20);
-            candidate.pace = randomInt(16, 20);
+            candidate.crossing = randomInt(16, 20);
+            candidate.stamina = randomInt(16, 20);
+            candidate.agility = randomInt(16, 20);
+            candidate.strength = randomInt(16, 20);
+            candidate.throw = randomInt(16, 20);
+            candidate.balance = randomInt(16, 20);
+            candidate.positioning = randomInt(14, 20);
+            candidate.tackling = randomInt(14, 20);
         } else {
-            // MR/ML/DR/DL
+            // MR/ML
             candidate.pace = randomInt(16, 20);
             candidate.acceleration = randomInt(16, 20);
             candidate.dribbling = randomInt(16, 20);
             candidate.crossing = randomInt(16, 20);
             candidate.stamina = randomInt(16, 20);
+            candidate.agility = randomInt(16, 20);
+            candidate.strength = randomInt(16, 20);
+            candidate.vision = randomInt(16, 20);
+            candidate.passing = randomInt(16, 20);
         }
 
         const power = calculateSeedPower(candidate, naturalPosition, exp);

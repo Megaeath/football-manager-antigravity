@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export default function NextProcessButton() {
+interface NextProcessButtonProps {
+    compact?: boolean;
+}
+
+export default function NextProcessButton({ compact = false }: NextProcessButtonProps) {
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
 
@@ -80,15 +84,15 @@ export default function NextProcessButton() {
                 disabled={loading}
                 className="btn btn-primary"
                 style={{
-                    padding: '12px 20px',
-                    fontSize: '1rem',
+                    padding: compact ? '8px 12px' : '12px 20px',
+                    fontSize: compact ? '0.85rem' : '1rem',
                     fontWeight: 800,
                     background: 'var(--accent)',
-                    borderRadius: '10px',
+                    borderRadius: compact ? '8px' : '10px',
                     boxShadow: '0 6px 16px rgba(0,0,0,0.18)'
                 }}
             >
-                {loading ? 'Processing...' : '🏁 Advance to Next Day'}
+                {loading ? 'Processing...' : compact ? '🏁 Next Day' : '🏁 Advance to Next Day'}
             </button>
         </>
     );

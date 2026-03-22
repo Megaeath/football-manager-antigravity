@@ -26,7 +26,9 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.stamina = 2;
         weights.positioning = 1;
         weights.crossing = 2;
-        weights.passing = 1;
+        weights.tackling = 2;
+        weights.agility = 2;
+        weights.acceleration = 2;
     } else if (['DMC', 'DM'].includes(targetPosition)) {
         // Defensive Midfielder = ball-winner + deep playmaker bridge
         // Balance toward midfield intelligence/build-up, not pure center-back profile
@@ -76,7 +78,7 @@ export function calculateSuitability(attributes: PlayerAttributes, targetPositio
         weights.balance = 1;
         weights.acceleration = 1;
         weights.agility = 1;
-        weights._fwBonus = 10; // +10% for FW power calculation
+        weights._fwBonus = 7; // +10% for FW power calculation
     }
 
     // Calculate weighted sum of attributes that matter for the position

@@ -1923,9 +1923,6 @@ function MatchContent() {
                         )}
                     </div>
 
-                    <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border)', background: '#f8fafc', textAlign: 'center' }}>
-                        <button onClick={() => setMatchData(null)} className="btn btn-primary" style={{ background: 'var(--accent)' }}>เสร็จสิ้น และประมวลผลต่อ</button>
-                    </div>
                 </div>
             )}
             <PlayerModal />

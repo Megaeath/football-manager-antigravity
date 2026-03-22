@@ -82,7 +82,7 @@ export function calculatePlayerPower(params: {
     }
 
     if (nat === 'MC') {
-      if (tgt === 'MC') return 10;
+      if (tgt === 'MC') return 5;
       if (tgt === 'DMC') return 8;
       if (tgt === 'AMC') return 5;
       if (tgt === 'DC') return -7;
