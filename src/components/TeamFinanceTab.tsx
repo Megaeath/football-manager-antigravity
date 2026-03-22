@@ -60,7 +60,9 @@ export default function TeamFinanceTab({ teamId }: { teamId: string }) {
 
     const formatCurrency = (num: number) => {
         const safeNumber = Number.isFinite(num) ? Math.round(num) : 0;
-        return `$${new Intl.NumberFormat('en-US').format(Math.abs(safeNumber))}`;
+        const abs = Math.abs(safeNumber);
+        const sign = safeNumber < 0 ? '-' : '';
+        return `${sign}$${new Intl.NumberFormat('en-US').format(abs)}`;
     };
 
     const getStatusColor = (status: string) => {
@@ -309,7 +311,7 @@ export default function TeamFinanceTab({ teamId }: { teamId: string }) {
             <div className="finances-header">
                 <div className="big-number">
                     <div className="big-number-label">Current Balance</div>
-                    <div className="big-number-value">{formatCurrency(data.balance)}</div>
+                    <div className={`big-number-value ${data.balance >= 0 ? '' : 'negative'}`}>{formatCurrency(data.balance)}</div>
                 </div>
                 <div className="big-number">
                     <div className="big-number-label">Weekly Income</div>

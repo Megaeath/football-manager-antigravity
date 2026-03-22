@@ -31,6 +31,11 @@ export default function NextProcessButton({ compact = false }: NextProcessButton
                     return;
                 }
 
+                // Notify persistent UI (e.g. Header) that in-game date/season may have changed.
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new Event('game-date-updated'));
+                }
+
                 router.push('/', { scroll: false });
                 router.refresh();
                 return;

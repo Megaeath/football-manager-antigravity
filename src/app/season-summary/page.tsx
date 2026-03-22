@@ -286,7 +286,9 @@ export default async function SeasonSummaryPage({
                                 <th style={{ padding: '12px', textAlign: 'center', width: '60px' }}>L</th>
                                 <th style={{ padding: '12px', textAlign: 'center', width: '70px' }}>GD</th>
                                 <th style={{ padding: '12px', textAlign: 'center', width: '70px' }}>Pts</th>
-                                <th style={{ padding: '12px', textAlign: 'center', width: '120px' }}>Reward</th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>Position</th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>Achievement</th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>Total</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -306,8 +308,22 @@ export default async function SeasonSummaryPage({
                                         <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1.05rem' }}>{row.points}</td>
                                         <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>
                                             {reward ? (
-                                                <span style={{ color: reward.total > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: '600' }}>
-                                                    {reward.total > 0 ? '+' : ''}{formatCurrency(reward.total)}
+                                                <span style={{ color: 'var(--success)', fontWeight: '600' }}>
+                                                    +{formatCurrency(reward.positionPrize + reward.tvShare + (reward.commercialBonus || 0) + (reward.championBonus || 0))}
+                                                </span>
+                                            ) : '-'}
+                                        </td>
+                                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>
+                                            {reward?.achievementBonus ? (
+                                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>
+                                                    +{formatCurrency(reward.achievementBonus)}
+                                                </span>
+                                            ) : <span style={{ color: 'var(--muted)' }}>-</span>}
+                                        </td>
+                                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.95rem' }}>
+                                            {reward ? (
+                                                <span style={{ color: reward.total > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: '700' }}>
+                                                    {formatCurrency(reward.total)}
                                                 </span>
                                             ) : '-'}
                                         </td>
@@ -338,8 +354,21 @@ export default async function SeasonSummaryPage({
                                     <div>L: <strong>{row.lost}</strong></div>
                                 </div>
                                 {reward && (
-                                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)', textAlign: 'center', fontWeight: '600', color: reward.total > 0 ? 'var(--success)' : 'var(--danger)' }}>
-                                        Reward: {reward.total > 0 ? '+' : ''}{formatCurrency(reward.total)}
+                                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                                            <span style={{ color: 'var(--muted)' }}>Position:</span>
+                                            <span style={{ color: 'var(--success)', fontWeight: '600' }}>+{formatCurrency(reward.positionPrize + reward.tvShare + (reward.commercialBonus || 0) + (reward.championBonus || 0))}</span>
+                                        </div>
+                                        {reward.achievementBonus ? (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                                                <span style={{ color: 'var(--muted)' }}>Achievement:</span>
+                                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>+{formatCurrency(reward.achievementBonus)}</span>
+                                            </div>
+                                        ) : null}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: '700' }}>
+                                            <span>Total:</span>
+                                            <span style={{ color: reward.total > 0 ? 'var(--success)' : 'var(--danger)' }}>{formatCurrency(reward.total)}</span>
+                                        </div>
                                     </div>
                                 )}
                             </div>

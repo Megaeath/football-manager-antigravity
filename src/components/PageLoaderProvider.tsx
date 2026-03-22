@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 type PageLoaderContextValue = {
   showLoader: (message?: string) => void;
@@ -10,9 +11,12 @@ type PageLoaderContextValue = {
 const PageLoaderContext = createContext<PageLoaderContextValue | null>(null);
 
 export function PageLoaderProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pendingCount, setPendingCount] = useState(0);
   const [message, setMessage] = useState('Processing...');
   const visible = pendingCount > 0;
+  const previousNavKeyRef = useRef<string | null>(null);
 
   const showLoader = useCallback((nextMessage?: string) => {
     setMessage(nextMessage || 'Processing...');
@@ -22,6 +26,26 @@ export function PageLoaderProvider({ children }: { children: React.ReactNode }) 
   const hideLoader = useCallback(() => {
     setPendingCount((prev) => Math.max(0, prev - 1));
   }, []);
+
+  // Auto-clear loader when navigation completes (including query-only changes).
+  useEffect(() => {
+    const navKey = `${pathname}?${searchParams.toString()}`;
+
+    if (previousNavKeyRef.current === null) {
+      previousNavKeyRef.current = navKey;
+      return;
+    }
+
+    if (previousNavKeyRef.current !== navKey) {
+      previousNavKeyRef.current = navKey;
+      if (pendingCount > 0) {
+        const timer = window.setTimeout(() => {
+          setPendingCount(0);
+        }, 0);
+        return () => window.clearTimeout(timer);
+      }
+    }
+  }, [pathname, searchParams, pendingCount]);
 
   const value = useMemo(() => ({ showLoader, hideLoader }), [showLoader, hideLoader]);
 

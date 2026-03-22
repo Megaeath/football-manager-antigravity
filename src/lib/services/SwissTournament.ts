@@ -28,6 +28,38 @@ const KNOCKOUT_ROUNDS = {
   FINAL: 4
 } as const;
 
+function normalizeUTCDate(date: Date) {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+function getCupRoundDate(startDate: Date, phase: 'SWISS' | 'KNOCKOUT', round: number) {
+  const date = normalizeUTCDate(startDate);
+  const offset = phase === 'SWISS'
+    ? Math.max(0, round - 1)
+    : 8 + Math.max(0, round - 1);
+  date.setUTCDate(date.getUTCDate() + offset * CUP_ROUND_INTERVAL_DAYS);
+  return date;
+}
+
+function resolveKnockoutWinner(match: {
+  homeTeamId: string;
+  awayTeamId: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  penaltyHome: number | null;
+  penaltyAway: number | null;
+}) {
+  const home = match.homeScore ?? 0;
+  const away = match.awayScore ?? 0;
+  if (home > away) return match.homeTeamId;
+  if (away > home) return match.awayTeamId;
+  const penHome = match.penaltyHome ?? -1;
+  const penAway = match.penaltyAway ?? -1;
+  return penHome >= penAway ? match.homeTeamId : match.awayTeamId;
+}
+
 type CupTournamentModel = typeof prisma extends { cupTournament: infer T } ? T : never;
 
 function getCupTournamentModel() {
@@ -141,7 +173,51 @@ export async function initializeCupTournamentForSeason(season: number) {
   const existing = await cupTournamentModel.findUnique({
     where: { season }
   });
-  if (existing) return existing;
+  if (existing) {
+    const existingStandingsCount = await prisma.swissStanding.count({ where: { tournamentId: existing.id } });
+    const isCorrupted = existingStandingsCount === 0;
+    if (!isCorrupted) return existing;
+
+    console.warn(
+      `[SwissTournament] Detected corrupted tournament state for season ${season} ` +
+      `(standings=${existingStandingsCount}). Rebuilding tournament state...`
+    );
+
+    const teams = await prisma.team.findMany({ select: { id: true } });
+    if (teams.length < 2) throw new Error('Not enough teams to rebuild Cup tournament');
+
+    await prisma.$transaction([
+      prisma.match.deleteMany({ where: { cupTournamentId: existing.id, competitionType: 'CUP' } }),
+      prisma.swissStanding.deleteMany({ where: { tournamentId: existing.id } }),
+      prisma.swissMatchHistory.deleteMany({ where: { tournamentId: existing.id } })
+    ]);
+
+    await prisma.swissStanding.createMany({
+      data: teams.map((t) => ({
+        tournamentId: existing.id,
+        teamId: t.id,
+        played: 0,
+        win: 0,
+        draw: 0,
+        loss: 0,
+        points: 0,
+        gd: 0,
+        gf: 0,
+        buchholzScore: 0,
+        form: ''
+      }))
+    });
+
+    return await cupTournamentModel.update({
+      where: { id: existing.id },
+      data: {
+        status: 'ACTIVE',
+        phase: 'SWISS',
+        currentRound: 1,
+        finishedAt: null
+      }
+    });
+  }
 
   const teams = await prisma.team.findMany({ select: { id: true } });
   if (teams.length < 2) throw new Error('Not enough teams to initialize Cup tournament');
@@ -181,38 +257,170 @@ export async function initializeCupTournamentForSeason(season: number) {
     }))
   });
 
-  const shuffled = shuffle(teams.map((t) => t.id));
-  const round1Pairings: Pairing[] = [];
-  for (let i = 0; i < shuffled.length; i += 2) {
-    if (!shuffled[i + 1]) break;
-    round1Pairings.push({ homeTeamId: shuffled[i], awayTeamId: shuffled[i + 1] });
+  // Important: do NOT create pairings now.
+  // Cup schedule is pre-planned by dates; fixtures are drawn when round date is reached.
+  return tournament;
+}
+
+export async function ensureCupFixturesForDate(season: number, currentDate: Date) {
+  const cupTournamentModel = getCupTournamentModel();
+  if (!cupTournamentModel) return null;
+
+  const today = normalizeUTCDate(currentDate);
+  let tournament = await cupTournamentModel.findUnique({ where: { season } });
+  if (!tournament || tournament.status !== 'ACTIVE') return tournament;
+
+  const roundMatches = await prisma.match.findMany({
+    where: {
+      cupTournamentId: tournament.id,
+      competitionType: 'CUP',
+      competitionPhase: tournament.phase,
+      competitionRound: tournament.currentRound
+    },
+    orderBy: { date: 'asc' }
+  });
+
+  // If current round exists and is fully played, only progress state (no immediate pairing).
+  if (roundMatches.length > 0 && roundMatches.every((m) => m.isPlayed)) {
+    if (tournament.phase === 'SWISS') {
+      await recomputeSwissStandings(tournament.id);
+      if (tournament.currentRound >= SWISS_ROUNDS) {
+        tournament = await cupTournamentModel.update({
+          where: { id: tournament.id },
+          data: { phase: 'KNOCKOUT', currentRound: KNOCKOUT_ROUNDS.ROUND_OF_16 }
+        });
+      } else {
+        tournament = await cupTournamentModel.update({
+          where: { id: tournament.id },
+          data: { currentRound: tournament.currentRound + 1 }
+        });
+      }
+    } else {
+      if (tournament.currentRound >= KNOCKOUT_ROUNDS.FINAL) {
+        tournament = await cupTournamentModel.update({
+          where: { id: tournament.id },
+          data: { status: 'FINISHED', finishedAt: new Date(today) }
+        });
+      } else {
+        tournament = await cupTournamentModel.update({
+          where: { id: tournament.id },
+          data: { currentRound: tournament.currentRound + 1 }
+        });
+      }
+    }
+  }
+
+  if (tournament.status !== 'ACTIVE') return tournament;
+
+  // Do nothing until the planned round date arrives.
+  const dueDate = getCupRoundDate(tournament.startDate, tournament.phase as 'SWISS' | 'KNOCKOUT', tournament.currentRound);
+  if (today < dueDate) return tournament;
+
+  const existingForRound = await prisma.match.count({
+    where: {
+      cupTournamentId: tournament.id,
+      competitionType: 'CUP',
+      competitionPhase: tournament.phase,
+      competitionRound: tournament.currentRound
+    }
+  });
+  if (existingForRound > 0) return tournament;
+
+  if (tournament.phase === 'SWISS') {
+    let pairings: Pairing[] = [];
+
+    if (tournament.currentRound === 1) {
+      const rows = await prisma.swissStanding.findMany({ where: { tournamentId: tournament.id }, select: { teamId: true } });
+      const shuffled = shuffle(rows.map((r) => r.teamId));
+      for (let i = 0; i < shuffled.length; i += 2) {
+        if (!shuffled[i + 1]) break;
+        pairings.push({ homeTeamId: shuffled[i], awayTeamId: shuffled[i + 1] });
+      }
+    } else {
+      const standings = await recomputeSwissStandings(tournament.id);
+      const historyRows = await prisma.swissMatchHistory.findMany({ where: { tournamentId: tournament.id } });
+      const playedPairs = new Set<string>(historyRows.map((h) => normalizedPair(h.teamAId, h.teamBId)));
+      const pointsMap = new Map(standings.map((s) => [s.teamId, s.points]));
+      pairings = buildSwissPairingsBacktracking(standings.map((s) => s.teamId), pointsMap, playedPairs);
+    }
+
+    await prisma.match.createMany({
+      data: pairings.map((p) => ({
+        date: dueDate,
+        season: tournament.season,
+        competitionType: 'CUP',
+        competitionPhase: 'SWISS',
+        competitionRound: tournament.currentRound,
+        cupTournamentId: tournament.id,
+        homeTeamId: p.homeTeamId,
+        awayTeamId: p.awayTeamId,
+        isPlayed: false
+      }))
+    });
+
+    await prisma.swissMatchHistory.createMany({
+      data: pairings.map((p) => {
+        const [teamAId, teamBId] = p.homeTeamId < p.awayTeamId
+          ? [p.homeTeamId, p.awayTeamId]
+          : [p.awayTeamId, p.homeTeamId];
+        return { tournamentId: tournament.id, teamAId, teamBId };
+      })
+    });
+
+    return tournament;
+  }
+
+  // KNOCKOUT pairing on due date
+  const knockoutPairings: Pairing[] = [];
+  if (tournament.currentRound === KNOCKOUT_ROUNDS.ROUND_OF_16) {
+    const standings = await recomputeSwissStandings(tournament.id);
+    const top16 = standings.slice(0, 16).map((s) => s.teamId);
+    const shuffled = shuffle(top16);
+    if (shuffled.length < 16) throw new Error('Cannot draw R16: fewer than 16 teams qualified from Swiss phase');
+    for (let i = 0; i < shuffled.length; i += 2) {
+      knockoutPairings.push({ homeTeamId: shuffled[i], awayTeamId: shuffled[i + 1] });
+    }
+  } else {
+    const prevRound = tournament.currentRound - 1;
+    const prevMatches = await prisma.match.findMany({
+      where: {
+        cupTournamentId: tournament.id,
+        competitionType: 'CUP',
+        competitionPhase: 'KNOCKOUT',
+        competitionRound: prevRound,
+        isPlayed: true
+      },
+      select: {
+        homeTeamId: true,
+        awayTeamId: true,
+        homeScore: true,
+        awayScore: true,
+        penaltyHome: true,
+        penaltyAway: true
+      },
+      orderBy: { homeTeamId: 'asc' }
+    });
+
+    const winners = prevMatches.map(resolveKnockoutWinner);
+    const shuffledWinners = shuffle(winners);
+    for (let i = 0; i < shuffledWinners.length; i += 2) {
+      if (!shuffledWinners[i + 1]) break;
+      knockoutPairings.push({ homeTeamId: shuffledWinners[i], awayTeamId: shuffledWinners[i + 1] });
+    }
   }
 
   await prisma.match.createMany({
-    data: round1Pairings.map((p) => ({
-      date: startDate,
-      season,
+    data: knockoutPairings.map((m) => ({
+      date: dueDate,
+      season: tournament.season,
       competitionType: 'CUP',
-      competitionPhase: 'SWISS',
-      competitionRound: 1,
+      competitionPhase: 'KNOCKOUT',
+      competitionRound: tournament.currentRound,
       cupTournamentId: tournament.id,
-      homeTeamId: p.homeTeamId,
-      awayTeamId: p.awayTeamId,
+      homeTeamId: m.homeTeamId,
+      awayTeamId: m.awayTeamId,
       isPlayed: false
     }))
-  });
-
-  await prisma.swissMatchHistory.createMany({
-    data: round1Pairings.map((p) => {
-      const [teamAId, teamBId] = p.homeTeamId < p.awayTeamId
-        ? [p.homeTeamId, p.awayTeamId]
-        : [p.awayTeamId, p.homeTeamId];
-      return {
-        tournamentId: tournament.id,
-        teamAId,
-        teamBId
-      };
-    })
   });
 
   return tournament;
@@ -341,7 +549,7 @@ export async function drawNextSwissRoundIfReady(tournamentId: string) {
     where: {
       cupTournamentId: tournamentId,
       competitionType: 'CUP',
-      competitionPhase: 'SWISS',
+      competitionPhase: tournament.phase,
       competitionRound: tournament.currentRound
     }
   });
@@ -349,109 +557,42 @@ export async function drawNextSwissRoundIfReady(tournamentId: string) {
   if (currentRoundMatches.length === 0) return null;
   if (currentRoundMatches.some((m) => !m.isPlayed)) return null;
 
-  const standings = await recomputeSwissStandings(tournamentId);
+  if (tournament.phase === 'SWISS') {
+    await recomputeSwissStandings(tournamentId);
 
-  if (tournament.currentRound >= SWISS_ROUNDS) {
-    await seedRandomKnockoutFromSwiss(tournamentId, standings);
+    if (tournament.currentRound >= SWISS_ROUNDS) {
+      await cupTournamentModel.update({
+        where: { id: tournamentId },
+        data: {
+          phase: 'KNOCKOUT',
+          currentRound: KNOCKOUT_ROUNDS.ROUND_OF_16
+        }
+      });
+      return { advancedTo: 'KNOCKOUT' };
+    }
+
     await cupTournamentModel.update({
       where: { id: tournamentId },
-      data: {
-        phase: 'KNOCKOUT',
-        currentRound: KNOCKOUT_ROUNDS.ROUND_OF_16
-      }
+      data: { currentRound: tournament.currentRound + 1 }
     });
-    return { advancedTo: 'KNOCKOUT' };
+
+    return { advancedTo: `SWISS_${tournament.currentRound + 1}` };
   }
 
-  const historyRows = await prisma.swissMatchHistory.findMany({ where: { tournamentId } });
-  const playedPairs = new Set<string>(historyRows.map((h) => normalizedPair(h.teamAId, h.teamBId)));
-
-  const pointsMap = new Map(standings.map((s) => [s.teamId, s.points]));
-  const nextPairings = buildSwissPairingsBacktracking(standings.map((s) => s.teamId), pointsMap, playedPairs);
-
-  const nextRoundDate = new Date(currentRoundMatches[0].date);
-  nextRoundDate.setUTCDate(nextRoundDate.getUTCDate() + CUP_ROUND_INTERVAL_DAYS);
-
-  await prisma.match.createMany({
-    data: nextPairings.map((p) => ({
-      date: nextRoundDate,
-      season: tournament.season,
-      competitionType: 'CUP',
-      competitionPhase: 'SWISS',
-      competitionRound: tournament.currentRound + 1,
-      cupTournamentId: tournamentId,
-      homeTeamId: p.homeTeamId,
-      awayTeamId: p.awayTeamId,
-      isPlayed: false
-    }))
-  });
-
-  await prisma.swissMatchHistory.createMany({
-    data: nextPairings.map((p) => {
-      const [teamAId, teamBId] = p.homeTeamId < p.awayTeamId
-        ? [p.homeTeamId, p.awayTeamId]
-        : [p.awayTeamId, p.homeTeamId];
-      return { tournamentId, teamAId, teamBId };
-    })
-  });
+  if (tournament.currentRound >= KNOCKOUT_ROUNDS.FINAL) {
+    await cupTournamentModel.update({
+      where: { id: tournamentId },
+      data: { status: 'FINISHED', finishedAt: new Date() }
+    });
+    return { advancedTo: 'FINISHED' };
+  }
 
   await cupTournamentModel.update({
     where: { id: tournamentId },
     data: { currentRound: tournament.currentRound + 1 }
   });
 
-  return { advancedTo: `SWISS_${tournament.currentRound + 1}` };
-}
-
-async function seedRandomKnockoutFromSwiss(tournamentId: string, standings?: StandingRow[]) {
-  const cupTournamentModel = getCupTournamentModel();
-  if (!cupTournamentModel) return;
-
-  const table = standings || await recomputeSwissStandings(tournamentId);
-  const top16 = table.slice(0, 16).map((s) => s.teamId);
-  const shuffled = shuffle(top16);
-
-  if (shuffled.length < 16) {
-    throw new Error('Cannot seed knockout: fewer than 16 teams qualified from Swiss phase');
-  }
-
-  const tournament = await cupTournamentModel.findUnique({ where: { id: tournamentId } });
-  if (!tournament) throw new Error('Tournament not found');
-
-  const lastSwissDate = await prisma.match.findFirst({
-    where: {
-      cupTournamentId: tournamentId,
-      competitionType: 'CUP',
-      competitionPhase: 'SWISS'
-    },
-    orderBy: { date: 'desc' },
-    select: { date: true }
-  });
-
-  const knockoutDate = new Date(lastSwissDate?.date || tournament.startDate);
-  knockoutDate.setUTCDate(knockoutDate.getUTCDate() + CUP_ROUND_INTERVAL_DAYS);
-
-  const matches: Pairing[] = [];
-  for (let i = 0; i < shuffled.length; i += 2) {
-    matches.push({
-      homeTeamId: shuffled[i],
-      awayTeamId: shuffled[i + 1]
-    });
-  }
-
-  await prisma.match.createMany({
-    data: matches.map((m) => ({
-      date: knockoutDate,
-      season: tournament.season,
-      competitionType: 'CUP',
-      competitionPhase: 'KNOCKOUT',
-      competitionRound: KNOCKOUT_ROUNDS.ROUND_OF_16,
-      cupTournamentId: tournamentId,
-      homeTeamId: m.homeTeamId,
-      awayTeamId: m.awayTeamId,
-      isPlayed: false
-    }))
-  });
+  return { advancedTo: `KNOCKOUT_${tournament.currentRound + 1}` };
 }
 
 export async function getCupSwissTable(season: number) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getExpiringContracts, handleContractRenewal } from '@/lib/engine/financial';
+import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
@@ -21,14 +22,26 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             teamId: team.id,
             teamName: team.name,
-            expiringPlayers: expiringPlayers.map(p => ({
-                id: p.id,
-                name: p.name,
-                naturalPosition: p.naturalPosition,
-                age: p.age,
-                weeklyWage: p.weeklyWage,
-                contractEndWeek: p.contractEndWeek
-            })),
+            expiringPlayers: expiringPlayers.map(p => {
+                const attributes = toPlayerAttributes(p);
+                const natPos = p.naturalPosition.split('_')[0];
+                const powerResult = calculatePlayerPower({
+                    attributes,
+                    targetPosition: natPos,
+                    naturalPosition: p.naturalPosition,
+                    condition: 100,
+                    exp: p.exp
+                });
+                return {
+                    id: p.id,
+                    name: p.name,
+                    naturalPosition: p.naturalPosition,
+                    age: p.age,
+                    weeklyWage: p.weeklyWage,
+                    contractEndWeek: p.contractEndWeek,
+                    power: powerResult.powerWithExp
+                };
+            }),
             totalExpiring: expiringPlayers.length
         });
     } catch (error) {

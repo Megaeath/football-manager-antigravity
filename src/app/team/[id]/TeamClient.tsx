@@ -172,7 +172,12 @@ export default function TeamClient({
             .catch(() => setTrainingLoading(false));
     }, [activeTab, team.id, trainingState, trainingLoading]);
 
-    const formatCurrency = (num: number) => `$${new Intl.NumberFormat('en-US').format(Math.abs(Math.round(num || 0)))}`;
+    const formatCurrency = (num: number) => {
+        const safeNumber = Number.isFinite(num) ? Math.round(num) : 0;
+        const abs = Math.abs(safeNumber);
+        const sign = safeNumber < 0 ? '-' : '';
+        return `${sign}$${new Intl.NumberFormat('en-US').format(abs)}`;
+    };
 
     const getBasePosition = (posId?: string | null) => (posId ? posId.split('_')[0] : null);
     const toHundred = (values: number[]) => {

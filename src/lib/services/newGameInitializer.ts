@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { getDivisionName } from './divisionSystem';
 import { AI_PLAYSTYLE_PROFILES } from './aiPlaystyleProfiles';
 import { generateSeasonFixtures } from './fixtureGenerator';
+import { initializeCupTournamentForSeason } from './SwissTournament';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
 type PlayerAttributeSet = {
@@ -95,7 +96,6 @@ const LAST_NAMES = [
 
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const clampStat = (v: number) => Math.max(1, Math.min(20, v));
 
 function pickRandomAIPlaystyleId() {
     if (AI_PLAYSTYLE_PROFILES.length === 0) {
@@ -459,6 +459,9 @@ export async function initializeNewGame(userTeamName: string) {
         const teamCount = divisionTeams.length;
         matchCount += teamCount * (teamCount - 1);
     }
+
+    // Initialize Cup tournament state for season 1 so schedule/fixtures are available immediately.
+    await initializeCupTournamentForSeason(1);
 
     return {
         success: true,

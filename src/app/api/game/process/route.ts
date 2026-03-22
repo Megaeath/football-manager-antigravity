@@ -4,7 +4,7 @@ import { processMatch, processMatchFinancials } from '@/lib/services/matchSimula
 import { autoAssignTacticalPositions } from '@/lib/services/autoTacticalPositionSelector';
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
 import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam, syncAIPlaystyleTeamBase } from '@/lib/services/aiPlaystyleService';
-import { drawNextSwissRoundIfReady } from '@/lib/services/SwissTournament';
+import { drawNextSwissRoundIfReady, ensureCupFixturesForDate } from '@/lib/services/SwissTournament';
 import prisma from '@/lib/prisma';
 
 async function ensureAITeamPlaystyles(userTeamId: string) {
@@ -235,6 +235,13 @@ export async function POST(req: Request) {
         }
 
         if (action === 'next_process') {
+            // Ensure cup fixtures are drawn when their scheduled date is reached.
+            try {
+                await ensureCupFixturesForDate(settings.currentSeason, new Date(settings.currentDate));
+            } catch (error) {
+                console.error('[Process API] Failed to ensure cup fixtures for date:', error);
+            }
+
             // 1. Find all pending unplayed matches up to TODAY (UTC Range)
             // This prevents skipped fixtures if previous days still have unplayed matches.
             const currentDate = new Date(settings.currentDate);

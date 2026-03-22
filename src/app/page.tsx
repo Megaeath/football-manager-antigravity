@@ -6,6 +6,16 @@ import { formatDateShort } from '@/lib/dateFormat';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { NAVIGATION, LEAGUE, SQUAD, FINANCES, MATCH, PLAYERS, HOME } from '@/lib/constants/uiLabels';
 
+function cupPhaseLabel(phase: string | null, round: number | null): string {
+    if (!phase) return '🏆 Cup';
+    if (phase === 'SWISS') return `🏆 Swiss Rd.${round ?? '?'}`;
+    if (phase === 'KNOCKOUT') {
+        const labels: Record<number, string> = { 1: 'R16', 2: 'QF', 3: 'SF', 4: 'Final' };
+        return `🏆 ${labels[round ?? 0] ?? `KO Rd.${round}`}`;
+    }
+    return `🏆 ${phase}`;
+}
+
 export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
@@ -245,6 +255,18 @@ export default async function Home() {
                     {upcomingMatch && (
                         <div className="card card-gradient-warning">
                             <h4 className="text-lg font-semibold" style={{ margin: '0 0 1rem 0', color: 'var(--accent)' }}>🎯 {MATCH.NEXT_MATCH}</h4>
+                            <div className="text-xs font-semibold mb-2" style={{ color: 'var(--muted)' }}>
+                                {(() => {
+                                    const type = String((upcomingMatch as any).competitionType || 'LEAGUE').toUpperCase();
+                                    if (type === 'CUP') {
+                                        return cupPhaseLabel(
+                                            (upcomingMatch as any).competitionPhase ?? null,
+                                            (upcomingMatch as any).competitionRound ?? null
+                                        );
+                                    }
+                                    return '🏟️ League';
+                                })()}
+                            </div>
                             <div className="flex flex-col gap-2 mb-2">
                                 {(() => {
                                     const isHomeUser = upcomingMatch.homeTeamId === userTeamId;

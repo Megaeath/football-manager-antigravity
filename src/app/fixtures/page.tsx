@@ -157,6 +157,15 @@ export default async function FixturesPage({
         orderBy: { date: 'asc' }
     });
 
+    // Find next (not played) cup match for selected team
+    let nextCupMatchId: string | null = null;
+    if (isCup && selectedTeamId) {
+        const next = matches.find((m: any) =>
+            !m.isPlayed && (m.homeTeamId === selectedTeamId || m.awayTeamId === selectedTeamId)
+        );
+        if (next) nextCupMatchId = next.id;
+    }
+
     const teams = isLeague
         ? await prisma.team.findMany({
             where: league ? { leagueId: league.id } : undefined,
@@ -305,6 +314,7 @@ export default async function FixturesPage({
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {(dateMatches as any[]).map((m: any) => {
+                                    const isNextCupMatch = isCup && nextCupMatchId && m.id === nextCupMatchId;
                                     const isPlayed = m.isPlayed;
                                     const isCupMatch = m.competitionType === 'CUP';
                                     const hasPenalties = m.wentToPenalties && m.penaltyHome !== null && m.penaltyAway !== null;
@@ -314,15 +324,20 @@ export default async function FixturesPage({
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '0',
-                                            background: 'var(--card-bg)',
+                                            background: isNextCupMatch ? 'rgba(251,191,36,0.10)' : 'var(--card-bg)',
                                             borderRadius: '12px',
-                                            border: `1px solid ${isCupMatch ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
+                                            border: isNextCupMatch
+                                                ? '2.5px solid #fbbf24'
+                                                : `1px solid ${isCupMatch ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
                                             overflow: 'hidden',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                                            boxShadow: isNextCupMatch ? '0 0 0 2px #fbbf24' : '0 2px 4px rgba(0,0,0,0.02)'
                                         }}>
-                                            {/* Cup phase badge row */}
+                                            {/* Cup phase badge row + Next Match badge */}
                                             {(isCupMatch || isAll) && isCupMatch && (
                                                 <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
                                                     padding: '4px 14px',
                                                     background: 'rgba(245,158,11,0.1)',
                                                     borderBottom: '1px solid rgba(245,158,11,0.2)',
@@ -332,6 +347,20 @@ export default async function FixturesPage({
                                                     letterSpacing: '0.05em'
                                                 }}>
                                                     {cupPhaseLabel(m.competitionPhase, m.competitionRound)}
+                                                    {isNextCupMatch && (
+                                                        <span style={{
+                                                            background: '#fbbf24',
+                                                            color: 'white',
+                                                            borderRadius: '8px',
+                                                            padding: '2px 10px',
+                                                            fontSize: '0.72rem',
+                                                            fontWeight: 800,
+                                                            marginLeft: '8px',
+                                                            letterSpacing: '0.04em'
+                                                        }}>
+                                                            NEXT MATCH
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
 

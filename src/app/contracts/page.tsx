@@ -15,6 +15,7 @@ interface ContractPlayer {
     weeklyWage: number;
     contractEndWeek: number;
     popularity: number;
+    power: number;
 }
 
 interface ContractsResponse {
@@ -150,6 +151,7 @@ export default function ContractsPage() {
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
                                     <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold' }}>{CONTRACTS.PLAYER}</th>
+                                    <th style={{ padding: '12px', textAlign: 'center', width: '70px' }}>{CONTRACTS.POWER}</th>
                                     <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>{CONTRACTS.POSITION}</th>
                                     <th style={{ padding: '12px', textAlign: 'center', width: '70px' }}>{CONTRACTS.AGE}</th>
                                     <th style={{ padding: '12px', textAlign: 'center', width: '120px' }}>{CONTRACTS.CURRENT_WAGE}</th>
@@ -170,6 +172,20 @@ export default function ContractsPage() {
                                                 >
                                                     {player.name}
                                                 </button>
+                                            </td>
+                                            <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                <span style={{
+                                                    background: player.power >= 75 ? 'linear-gradient(135deg, #10b981, #059669)' : player.power >= 65 ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #6b7280, #4b5563)',
+                                                    color: 'white',
+                                                    padding: '6px 12px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '0.85rem',
+                                                    fontWeight: '700',
+                                                    display: 'inline-block',
+                                                    minWidth: '40px'
+                                                }}>
+                                                    {player.power}
+                                                </span>
                                             </td>
                                             <td style={{ padding: '12px', textAlign: 'center' }}>
                                                 <span style={{ 
@@ -238,7 +254,8 @@ export default function ContractsPage() {
                                         {badge.label}
                                     </span>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '12px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '12px' }}>
+                                    <div>{CONTRACTS.POWER}: <strong style={{ color: player.power >= 75 ? '#10b981' : player.power >= 65 ? '#f59e0b' : '#6b7280' }}>{player.power}</strong></div>
                                     <div>{CONTRACTS.POSITION}: <strong style={{ color: 'var(--foreground)' }}>{player.naturalPosition}</strong></div>
                                     <div>{CONTRACTS.AGE}: <strong style={{ color: 'var(--foreground)' }}>{player.age}</strong></div>
                                     <div>{CONTRACTS.WAGE}: <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(player.weeklyWage)}</strong></div>

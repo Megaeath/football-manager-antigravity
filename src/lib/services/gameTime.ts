@@ -134,11 +134,12 @@ async function generateMonthlyFreeAgentProspects(currentDate: Date, count: numbe
     let normalCount = 0;
     const month = currentDate.getUTCMonth() + 1;
     const canGenerateTalented = month % 2 === 0; // talented only in even months: 2,4,...,12
+    const talentedSlots = canGenerateTalented ? 1 : 0; // even month: exactly 1 talented, odd month: 0
 
     for (let i = 0; i < count; i++) {
         const position = PLAYER_POSITIONS[randomInt(0, PLAYER_POSITIONS.length - 1)];
         const age = randomInt(16, 19);
-        const quality: 'talented' | 'normal' = canGenerateTalented && Math.random() < 0.45 ? 'talented' : 'normal';
+        const quality: 'talented' | 'normal' = i < talentedSlots ? 'talented' : 'normal';
 
         await prisma.player.create({
             data: {
@@ -163,7 +164,7 @@ async function generateMonthlyFreeAgentProspects(currentDate: Date, count: numbe
         else normalCount++;
     }
 
-    console.log(`[GameTime] Added ${count} free-agent youth prospects (age 16-19): talented=${talentedCount}, normal=${normalCount}`);
+    console.log(`[GameTime] Added ${count} free-agent youth prospects (age 16-19): talented=${talentedCount}, normal=${normalCount}, month=${month}`);
 }
 
 export async function getGameTime() {
@@ -345,8 +346,8 @@ export async function advanceDay() {
     const isProspectGenerationDay = nextDate.getUTCDate() === 15;
     if (isProspectGenerationDay) {
         try {
-            console.log('[GameTime] Generating monthly free-agent youth prospects (1 player) on day 15...');
-            await generateMonthlyFreeAgentProspects(nextDate, 1);
+            console.log('[GameTime] Generating monthly free-agent youth prospects (3 players) on day 15...');
+            await generateMonthlyFreeAgentProspects(nextDate, 3);
 
         } catch (error) {
             console.error('[GameTime] Error generating monthly free-agent prospects:', error);

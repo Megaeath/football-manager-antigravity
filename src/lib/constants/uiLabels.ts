@@ -295,6 +295,7 @@ export const CONTRACTS = {
   CONFIRM_RENEWAL: 'Confirm Renewal',
   PLAYER: 'Player',
   POSITION: 'Pos',
+  POWER: 'Pwr',
   AGE: 'Age',
   STATUS: 'Status',
   LOADING: 'Loading contracts...',

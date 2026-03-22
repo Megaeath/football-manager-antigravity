@@ -21,7 +21,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
     useEffect(() => {
         const fetchDate = async () => {
-            const res = await fetch('/api/game/info');
+            const res = await fetch('/api/game/info', { cache: 'no-store' });
             const data = await res.json();
             if (data.currentDate) {
                 const date = new Date(data.currentDate);

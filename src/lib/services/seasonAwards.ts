@@ -194,11 +194,27 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
     });
     const teamMap = new Map(teams.map(t => [t.id, t]));
 
-    const totalWeight = standings.reduce((sum, _, idx) => sum + (standings.length - idx), 0);
+    // Linear position prize: 1st gets most, last gets least
+    // Division 1: 1st=20M, 20th=5M | Division 2: 1st=15M, 20th=10M | Division 3: 1st=10M, 20th=5M
+    const getPositionPrize = (position: number, numTeams: number) => {
+        const firstPlacePrize = league?.level === 1 ? 20_000_000 : league?.level === 2 ? 15_000_000 : 10_000_000;
+        const lastPlacePrize = league?.level === 1 ? 5_000_000 : league?.level === 2 ? 10_000_000 : 5_000_000;
+
+        // Linear interpolation: prize decreases as position increases
+        const step = (firstPlacePrize - lastPlacePrize) / Math.max(1, numTeams - 1);
+        return Math.round(firstPlacePrize - (position - 1) * step);
+    };
+
+    // Calculate achievement rewards first (needed for team reward calculation)
+    const achievementRewards = [
+        goldenBoot?.player ? { title: 'Golden Boot', playerId: goldenBoot.playerId, playerName: goldenBoot.player?.name, teamId: goldenBoot.teamId } : null,
+        goldenGlove ? { title: 'Golden Glove', playerId: goldenGlove.player.id, playerName: goldenGlove.player.name, teamId: goldenGlove.teamId } : null,
+        playerOfSeason?.player ? { title: 'Player of the Season', playerId: playerOfSeason.playerId, playerName: playerOfSeason.player?.name, teamId: playerOfSeason.teamId } : null
+    ].filter(Boolean) as Array<{ title: string; playerId: string; playerName: string; teamId: string }>;
 
     const rewards = standings.map((team, idx) => {
-        const positionWeight = standings.length - idx;
-        const positionPrize = Math.round((positionWeight / totalWeight) * LEAGUE_PRIZE_POOL * divisionMultiplier);
+        const position = idx + 1;
+        const positionPrize = getPositionPrize(position, standings.length);
         const tvShare = Math.round(TV_RIGHTS_SHARE * divisionMultiplier);
         const jerseySales = jerseySalesMap.get(team.id) || 0;
         const roster = teamMap.get(team.id)?.players || [];
@@ -206,24 +222,38 @@ export async function calculateSeasonAwards(leagueId: string, season: number, ye
         const targetJerseySales = Math.round((avgPopularity / 100) * roster.length * 500 * 52);
         const commercialBonus = jerseySales >= targetJerseySales ? Math.round(COMMERCIAL_BONUS * divisionMultiplier) : 0;
 
+        // Count achievements for this team
+        const achievementCount = achievementRewards.filter(a => a.teamId === team.id).length;
+        const achievementBonus = achievementCount * ACHIEVEMENT_BONUS;
+
         return {
             teamId: team.id,
             teamName: team.name,
             divisionLevel: league?.level || 1,
             divisionName: league?.name || 'Division 1',
-            position: idx + 1,
+            position,
             positionPrize,
             tvShare,
             commercialBonus,
-            total: positionPrize + tvShare + commercialBonus
+            achievementBonus,
+            championBonus: 0, // Will be calculated below
+            total: positionPrize + tvShare + commercialBonus + achievementBonus
         };
     });
 
-    const achievementRewards = [
-        goldenBoot?.player ? { title: 'Golden Boot', playerId: goldenBoot.playerId, playerName: goldenBoot.player?.name, teamId: goldenBoot.teamId } : null,
-        goldenGlove ? { title: 'Golden Glove', playerId: goldenGlove.player.id, playerName: goldenGlove.player.name, teamId: goldenGlove.teamId } : null,
-        playerOfSeason?.player ? { title: 'Player of the Season', playerId: playerOfSeason.playerId, playerName: playerOfSeason.player?.name, teamId: playerOfSeason.teamId } : null
-    ].filter(Boolean) as Array<{ title: string; playerId: string; playerName: string; teamId: string }>;
+    // Champion bonus: ensure 1st place always gets the highest position-related reward
+    if (rewards.length > 1) {
+        const firstPlace = rewards[0];
+        const secondPlace = rewards[1];
+        const firstPlacePositionReward = firstPlace.positionPrize + firstPlace.tvShare + firstPlace.commercialBonus;
+        const secondPlacePositionReward = secondPlace.positionPrize + secondPlace.tvShare + secondPlace.commercialBonus;
+        
+        if (secondPlacePositionReward > firstPlacePositionReward) {
+            const championBonus = secondPlacePositionReward - firstPlacePositionReward + 1;
+            firstPlace.championBonus = championBonus;
+            firstPlace.total += championBonus;
+        }
+    }
 
     return {
         standings,
@@ -257,11 +287,8 @@ export async function applySeasonRewards(season: number, year: number) {
 
             if (alreadyPaid) continue;
 
-            const achievementBonus = achievementRewards
-                .filter(a => a.teamId === reward.teamId)
-                .length * ACHIEVEMENT_BONUS;
-
-            const totalReward = reward.total + achievementBonus;
+            // reward.total already includes positionPrize, tvShare, commercialBonus, championBonus, and achievementBonus
+            const totalReward = reward.total;
 
             await prisma.team.update({
                 where: { id: reward.teamId },
@@ -272,7 +299,8 @@ export async function applySeasonRewards(season: number, year: number) {
                 `Position Prize: ${reward.positionPrize.toLocaleString()}`,
                 `TV Rights: ${reward.tvShare.toLocaleString()}`,
                 reward.commercialBonus ? `Commercial Bonus: ${reward.commercialBonus.toLocaleString()}` : null,
-                achievementBonus ? `Achievement Bonus: ${achievementBonus.toLocaleString()}` : null
+                reward.championBonus ? `Champion Bonus: ${reward.championBonus.toLocaleString()}` : null,
+                reward.achievementBonus ? `Achievement Bonus: ${reward.achievementBonus.toLocaleString()}` : null
             ].filter(Boolean).join(' | ');
 
             await prisma.financialEvent.create({
