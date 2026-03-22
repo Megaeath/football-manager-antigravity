@@ -973,6 +973,7 @@ export async function processMatchFinancials(matchId: string) {
         await tx.financialEvent.create({
             data: {
                 teamId: match.homeTeamId,
+                date: match.date,
                 type: 'MATCHDAY',
                 amount: homeGateRevenue,
                 description: `Matchday home gate (${Math.round(homeAttendanceRate * 100)}% attendance, rank ${homeRankInfo.rank})`
@@ -982,6 +983,7 @@ export async function processMatchFinancials(matchId: string) {
         await tx.financialEvent.create({
             data: {
                 teamId: match.awayTeamId,
+                date: match.date,
                 type: 'MATCHDAY',
                 amount: awayGateRevenue,
                 description: `Away share from matchday gate (${Math.round(awayRevenueShare * 100)}% of home gate, away rank ${awayRankInfo.rank})`

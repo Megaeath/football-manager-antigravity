@@ -25,6 +25,7 @@ interface FinancialData {
         breakdown: {
             sponsorship: number;
             ticketSales: number;
+            matchday?: number;
             jerseySales: number;
             seasonRewards: number;
             playerSales: number;
@@ -98,15 +99,17 @@ export default function FinancesPage() {
         return `${sign}$${abs.toLocaleString()}`;
     };
 
+    const matchdayIncome = data.weeklyData.breakdown.matchday || 0;
+
     const revenueTotal = data.weeklyData.breakdown.sponsorship +
-        data.weeklyData.breakdown.ticketSales +
+        matchdayIncome +
         data.weeklyData.breakdown.jerseySales +
         data.weeklyData.breakdown.seasonRewards +
         data.weeklyData.breakdown.playerSales;
 
     const revenueBreakdown = [
         { label: 'Sponsorship', value: data.weeklyData.breakdown.sponsorship, color: '#3b82f6' },
-        { label: 'Ticket Sales', value: data.weeklyData.breakdown.ticketSales, color: '#10b981' },
+        { label: 'Matchday (Ticket Share)', value: matchdayIncome, color: '#10b981' },
         { label: 'Jersey Sales', value: data.weeklyData.breakdown.jerseySales, color: '#f59e0b' },
         { label: 'Season Rewards', value: data.weeklyData.breakdown.seasonRewards, color: '#8b5cf6' },
         { label: 'Player Sales', value: data.weeklyData.breakdown.playerSales, color: '#ec4899' }
@@ -197,9 +200,9 @@ export default function FinancesPage() {
                             borderRadius: '50%',
                             background: `conic-gradient(
                                 #3b82f6 0deg ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg,
-                                #10b981 ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg,
-                                #f59e0b ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales) / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg,
-                                #8b5cf6 ${((data.weeklyData.breakdown.sponsorship + data.weeklyData.breakdown.ticketSales + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg ${((revenueTotal - data.weeklyData.breakdown.playerSales) / revenueTotal) * 360}deg,
+                                #10b981 ${(data.weeklyData.breakdown.sponsorship / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + matchdayIncome) / revenueTotal) * 360}deg,
+                                #f59e0b ${((data.weeklyData.breakdown.sponsorship + matchdayIncome) / revenueTotal) * 360}deg ${((data.weeklyData.breakdown.sponsorship + matchdayIncome + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg,
+                                #8b5cf6 ${((data.weeklyData.breakdown.sponsorship + matchdayIncome + data.weeklyData.breakdown.jerseySales) / revenueTotal) * 360}deg ${((revenueTotal - data.weeklyData.breakdown.playerSales) / revenueTotal) * 360}deg,
                                 #ec4899 ${((revenueTotal - data.weeklyData.breakdown.playerSales) / revenueTotal) * 360}deg 360deg
                             )`,
                             flexShrink: 0
