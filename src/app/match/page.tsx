@@ -93,10 +93,10 @@ function MatchContent() {
             console.log('[MATCH] Got game info:', info);
             setGameInfo(info);
 
-            // Fetch fixtures for this date
+            // Fetch fixtures for this date (include all competitions: league + cup)
             const date = new Date(info.currentDate).toISOString().split('T')[0];
             console.log('[MATCH] Fetching fixtures for date:', date, 'Season:', info.currentSeason);
-            const fixturesRes = await fetch(`/api/league/fixtures?date=${date}`);
+            const fixturesRes = await fetch(`/api/league/fixtures?date=${date}&competition=all`);
             const fixtures = await fixturesRes.json();
             console.log('[MATCH] Found', fixtures.length, 'matches for', date);
             setTodaysMatches(fixtures);
@@ -1250,6 +1250,7 @@ function MatchContent() {
                                     <div style={{ width: '72px', textAlign: 'center' }} title="Dribbles won">DRB</div>
                                     <div style={{ width: '72px', textAlign: 'center' }} title="Tackles won">TCK</div>
                                     <div style={{ width: '56px', textAlign: 'center' }} title="Fouls committed">FLS</div>
+                                    <div style={{ width: '56px', textAlign: 'center' }} title="EXP gained this match">EXP</div>
                                     <div style={{ width: '36px' }}></div>
                                 </div>
 
@@ -1419,8 +1420,9 @@ function MatchContent() {
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textAlign: 'right' }}>
-                                                                FLS {p.fouls ?? 0}
+                                                            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', textAlign: 'right', display: 'flex', gap: 12 }}>
+                                                                <span>FLS {p.fouls ?? 0}</span>
+                                                                <span>EXP {typeof p.expGain === 'number' ? p.expGain : p.minutes > 0 ? '0' : '-'}</span>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1660,6 +1662,7 @@ function MatchContent() {
                                                         <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.dribblesWon}/{p.dribblesAttempted}</div>
                                                         <div style={{ width: '72px', textAlign: 'center', flexShrink: 0 }}>{p.tacklesWon}/{p.tacklesAttempted}</div>
                                                         <div style={{ width: '56px', textAlign: 'center', flexShrink: 0 }}>{p.fouls ?? 0}</div>
+                                                        <div style={{ width: '56px', textAlign: 'center', fontWeight: 'bold', flexShrink: 0, color: p.expGain > 0 ? 'var(--success)' : 'var(--muted)' }}>{typeof p.expGain === 'number' ? p.expGain : '-'}</div>
                                                         <div style={{ width: '36px', textAlign: 'center', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</div>
                                                     </div>
 

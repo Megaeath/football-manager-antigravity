@@ -612,8 +612,10 @@ async function processAIBuyingLogic(
             }
         }
     } else {
-        // All non-top teams: evaluate every position in current game data
-        const positionToTeamPowers = new Map<string, number[]>();
+        // All non-top teams: Evaluate positions and buy strategically
+        // Priority: 1) Urgent positions (< 2 players), 2) Upgrades (higher power than average)
+        
+        const positionToTeamPowers = new Map<string, { powers: number[]; avgPower: number }>();
         for (const p of team.players) {
             const pos = normalizeDepthPosition(p.naturalPosition);
             const pwr = calculatePlayerPower({
@@ -623,8 +625,17 @@ async function processAIBuyingLogic(
                 exp: p.exp || 0,
             }).powerWithExp;
 
-            if (!positionToTeamPowers.has(pos)) positionToTeamPowers.set(pos, []);
-            positionToTeamPowers.get(pos)!.push(pwr);
+            if (!positionToTeamPowers.has(pos)) {
+                positionToTeamPowers.set(pos, { powers: [], avgPower: 0 });
+            }
+            positionToTeamPowers.get(pos)!.powers.push(pwr);
+        }
+
+        // Calculate average power for each position
+        for (const [pos, data] of positionToTeamPowers.entries()) {
+            data.avgPower = data.powers.length > 0
+                ? data.powers.reduce((sum, p) => sum + p, 0) / data.powers.length
+                : 0;
         }
 
         const allPositions = new Set<string>([
@@ -632,46 +643,94 @@ async function processAIBuyingLogic(
             ...targets.map(t => normalizeDepthPosition(t.player.naturalPosition)),
         ]);
 
+        // Build position priority list
         const positionPriority = Array.from(allPositions).map(pos => {
-            const powers = positionToTeamPowers.get(pos) || [];
-            const avgPower = powers.length > 0
-                ? powers.reduce((sum, p) => sum + p, 0) / powers.length
-                : 0;
+            const posData = positionToTeamPowers.get(pos) || { powers: [], avgPower: 0 };
             const depth = getPositionDepth(teamDepthMap, pos);
-            return { pos, avgPower, depth, hasNoDepth: powers.length === 0, isUrgent: depth < MIN_POSITION_DEPTH };
+            const isUrgent = depth < MIN_POSITION_DEPTH;
+            const hasNoDepth = posData.powers.length === 0;
+            
+            return { 
+                pos, 
+                avgPower: posData.avgPower, 
+                depth, 
+                hasNoDepth, 
+                isUrgent,
+                powers: posData.powers
+            };
         }).sort((a, b) => {
+            // Priority 1: Urgent positions (depth < 2)
             if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
-            if (a.depth !== b.depth) return a.depth - b.depth;
+            // Priority 2: Positions with no players
             if (a.hasNoDepth !== b.hasNoDepth) return a.hasNoDepth ? -1 : 1;
+            // Priority 3: Lower depth first
+            if (a.depth !== b.depth) return a.depth - b.depth;
+            // Priority 4: Lower average power first (weaker positions need upgrades)
             return a.avgPower - b.avgPower;
         });
 
-        for (const { pos, avgPower, hasNoDepth, depth, isUrgent } of positionPriority) {
+        // Determine budget based on urgency
+        const urgentPositions = positionPriority.filter(p => p.isUrgent);
+        const hasUrgentNeed = urgentPositions.length > 0;
+        
+        // Budget: 90% for urgent needs, otherwise follow profile
+        const effectiveMaxBudget = hasUrgentNeed 
+            ? team.balance * 0.90 
+            : team.balance * profileBudgetUsage;
+
+        for (const { pos, avgPower, hasNoDepth, depth, isUrgent, powers } of positionPriority) {
             if (bidsPlaced >= bidsToMake) break;
             if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE && !isUrgent) break;
 
+            // Filter targets for this position
             const posTargets = targets.filter(lp => {
                 const targetPos = getPositionKey(lp.player.naturalPosition);
                 const normalizedTargetPos = normalizeDepthPosition(targetPos);
-                 if (normalizedTargetPos !== pos) return false;
-                 // Urgent or missing positions: accept any available player
-                 if (isUrgent || hasNoDepth) return true;
-                 // Regular upgrade: allow within 5 power of team average (was strictly greater than)
-                 return lp.power >= avgPower - 5;
+                if (normalizedTargetPos !== pos) return false;
+                
+                // Urgent positions: accept any available player
+                if (isUrgent || hasNoDepth) return true;
+                
+                // Non-urgent (upgrade): Must have higher power than team average for this position
+                // This ensures we only buy upgrades, not lateral moves
+                return lp.power > avgPower;
             });
 
             if (posTargets.length > 0) {
+                // Sort by power + style fit, prioritize higher power
                 const sortedTargets = [...posTargets].sort((a, b) => {
-                    const scoreA = a.power + getStyleTransferFitScore(a.player, style);
-                    const scoreB = b.power + getStyleTransferFitScore(b.player, style);
+                    const scoreA = a.power * 1.2 + getStyleTransferFitScore(a.player, style) * 0.3;
+                    const scoreB = b.power * 1.2 + getStyleTransferFitScore(b.player, style) * 0.3;
                     return scoreB - scoreA;
                 });
+                
+                // Take top 3 candidates
                 const pool = sortedTargets.slice(0, Math.min(3, sortedTargets.length));
-                const t = pool[Math.floor(Math.random() * pool.length)];
+                
+                // Check if we can afford any of them
+                const affordableTargets = pool.filter(t => {
+                    const price = t.player.askingPrice || 0;
+                    return price <= effectiveMaxBudget;
+                });
+                
+                if (affordableTargets.length === 0) {
+                    // Can't afford any upgrade for this position
+                    // If urgent, log warning; if not urgent, skip silently (save money for next round)
+                    if (isUrgent) {
+                        const cheapestPrice = pool[0]?.player.askingPrice || 0;
+                        log(`[AI Market] ${team.name} [Style:${style.id}] ⚠️ URGENT: Cannot afford ${pos} upgrade. Need $${cheapestPrice.toLocaleString()}, Budget: $${effectiveMaxBudget.toLocaleString()}. Saving money for next round.`);
+                    }
+                    continue; // Skip this position, try next
+                }
+                
+                // Pick random from affordable targets
+                const t = affordableTargets[Math.floor(Math.random() * affordableTargets.length)];
                 const isFreeAgent = !t.player.teamId;
                 const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
                 const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
-                log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)}, Depth:${depth}, Need2:${isUrgent ? 'Y' : 'N'}, NoDepth:${hasNoDepth ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
+                const powerDiff = t.power - avgPower;
+                log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)} ${powerDiff > 0 ? '+' + powerDiff.toFixed(1) : powerDiff.toFixed(1)}, Depth:${depth}, Urgent:${isUrgent ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
+                
                 if (res.success) {
                     teamDepthMap.set(pos, getPositionDepth(teamDepthMap, pos) + 1);
                     bidsPlaced++;

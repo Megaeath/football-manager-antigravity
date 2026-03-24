@@ -74,13 +74,15 @@ export default async function Home() {
                 homeMatches: {
                     where: {
                         season: settings?.currentSeason || 1,
-                        isPlayed: true
+                        isPlayed: true,
+                        competitionType: 'LEAGUE'
                     }
                 },
                 awayMatches: {
                     where: {
                         season: settings?.currentSeason || 1,
-                        isPlayed: true
+                        isPlayed: true,
+                        competitionType: 'LEAGUE'
                     }
                 }
             }

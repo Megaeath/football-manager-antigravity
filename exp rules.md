@@ -1,6 +1,7 @@
-# Football Player Evolution System (Implemented Reference - March 2026)
 
-This document reflects what is currently implemented in code.
+# Football Player Evolution System (Implemented Reference - March 2026, Updated)
+
+This document reflects the current implementation in code, including the latest EXP calculation logic and GK save bonus.
 
 ## 1) Core EXP Tier Logic (1.8 Rule in code)
 
@@ -19,28 +20,69 @@ Applied through:
 - `getExpMultiplier(exp)`
 - `getEffectiveAttributes()` in power calculation
 
-## 2) Match EXP Gains/Penalties
+## 2) Match EXP Gains/Penalties (calculateMatchExp)
 
-Per match EXP is calculated by `calculateMatchExp()` with:
+For each match, EXP is calculated as follows:
 
-- Starter `>=45 min`: `+1`
-- Sub `>0 min`: `+0.5`
-- MOTM: `+5`
-- Rating `>=9.0`: `+3`
-- Rating `>=7.5`: `+1.5`
-- Goals + Assists: `+1` each (max `+3`)
-- Clean sheet (GK/DF): `+1.5`
-- Rating `<5.0`: `-5`
-- Rating `<=5.5`: `-2`
-- Red card: `-10`
-- Yellow card: `-2` each
-- Own goal: `-5` each (supported by function input)
-- Penalty conceded: `-3` each (supported by function input)
+### Base Gain
 
-Then match EXP is age-adjusted and persisted:
+- Starter (minutes >= 45): `+1`
+- Substitute (minutes > 0): `+0.5`
 
-- Age efficiency is applied per match via `applyAgeEfficiency()`
-- Result is rounded to integer before writing to `player.exp` (Int field)
+### Performance Gain
+
+- Man of the Match (MOTM): `+5`
+- Rating >= 9.0: `+3`
+- Rating >= 7.0: `+1.5`
+- Clean sheet (GK/DF only): `+1.5` (if no goals conceded)
+- **GK Save Bonus:**
+  - If `saves` stat exists: `saves * 0.1`
+  - Else: `(teamShotsOnTargetConceded - goalsConceded) * 0.1` (if > 0)
+
+### Action Gain
+
+- Goals: `+1` per goal (no cap)
+- Assists: `+1` per assist (no cap)
+
+### Penalty Loss
+
+- Rating < 5.0: `-2`
+- Rating <= 5.5: `-1`
+- Red card: `-5`
+- Yellow card: `-1` each
+- Own goal: `-5` each (if provided)
+- Penalty conceded: `-2` each (if provided)
+
+### Total Gain
+
+`totalGain = baseGain + performanceGain + actionGain - penaltyLoss`
+
+### Age Efficiency Adjustment
+
+- Age 16-21: 100%
+- Age 22-28: 70%
+- Age 29-33: 40%
+- Age 34+: 10%
+
+`adjustedGain = totalGain * efficiency`
+
+### Rounding
+
+- The final EXP gain is rounded to the nearest integer: `Math.round(adjustedGain)`
+- This value is added to `player.exp` after the match
+
+### Example (GK)
+
+Suppose a GK plays 90 minutes, rating 6.5, 0 goals, 0 assists, 0 cards, not MOTM, not clean sheet, opponent shots on target = 27, goals conceded = 1, age 25:
+
+- baseGain = 1
+- performanceGain = (GK save bonus: (27-1)*0.1 = 2.6)
+- actionGain = 0
+- penaltyLoss = 0
+- totalGain = 1 + 2.6 + 0 - 0 = 3.6
+- age efficiency (age 25): 0.7
+- adjustedGain = 3.6 * 0.7 = 2.52
+- final EXP = Math.round(2.52) = 3
 
 ## 3) Seasonal Bonuses/Penalties (Enabled)
 
@@ -83,4 +125,3 @@ Flow at season close:
 - Match-time EXP: in `processMatch()` after each played match.
 - Seasonal EXP corrections: in `startNewSeason()` via `applySeasonExpAdjustments()`.
 - Legacy monthly EXP decay function is disabled (to avoid double-decay).
-

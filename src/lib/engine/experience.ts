@@ -91,6 +91,9 @@ export function calculateMatchExp(stats: {
   isMotm?: boolean;
   ownGoals?: number;
   penaltiesConceded?: number;
+  saves?: number;
+  teamShotsOnTargetConceded?: number;
+  goalsConceded?: number;
 }): MatchExpGain {
   let baseGain = 0;
   let performanceGain = 0;
@@ -112,20 +115,19 @@ export function calculateMatchExp(stats: {
   // Rating-based gains
   if (stats.rating >= 9.0) {
     performanceGain += 3;
-  } else if (stats.rating >= 7.5) {
+  } else if (stats.rating >= 7.0) {
     performanceGain += 1.5;
   }
 
   // Rating-based penalties
   if (stats.rating < 5.0) {
-    penaltyLoss += 5;
-  } else if (stats.rating <= 5.5) {
     penaltyLoss += 2;
+  } else if (stats.rating <= 5.5) {
+    penaltyLoss += 1;
   }
 
-  // Goals & Assists (max +3 per match)
-  const totalActions = stats.goals + stats.assists;
-  actionGain = Math.min(totalActions, 3);
+  // Goals & Assists: +1 per goal, +1 per assist (no cap)
+  actionGain = (stats.goals || 0) + (stats.assists || 0);
 
   // Clean sheet bonus (GK/DF only)
   if (stats.cleanSheet && stats.position) {
@@ -135,12 +137,27 @@ export function calculateMatchExp(stats: {
     }
   }
 
+  // GK save bonus (if stat.saves exists, use it; else use team shotsOnTarget - goalsAgainst)
+  if (stats.position && stats.position.toUpperCase().includes('GK')) {
+    let saveBonus = 0;
+    if (typeof stats.saves === 'number') {
+      saveBonus = stats.saves * 0.1;
+    } else if (
+      typeof stats.teamShotsOnTargetConceded === 'number' &&
+      typeof stats.goalsConceded === 'number'
+    ) {
+      const saves = stats.teamShotsOnTargetConceded - stats.goalsConceded;
+      if (saves > 0) saveBonus = saves * 0.1;
+    }
+    performanceGain += saveBonus;
+  }
+
   // Discipline penalties
   if (stats.redCards > 0) {
-    penaltyLoss += 10;
+    penaltyLoss += 5;
   }
   if (stats.yellowCards > 0) {
-    penaltyLoss += 2 * stats.yellowCards;
+    penaltyLoss += 1 * stats.yellowCards;
   }
 
   // Optional penalties (if tracked by simulation pipeline)
@@ -148,10 +165,18 @@ export function calculateMatchExp(stats: {
     penaltyLoss += 5 * (stats.ownGoals || 0);
   }
   if ((stats.penaltiesConceded || 0) > 0) {
-    penaltyLoss += 3 * (stats.penaltiesConceded || 0);
+    penaltyLoss += 2 * (stats.penaltiesConceded || 0);
   }
 
   const totalGain = baseGain + performanceGain + actionGain - penaltyLoss;
+
+  // EXP cannot be negative - minimum is 0
+  // Players always gain at least 0 EXP from a match (no negative EXP)
+  const adjustedTotalGain = Math.max(0, totalGain);
+
+  // Cap maximum EXP gain per match at 3 to prevent players from improving too quickly
+  // This ensures gradual development and prevents "too good too soon" syndrome
+  const cappedTotalGain = Math.min(3, adjustedTotalGain);
 
   return {
     playerId: stats.playerId,
@@ -159,7 +184,7 @@ export function calculateMatchExp(stats: {
     performanceGain,
     actionGain,
     penaltyLoss,
-    totalGain
+    totalGain: cappedTotalGain
   };
 }
 

@@ -161,8 +161,24 @@ function resolveKnockoutTie(homeScore: number, awayScore: number): {
 }
 
 function getRankRevenueRatio(rank: number, divisionLevel: number = 1): number {
-    // Rank 1 = 50%, then -2% per rank, floor at 10%
-    return (Math.max(50 - ((Math.max(1, rank) - 1) * 2), 10) / 100) * getDivisionFinanceMultiplier(divisionLevel);
+    // Attendance based on division level with random variation
+    // Division 1: 90-100%, Division 2: 80-90%, Division 3: 70-80%
+    const attendanceRanges = {
+        1: { min: 0.90, max: 1.00 },
+        2: { min: 0.80, max: 0.90 },
+        3: { min: 0.70, max: 0.80 }
+    };
+    
+    const range = attendanceRanges[divisionLevel] || attendanceRanges[3];
+    
+    // Random attendance within the range for this division
+    // Higher rank gets slightly higher attendance within the range
+    const rankBonus = Math.max(0, (20 - Math.min(20, rank)) * 0.005); // Top rank gets +0-10% within range
+    const randomFactor = Math.random() * (range.max - range.min);
+    const attendance = range.min + randomFactor + rankBonus;
+    
+    // Clamp to ensure within valid range
+    return Math.max(range.min, Math.min(range.max, attendance));
 }
 
 async function getTeamLeagueRank(teamId: string, season: number): Promise<{ rank: number; divisionLevel: number }> {
@@ -754,18 +770,57 @@ export async function processMatch(matchId: string) {
             const cleanSheet = (stat.teamId === matchDB.homeTeamId && finalAwayScore === 0) ||
                               (stat.teamId === matchDB.awayTeamId && finalHomeScore === 0);
             
-            const expGain = calculateMatchExp({
-                playerId: stat.playerId,
-                minutes: stat.minutes,
-                rating: stat.rating,
-                goals: stat.goals,
-                assists: stat.assists,
-                yellowCards: stat.yellowCards,
-                redCards: stat.redCards,
+            // GK save bonus: pass saves, teamShotsOnTargetConceded, goalsConceded if GK
+            let expGain;
+            const isGK = (player.naturalPosition || '').toUpperCase().includes('GK');
+            if (isGK) {
+                // Determine opponent teamId
+                const opponentTeamId = stat.teamId === matchDB.homeTeamId ? matchDB.awayTeamId : matchDB.homeTeamId;
+                // Find opponent team stats (shotsOnTarget)
+                let teamShotsOnTargetConceded = 0;
+                if (mergedTeamStats && mergedTeamStats.home && mergedTeamStats.away) {
+                    if (stat.teamId === matchDB.homeTeamId) {
+                        teamShotsOnTargetConceded = mergedTeamStats.away.shotsOnTarget || 0;
+                    } else {
+                        teamShotsOnTargetConceded = mergedTeamStats.home.shotsOnTarget || 0;
+                    }
+                }
+                // Goals conceded
+                let goalsConceded = 0;
+                if (stat.teamId === matchDB.homeTeamId) {
+                    goalsConceded = finalAwayScore;
+                } else {
+                    goalsConceded = finalHomeScore;
+                }
+                expGain = calculateMatchExp({
+                    playerId: stat.playerId,
+                    minutes: stat.minutes,
+                    rating: stat.rating,
+                    goals: stat.goals,
+                    assists: stat.assists,
+                    yellowCards: stat.yellowCards,
+                    redCards: stat.redCards,
                     position: player.naturalPosition,
-                cleanSheet: cleanSheet,
-                isMotm: isMotm
-            });
+                    cleanSheet: cleanSheet,
+                    isMotm: isMotm,
+                    saves: typeof stat.saves === 'number' ? stat.saves : undefined,
+                    teamShotsOnTargetConceded,
+                    goalsConceded
+                });
+            } else {
+                expGain = calculateMatchExp({
+                    playerId: stat.playerId,
+                    minutes: stat.minutes,
+                    rating: stat.rating,
+                    goals: stat.goals,
+                    assists: stat.assists,
+                    yellowCards: stat.yellowCards,
+                    redCards: stat.redCards,
+                    position: player.naturalPosition,
+                    cleanSheet: cleanSheet,
+                    isMotm: isMotm
+                });
+            }
             
                 // Apply age-efficiency to match EXP and round to integer for persisted Int field
                 const adjustedGain = applyAgeEfficiency(expGain.totalGain, player.age);
@@ -836,19 +891,18 @@ export async function processMatch(matchId: string) {
             });
         }
 
-        // Additional EXP policy:
+
         // 1) Non-playing veterans (>30 years old) lose EXP (decline phase)
-        // 2) If team wins, non-playing youth (<26 years old) gain EXP bonus equal
-        //    to the minimum EXP gain among players who played in that winning team.
+        // 2) Youth (age < 25) in each team who did not play get EXP = min(exp gain > 0 in their team)
         const allMatchSquadPlayers = [...matchDB.homeTeam.players, ...matchDB.awayTeam.players];
         const availableNonPlayingPlayers = allMatchSquadPlayers.filter((p: any) => {
             return !playedPlayerIds.has(p.id) && !isUnavailablePlayer(p);
         });
 
+        // Veteran decline
         const veteranNonPlayingIds = availableNonPlayingPlayers
             .filter((p: any) => (p.age || 0) > 30)
             .map((p: any) => p.id);
-
         if (veteranNonPlayingIds.length > 0) {
             await Promise.all(
                 veteranNonPlayingIds.map((playerId) =>
@@ -860,32 +914,21 @@ export async function processMatch(matchId: string) {
             );
         }
 
-        const winnerTeamId = finalHomeScore > finalAwayScore
-            ? matchDB.homeTeamId
-            : finalAwayScore > finalHomeScore
-                ? matchDB.awayTeamId
-                : (tieBreakResult.wentToPenalties && (tieBreakResult.penaltyHome || 0) !== (tieBreakResult.penaltyAway || 0))
-                    ? ((tieBreakResult.penaltyHome || 0) > (tieBreakResult.penaltyAway || 0)
-                        ? matchDB.homeTeamId
-                        : matchDB.awayTeamId)
-                : null;
-
-        if (winnerTeamId) {
-            const playedGains = playedExpGainByTeam[winnerTeamId] || [];
-            const minPlayedGain = playedGains.length > 0 ? Math.min(...playedGains) : 0;
-            const youthBenchBonus = Math.max(0, minPlayedGain);
-
-            if (youthBenchBonus > 0) {
+        // Youth EXP for non-playing youth (age < 25) in both teams
+        for (const teamId of [matchDB.homeTeamId, matchDB.awayTeamId]) {
+            const playedGains = playedExpGainByTeam[teamId] || [];
+            // Only consider exp > 0
+            const minPlayedGain = playedGains.filter(x => x > 0).length > 0 ? Math.min(...playedGains.filter(x => x > 0)) : 0;
+            if (minPlayedGain > 0) {
                 const youthNonPlayingIds = availableNonPlayingPlayers
-                    .filter((p: any) => p.teamId === winnerTeamId && (p.age || 0) < 26)
+                    .filter((p: any) => p.teamId === teamId && (p.age || 0) < 25)
                     .map((p: any) => p.id);
-
                 if (youthNonPlayingIds.length > 0) {
                     await Promise.all(
                         youthNonPlayingIds.map((playerId) =>
                             (tx.player as any).update({
                                 where: { id: playerId },
-                                data: { exp: { increment: youthBenchBonus } }
+                                data: { exp: { increment: minPlayedGain } }
                             })
                         )
                     );
@@ -943,19 +986,35 @@ export async function processMatchFinancials(matchId: string) {
     const awayResult = match.awayScore > match.homeScore ? 'win' : match.homeScore === match.awayScore ? 'draw' : 'loss';
 
     // Matchday income model:
-    // - Attendance depends on home rank: rank 1 = 50%, then -2% each rank (floor 10%)
+    // - League: Attendance depends on division and rank
+    // - Cup: Special event! 90-100% attendance regardless of division (big match atmosphere)
     // - Home receives 100% of gate
     // - Away receives 50% * away-rank-ratio share of home gate
+    
+    const isCupMatch = match.competitionType === 'CUP';
     const [homeRankInfo, awayRankInfo] = await Promise.all([
         getTeamLeagueRank(match.homeTeamId, match.season),
         getTeamLeagueRank(match.awayTeamId, match.season)
     ]);
 
-    const ticketPrice = 10;
-    const homeAttendanceRate = getRankRevenueRatio(homeRankInfo.rank, homeRankInfo.divisionLevel);
+    const ticketPrice = 20; // Standard ticket price for all matches
+    
+    let homeAttendanceRate: number;
+    if (isCupMatch) {
+        // Cup matches: Special event! 90-100% attendance (random within range)
+        // Cup fever! Fans come out regardless of team's league position
+        homeAttendanceRate = 0.90 + (Math.random() * 0.10); // 90-100%
+    } else {
+        // League matches: Normal attendance based on division and rank
+        homeAttendanceRate = getRankRevenueRatio(homeRankInfo.rank, homeRankInfo.divisionLevel);
+    }
+    
     const homeGateRevenue = Math.round((match.homeTeam.stadiumCapacity || 50000) * homeAttendanceRate * ticketPrice);
 
-    const awayRankRatio = getRankRevenueRatio(awayRankInfo.rank, awayRankInfo.divisionLevel);
+    // Away team revenue share
+    const awayRankRatio = isCupMatch 
+        ? 0.90 + (Math.random() * 0.10) // Cup: Away fans also excited (90-100%)
+        : getRankRevenueRatio(awayRankInfo.rank, awayRankInfo.divisionLevel);
     const awayRevenueShare = 0.5 * awayRankRatio;
     const awayGateRevenue = Math.round(homeGateRevenue * awayRevenueShare);
 

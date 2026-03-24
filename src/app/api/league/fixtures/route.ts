@@ -27,7 +27,9 @@ export async function GET(req: Request) {
                 ? {}
                 : { competitionType: 'LEAGUE' };
 
-        if (dateStr || league || season || competition !== 'all') {
+        // Build where clause
+        const hasFilters = dateStr || league || season || competition !== 'all';
+        if (hasFilters) {
             query.where = {
                 ...competitionWhere,
                 ...(season ? { season } : {}),

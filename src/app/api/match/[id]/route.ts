@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { calculateMatchExp, applyAgeEfficiency } from '@/lib/engine/experience';
 
 function calculateAdjustedDisplayRating(ps: any, match: any, foulCountOverride?: number): number {
     // Players who did not play should not be performance-rated
@@ -104,11 +105,70 @@ export async function GET(
             return NextResponse.json({ error: 'Match not found' }, { status: 404 });
         }
 
+        // Fetch player ages for EXP calculation
+        const playerAges = new Map<string, number>();
+        const playerPositions = new Map<string, string>();
+        for (const ps of match.playerStats) {
+            const player = await prisma.player.findUnique({
+                where: { id: ps.playerId },
+                select: { age: true, naturalPosition: true }
+            });
+            if (player) {
+                playerAges.set(ps.playerId, player.age);
+                playerPositions.set(ps.playerId, player.naturalPosition);
+            }
+        }
+
         // Format the response to match what MatchPage expects
         const formattedStats: Record<string, any> = {};
         match.playerStats.forEach((ps: any) => {
             const fouls = ps.fouls ?? foulCountByPlayerId.get(ps.playerId) ?? 0;
             const adjustedRating = calculateAdjustedDisplayRating(ps, match, fouls);
+            
+            // Calculate EXP gain for this player
+            const isGK = playerPositions.get(ps.playerId)?.includes('GK') || false;
+            const cleanSheet = (ps.teamId === match.homeTeamId && (match.awayScore ?? 0) === 0) ||
+                              (ps.teamId === match.awayTeamId && (match.homeScore ?? 0) === 0);
+            
+            let expGain = 0;
+            if (ps.minutes > 0) {
+                const expResult = calculateMatchExp({
+                    playerId: ps.playerId,
+                    minutes: ps.minutes,
+                    rating: adjustedRating,
+                    goals: ps.goals,
+                    assists: ps.assists,
+                    yellowCards: ps.yellowCards,
+                    redCards: ps.redCards,
+                    position: playerPositions.get(ps.playerId),
+                    cleanSheet: cleanSheet && (isGK || ['DC', 'DR', 'DL', 'DMC', 'DMR', 'DML'].includes(playerPositions.get(ps.playerId) || '')),
+                    isMotm: ps.playerId === match.motmPlayerId,
+                    saves: isGK ? (ps.saves || 0) : undefined,
+                    teamShotsOnTargetConceded: isGK ? undefined : undefined,
+                    goalsConceded: isGK ? undefined : undefined
+                });
+                
+                // For GK, calculate save bonus using team shots on target conceded
+                if (isGK) {
+                    const opponentTeamId = ps.teamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
+                    let opponentShotsOnTarget = 0;
+                    match.playerStats.forEach((oppPs: any) => {
+                        if (oppPs.teamId === opponentTeamId) {
+                            opponentShotsOnTarget += oppPs.shotsOnTarget || 0;
+                        }
+                    });
+                    const goalsConceded = ps.teamId === match.homeTeamId ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
+                    const saves = ps.saves || 0;
+                    const saveBonus = Math.max(0, opponentShotsOnTarget - goalsConceded) * 0.1;
+                    expResult.performanceGain += saveBonus;
+                    expResult.totalGain = expResult.baseGain + expResult.performanceGain + expResult.actionGain - expResult.penaltyLoss;
+                }
+                
+                const age = playerAges.get(ps.playerId) || 25;
+                const adjustedGain = applyAgeEfficiency(expResult.totalGain, age);
+                expGain = Math.round(adjustedGain);
+            }
+            
             formattedStats[ps.playerId] = {
                 playerId: ps.playerId,
                 name: ps.player.name,
@@ -138,7 +198,8 @@ export async function GET(
                 dribblesWon: ps.dribblesWon,
                 freeKicks: ps.freeKicks || 0,
                 corners: ps.corners || 0,
-                throws: ps.throws || 0
+                throws: ps.throws || 0,
+                expGain
             };
         });
 
