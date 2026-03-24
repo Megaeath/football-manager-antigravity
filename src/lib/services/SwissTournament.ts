@@ -222,9 +222,9 @@ export async function initializeCupTournamentForSeason(season: number) {
   const teams = await prisma.team.findMany({ select: { id: true } });
   if (teams.length < 2) throw new Error('Not enough teams to initialize Cup tournament');
 
-  // Cup tournament starts on September 1st of the season year
-  // All teams from all divisions (D1, D2, D3) participate in the same cup tournament
-  const startDate = new Date(Date.UTC(season, 8, 1)); // September 1st (month is 0-indexed: 8 = September)
+  // Cup tournament starts on October 1st of the season year
+  // League runs Feb-Aug (38 matches), Cup runs Oct-Nov (10 matches), September is rest period
+  const startDate = new Date(Date.UTC(season, 9, 1)); // October 1st (month is 0-indexed: 9 = October)
 
   const tournament = await cupTournamentModel.create({
     data: {
