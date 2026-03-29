@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
+import { revalidatePath } from 'next/cache';
 
 export async function PATCH(
     request: Request,
@@ -37,6 +38,12 @@ export async function PATCH(
         // When releasing to free agent pool, clear teamId and tactical position
         const isRelease = transferStatus === 'RELEASED';
 
+        // Get player's current team before update for revalidation
+        const existingPlayer = await prisma.player.findUnique({
+            where: { id: playerId },
+            select: { teamId: true }
+        });
+
         const updatedPlayer = await prisma.player.update({
             where: { id: playerId },
             data: {
@@ -50,6 +57,14 @@ export async function PATCH(
                 })
             }
         });
+
+        // Revalidate cache for both squad and team pages to ensure player is removed from team list
+        if (isRelease) {
+            revalidatePath('/squad');
+            if (existingPlayer?.teamId) {
+                revalidatePath(`/team/${existingPlayer.teamId}`);
+            }
+        }
 
         return NextResponse.json({ success: true, player: updatedPlayer });
     } catch (error) {

@@ -189,9 +189,25 @@ function MarketCenterContent() {
                                                     </span>
                                                 </td>
                                                 <td style={{ padding: '12px', textAlign: 'center' }}>{bid.player.age}</td>
-                                                <td style={{ padding: '12px', fontSize: '0.9rem' }}>{bid.fromTeam.name}</td>
+                                                <td style={{ padding: '12px', fontSize: '0.9rem' }}>
+                                                    <Link 
+                                                        href={`/team/${bid.fromTeam.id}`}
+                                                        style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}
+                                                    >
+                                                        {bid.fromTeam.name}
+                                                    </Link>
+                                                </td>
                                                 <td style={{ padding: '12px', fontSize: '0.9rem', color: bid.toTeam ? 'var(--foreground)' : 'var(--muted)' }}>
-                                                    {bid.toTeam?.name || 'Free Agent'}
+                                                    {bid.toTeam ? (
+                                                        <Link 
+                                                            href={`/team/${bid.toTeam.id}`}
+                                                            style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}
+                                                        >
+                                                            {bid.toTeam.name}
+                                                        </Link>
+                                                    ) : (
+                                                        'Free Agent'
+                                                    )}
                                                 </td>
                                                 <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: 'var(--primary)' }}>
                                                     {formatCurrency(bid.amount)}
@@ -240,8 +256,8 @@ function MarketCenterContent() {
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '10px' }}>
                                             <div>Pos: <strong>{bid.player.naturalPosition}</strong></div>
                                             <div>Age: <strong>{bid.player.age}</strong></div>
-                                            <div>From: <strong>{bid.fromTeam.name}</strong></div>
-                                            <div>To: <strong>{bid.toTeam?.name || 'Free Agent'}</strong></div>
+                                            <div>From: <Link href={`/team/${bid.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}>{bid.fromTeam.name}</Link></div>
+                                            <div>To: <strong>{bid.toTeam ? <Link href={`/team/${bid.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'none' }}>{bid.toTeam.name}</Link> : 'Free Agent'}</strong></div>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
                                             <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>

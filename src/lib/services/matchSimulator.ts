@@ -393,13 +393,30 @@ export async function processMatch(matchId: string) {
     const userTeamId = settings?.userTeamId ?? null;
     const yellowSuspensionThreshold = Math.max(1, settings?.yellowSuspensionThreshold ?? YELLOW_SUSPENSION_THRESHOLD_DEFAULT);
 
+    // Check if user has manually set tactical positions
     const homeHasManual = matchDB.homeTeam.id === userTeamId
         && matchDB.homeTeam.players.some((p: any) => p.tacticalPosition);
     const awayHasManual = matchDB.awayTeam.id === userTeamId
         && matchDB.awayTeam.players.some((p: any) => p.tacticalPosition);
 
-    const homeAssignments = homeHasManual ? [] : autoSelectLineup(matchDB.homeTeam);
-    const awayAssignments = awayHasManual ? [] : autoSelectLineup(matchDB.awayTeam);
+    // Auto-select lineup ONLY for AI teams (never for user teams)
+    // User teams: if user has set positions (homeHasManual=true), use them. If cleared, don't auto-select.
+    const homeIsUserTeam = matchDB.homeTeam.id === userTeamId;
+    const awayIsUserTeam = matchDB.awayTeam.id === userTeamId;
+    
+    // Only auto-select for AI teams
+    const homeAssignments = homeIsUserTeam ? [] : autoSelectLineup(matchDB.homeTeam);
+    const awayAssignments = awayIsUserTeam ? [] : autoSelectLineup(matchDB.awayTeam);
+
+    // IMPORTANT: If user team has NO players positioned, skip simulation entirely
+    // This prevents auto-simulating user matches when user hasn't set their lineup
+    const homeUserTeamNoLineup = homeIsUserTeam && !matchDB.homeTeam.players.some((p: any) => p.tacticalPosition);
+    const awayUserTeamNoLineup = awayIsUserTeam && !matchDB.awayTeam.players.some((p: any) => p.tacticalPosition);
+    
+    if (homeUserTeamNoLineup || awayUserTeamNoLineup) {
+        console.log(`[Match Simulator] Skipping match ${matchId} - user team has no lineup set`);
+        return null; // Don't simulate, don't advance day, let user set their lineup
+    }
 
     await prisma.$transaction(async (tx) => {
         // Unavailable players (suspended/injured) cannot be in lineup.

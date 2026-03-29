@@ -276,17 +276,54 @@ export async function POST(req: Request) {
             const userOverdueMatches = pendingMatches.filter((m) => isUserMatch(m) && m.date < todayRangeStart);
             const userTodayMatch = pendingMatches.find((m) => isUserMatch(m) && m.date >= todayRangeStart && m.date < todayRangeEnd);
 
+            // Check if user has set lineup for their matches (any player with tacticalPosition)
+            // If user hasn't set lineup, we should NOT auto-process even if overdue
+            const getUserTeamIdForMatch = (m: any) => {
+                if (m.homeTeamId === userTeamId) return m.homeTeamId;
+                if (m.awayTeamId === userTeamId) return m.awayTeamId;
+                return null;
+            };
+
+            const userTeamHasLineup = async (teamId: string): Promise<boolean> => {
+                const playerWithPosition = await prisma.player.findFirst({
+                    where: { teamId, tacticalPosition: { not: null }, isRetired: false }
+                });
+                return !!playerWithPosition;
+            };
+
             // Process queue now:
             // - all AI-only matches
-            // - all overdue user matches (auto-resolve so game cannot get stuck)
-            // Skip only today's user match (if any) for manual play.
+            // - user matches ONLY if user has set lineup (prevents auto-sim when user cleared positions)
             const matchesToAutoProcess = pendingMatches.filter((m) => {
+                // Skip today's user match - let user play it manually
                 if (userTodayMatch && m.id === userTodayMatch.id) return false;
+                
+                // For user matches, check if user has set lineup
+                const userTeamIdForMatch = getUserTeamIdForMatch(m);
+                if (userTeamIdForMatch) {
+                    // We'll check lineup in the loop to avoid blocking filter
+                    return true;
+                }
+                
+                // AI-only match - always process
                 return true;
             });
 
             let simulatedCount = 0;
+            let skippedUserNoLineupCount = 0;
+            
             for (const match of matchesToAutoProcess) {
+                // For user matches: skip if user hasn't set lineup (cleared all positions)
+                const userTeamIdForMatch = getUserTeamIdForMatch(match);
+                if (userTeamIdForMatch) {
+                    const hasLineup = await userTeamHasLineup(userTeamIdForMatch);
+                    if (!hasLineup) {
+                        console.log(`[Process API] Skipping match ${match.id} - user team ${userTeamIdForMatch} has no lineup set`);
+                        skippedUserNoLineupCount++;
+                        continue; // Skip this match - user needs to set lineup first
+                    }
+                }
+                
                 // Auto-select tactics for AI teams (safe for user-overdue auto processing too)
                 await autoSelectTacticsForAITeams(match, userTeamId);
                 const result = await processMatch(match.id);
@@ -311,6 +348,7 @@ export async function POST(req: Request) {
                     simulatedCount,
                     overdueProcessedCount: overdueCount,
                     autoProcessedUserOverdueCount: userOverdueMatches.length,
+                    skippedUserNoLineupCount,
                     requiresUserAction: true
                 });
             }
@@ -323,6 +361,7 @@ export async function POST(req: Request) {
                 simulatedCount,
                 overdueProcessedCount: overdueCount,
                 autoProcessedUserOverdueCount: userOverdueMatches.length,
+                skippedUserNoLineupCount,
                 autoAdvanced: true
             });
         }
