@@ -9,6 +9,19 @@ import type { AIPlaystyleProfile } from './aiPlaystyleProfiles';
 
 type MarketTarget = { player: any; power: number };
 
+// Memoization caches for session-wide calculations
+const powerCache = new Map<string, number>();
+const marketValueCache = new Map<string, number>();
+const rankingCache = new Map<number, Set<string>>(); // Cache ranking by season
+
+function getPlayerPowerCacheKey(player: any): string {
+    return `${player.id}-${player.exp}-${player.naturalPosition}`;
+}
+
+function getMarketValueCacheKey(player: any): string {
+    return `${player.id}-${player.age}-${player.popularity}`;
+}
+
 const MIN_POSITION_DEPTH = 2;
 const MIN_SQUAD_SIZE = 22;
 const MAX_SQUAD_SIZE = 30;
@@ -56,12 +69,20 @@ function getPositionDepth(depthMap: Map<string, number>, position: string) {
 }
 
 function getPlayerPowerValue(player: any): number {
-    return calculatePlayerPower({
+    const key = getPlayerPowerCacheKey(player);
+    if (powerCache.has(key)) {
+        return powerCache.get(key)!;
+    }
+    
+    const power = calculatePlayerPower({
         attributes: toPlayerAttributes(player),
         targetPosition: player.naturalPosition.split('_')[0],
         condition: 100,
         exp: player.exp || 0
     }).powerWithExp;
+    
+    powerCache.set(key, power);
+    return power;
 }
 
 function getStyleTransferFitScore(player: any, style: AIPlaystyleProfile): number {
@@ -89,7 +110,25 @@ function getStyleTransferFitScore(player: any, style: AIPlaystyleProfile): numbe
     return (ageScore + weightedAttributes) * riskMod;
 }
 
+// Memoized version of evaluateMarketValue
+async function getCachedMarketValue(player: any): Promise<number> {
+    const key = getMarketValueCacheKey(player);
+    if (marketValueCache.has(key)) {
+        return marketValueCache.get(key)!;
+    }
+    
+    const value = await evaluateMarketValue(player);
+    marketValueCache.set(key, value);
+    return value;
+}
+
 async function getTopRankingPlayerIds(currentSeason: number, log: (msg: string) => void): Promise<Set<string>> {
+    // Check cache first
+    if (rankingCache.has(currentSeason)) {
+        log(`[AI Market] Using cached ranking for season ${currentSeason}`);
+        return rankingCache.get(currentSeason)!;
+    }
+
     try {
         const rows: any[] = await prisma.$queryRaw`
             SELECT
@@ -147,6 +186,10 @@ async function getTopRankingPlayerIds(currentSeason: number, log: (msg: string) 
         });
 
         log(`[AI Market] Ranking spotlight pool (Top 3 across categories): ${topIds.size} players`);
+        
+        // Cache the result
+        rankingCache.set(currentSeason, topIds);
+        
         return topIds;
     } catch (err: any) {
         log(`[AI Market] Failed to build ranking spotlight pool: ${err.message}`);
@@ -180,19 +223,35 @@ export async function processAIMarketMovements(logCollector?: string[]) {
             const topTeams = standings.slice(0, 5).map(s => s.id);
             const aiTeamIds = standings.map(s => s.id).filter(id => id !== settings.userTeamId);
 
-            // 0. Revalue existing listings based on current market conditions
+            // 0. Revalue existing listings based on current market conditions (BATCH UPDATE)
             const listedPlayers = await prisma.player.findMany({
                 where: { transferStatus: 'LISTED', isRetired: false }
             });
-            for (const player of listedPlayers) {
-                const currentValue = await evaluateMarketValue(player);
-                if (player.askingPrice !== currentValue) {
-                    await prisma.player.update({
-                        where: { id: player.id },
-                        data: { askingPrice: currentValue }
-                    });
-                    log(`[AI Market] Revalued ${player.name} from $${player.askingPrice?.toLocaleString() || 'N/A'} to $${currentValue.toLocaleString()}`);
-                }
+            
+            // Calculate new values in parallel (no DB calls yet)
+            const updates = await Promise.all(
+                listedPlayers.map(async (player) => ({
+                    id: player.id,
+                    currentValue: await getCachedMarketValue(player)
+                }))
+            );
+            
+            // Filter only players with changed prices
+            const changedUpdates = updates.filter((u, i) => 
+                u.currentValue !== listedPlayers[i].askingPrice
+            );
+            
+            // Batch update in single transaction
+            if (changedUpdates.length > 0) {
+                await prisma.$transaction(
+                    changedUpdates.map(u =>
+                        prisma.player.update({
+                            where: { id: u.id },
+                            data: { askingPrice: u.currentValue }
+                        })
+                    )
+                );
+                log(`[AI Market] Revalued ${changedUpdates.length} listed players (batch update)`);
             }
 
             // 0.5. AI Teams Releasing Logic: Release old/weak players to free agent pool
@@ -297,9 +356,13 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
         })
         .sort((a, b) => b.priority - a.priority);
 
+    // Collect players to release for batch update
+    const playersToRelease: Array<{ player: any; playerPower: number }> = [];
+    let projectedSquadSize = team.players.length;
+
     for (const candidate of candidates) {
-        if (currentSquadSize <= MAX_SQUAD_SIZE) break;
-        if (currentSquadSize <= MIN_SQUAD_SIZE) break;
+        if (projectedSquadSize <= MAX_SQUAD_SIZE) break;
+        if (projectedSquadSize <= MIN_SQUAD_SIZE) break;
 
         const player = candidate.player;
         // Don't release if already listed or in process
@@ -309,21 +372,32 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
         const currentDepth = getPositionDepth(depthMap, playerPosition);
         if (currentDepth <= MIN_POSITION_DEPTH) continue;
 
-        // Release to free agent pool (set teamId to null, clear listing)
-        await prisma.player.update({
-            where: { id: player.id },
-            data: {
-                teamId: null,
-                transferStatus: 'FREE_AGENT',
-                askingPrice: null,
-                tacticalPosition: null,
-                contractEndWeek: 0 // Clear remaining contract
-            }
-        });
-        depthMap.set(playerPosition, currentDepth - 1);
-        currentSquadSize--;
-        log(`[AI Market] ${team.name} released ${player.name} (Age ${player.age}, Power ${candidate.playerPower.toFixed(1)}) to free agent pool for squad cap`);
-        releasedCount++;
+        playersToRelease.push({ player, playerPower: candidate.playerPower });
+        projectedSquadSize--;
+    }
+
+    // Batch update: Release all selected players in one transaction
+    if (playersToRelease.length > 0) {
+        await prisma.$transaction(
+            playersToRelease.map(({ player }) =>
+                prisma.player.update({
+                    where: { id: player.id },
+                    data: {
+                        teamId: null,
+                        transferStatus: 'FREE_AGENT',
+                        askingPrice: null,
+                        tacticalPosition: null,
+                        contractEndWeek: 0
+                    }
+                })
+            ),
+
+        );
+
+        releasedCount = playersToRelease.length;
+        for (const { player, playerPower } of playersToRelease) {
+            log(`[AI Market] ${team.name} released ${player.name} (Age ${player.age}, Power ${playerPower.toFixed(1)}) to free agent pool for squad cap`);
+        }
     }
 
     if (releasedCount > 0) {
@@ -343,8 +417,10 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
 
     const depthMap = buildPositionDepthMap(team.players, team.formation);
 
-    let listedCount = 0;
+    // Collect players to list for batch update
+    const playersToList: Array<{ player: any; playerPower: number; value: number; position: string; depth: number }> = [];
     let projectedSquad = team.players.length;
+
     for (const player of team.players) {
         if (projectedSquad <= MIN_SQUAD_SIZE) break;
         if (player.transferStatus === 'LISTED') continue;
@@ -377,20 +453,35 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
         if (!shouldList && playerPower < 55 && currentDepth >= MIN_POSITION_DEPTH) shouldList = true;
 
         if (shouldList) {
-            const value = await evaluateMarketValue(player);
-            await prisma.player.update({
-                where: { id: player.id },
-                data: { transferStatus: 'LISTED', askingPrice: value }
-            });
-            depthMap.set(playerPosition, currentDepth - 1);
+            playersToList.push({ player, playerPower, value: 0, position: playerPosition, depth: currentDepth });
             projectedSquad--;
-            log(`[AI Market] ${team.name} listed ${player.name} (Age ${player.age}, Power ${playerPower.toFixed(1)}) for $${value.toLocaleString()}`);
-            listedCount++;
         }
     }
-    
-    if (listedCount > 0) {
-        log(`[AI Market] ${team.name} listed ${listedCount} total players`);
+
+    // Calculate market values in parallel (no DB calls yet)
+    const playersWithValues = await Promise.all(
+        playersToList.map(async (p) => ({
+            ...p,
+            value: await getCachedMarketValue(p.player)
+        }))
+    );
+
+    // Batch update: List all selected players in one transaction
+    if (playersWithValues.length > 0) {
+        await prisma.$transaction(
+            playersWithValues.map(p =>
+                prisma.player.update({
+                    where: { id: p.player.id },
+                    data: { transferStatus: 'LISTED', askingPrice: p.value }
+                })
+            ),
+
+        );
+        
+        for (const p of playersWithValues) {
+            log(`[AI Market] ${team.name} listed ${p.player.name} (Age ${p.player.age}, Power ${p.playerPower.toFixed(1)}) for $${p.value.toLocaleString()}`);
+        }
+        log(`[AI Market] ${team.name} listed ${playersWithValues.length} total players`);
     }
 }
 
@@ -408,7 +499,9 @@ async function evaluatePlayerTeamForListing(userTeamId: string, log: (msg: strin
     });
     if (!team) return;
 
-    let listedCount = 0;
+    // Collect players to list for batch update
+    const playersToList: Array<{ player: any; playerPower: number; value: number }> = [];
+
     for (const player of team.players) {
         if (player.transferStatus === 'LISTED') continue;
         if ((player.lastTransferredSeason ?? -1) === currentSeason) continue;
@@ -439,18 +532,34 @@ async function evaluatePlayerTeamForListing(userTeamId: string, log: (msg: strin
         if (!shouldList && playerPower < 55) shouldList = true;
 
         if (shouldList) {
-            const value = await evaluateMarketValue(player);
-            await prisma.player.update({
-                where: { id: player.id },
-                data: { transferStatus: 'LISTED', askingPrice: value }
-            });
-            log(`[AI Market] ${team.name} auto-listed backup ${player.name} (Age ${player.age}, Power ${playerPower.toFixed(1)}) for $${value.toLocaleString()}`);
-            listedCount++;
+            playersToList.push({ player, playerPower, value: 0 });
         }
     }
 
-    if (listedCount > 0) {
-        log(`[AI Market] ${team.name} auto-listed ${listedCount} backup players for transfer market`);
+    // Calculate market values in parallel (no DB calls yet)
+    const playersWithValues = await Promise.all(
+        playersToList.map(async (p) => ({
+            ...p,
+            value: await getCachedMarketValue(p.player)
+        }))
+    );
+
+    // Batch update: List all selected players in one transaction
+    if (playersWithValues.length > 0) {
+        await prisma.$transaction(
+            playersWithValues.map(p =>
+                prisma.player.update({
+                    where: { id: p.player.id },
+                    data: { transferStatus: 'LISTED', askingPrice: p.value }
+                })
+            ),
+
+        );
+        
+        for (const p of playersWithValues) {
+            log(`[AI Market] ${team.name} auto-listed backup ${p.player.name} (Age ${p.player.age}, Power ${p.playerPower.toFixed(1)}) for $${p.value.toLocaleString()}`);
+        }
+        log(`[AI Market] ${team.name} auto-listed ${playersWithValues.length} backup players for transfer market`);
     }
 }
 
@@ -756,7 +865,7 @@ export async function processAIMarketForTeam(teamId: string) {
     try {
         const settings = await getGameTime();
         const team = await prisma.team.findUnique({ where: { id: teamId } });
-        
+
         if (!team) {
             log(`[AI Market] Team not found: ${teamId}`);
             return;
@@ -769,25 +878,41 @@ export async function processAIMarketForTeam(teamId: string) {
 
         log(`[AI Market] Processing team: ${team.name}`);
 
-        // Get standings to determine if team is top tier
-        // 0. Revalue existing listings to keep asking prices current
+        // 0. Revalue existing listings (BATCH UPDATE)
         const existingListings = await prisma.player.findMany({
             where: { transferStatus: 'LISTED', isRetired: false }
         });
-        for (const listedPlayer of existingListings) {
-            const currentValue = await evaluateMarketValue(listedPlayer);
-            if (listedPlayer.askingPrice !== currentValue) {
-                await prisma.player.update({
-                    where: { id: listedPlayer.id },
-                    data: { askingPrice: currentValue }
-                });
+        
+        if (existingListings.length > 0) {
+            // Calculate new values in parallel
+            const updates = await Promise.all(
+                existingListings.map(async (player) => ({
+                    id: player.id,
+                    currentValue: await getCachedMarketValue(player)
+                }))
+            );
+            
+            // Filter only changed prices
+            const changedUpdates = updates.filter((u, i) => 
+                u.currentValue !== existingListings[i].askingPrice
+            );
+            
+            // Batch update in single transaction
+            if (changedUpdates.length > 0) {
+                await prisma.$transaction(
+                    changedUpdates.map(u =>
+                        prisma.player.update({
+                            where: { id: u.id },
+                            data: { askingPrice: u.currentValue }
+                        })
+                    ),
+        
+                );
+                log(`[AI Market] Revalued ${changedUpdates.length} existing listings (batch)`);
             }
         }
-        if (existingListings.length > 0) {
-            log(`[AI Market] Revalued ${existingListings.length} existing listings`);
-        }
 
-        // Get standings to determine if team is top tier (safe: leagueId may be null in edge cases)
+        // Get standings to determine if team is top tier
         const standings = team.leagueId
             ? await calculateSeasonStandings(team.leagueId, settings.currentSeason)
             : [];
@@ -818,13 +943,13 @@ export async function processAIMarketForTeam(teamId: string) {
             where: { transferStatus: 'LISTED', isRetired: false },
             include: { team: true }
         });
-        
+
         const availablePlayers = allListed.filter(p => p.teamId !== null && !acceptedLockedPlayerIds.has(p.id));
 
         const playersWithPower = availablePlayers.map(p => ({
             player: p,
-            power: calculatePlayerPower({ 
-                attributes: toPlayerAttributes(p), 
+            power: calculatePlayerPower({
+                attributes: toPlayerAttributes(p),
                 targetPosition: p.naturalPosition.split('_')[0],
                 condition: 100,
                 exp: p.exp || 0

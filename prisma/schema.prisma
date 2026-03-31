@@ -166,7 +166,7 @@ model Player {
   weeklyWage        Int @default(10000) // Currency units per week
 
   // Market & Status
-  transferStatus        String @default("NOT_LISTED") // LISTED, NOT_LISTED 
+  transferStatus        String @default("NOT_LISTED") // LISTED, NOT_LISTED
   askingPrice           Int?
   squadStatus           String @default("ROTATION") // KEY_PLAYER, ROTATION, BACKUP, STAR, WORLD_CLASS
   lastTransferredSeason Int    @default(0)
@@ -181,6 +181,12 @@ model Player {
   transferHistory  TransferHistory[]
   trainingAssignments TrainingAssignment[]
   trainingFractions PlayerTrainingFraction[]
+
+  // Indexes for AI Market queries
+  @@index([transferStatus, isRetired])
+  @@index([teamId, isRetired])
+  @@index([age, transferStatus])
+  @@index([lastTransferredSeason])
 }
 
 model TrainingAssignment {
@@ -277,6 +283,7 @@ model Match {
 
   @@index([season, competitionType, date])
   @@index([cupTournamentId, competitionRound])
+  @@index([season])  // For ranking queries
 }
 
 model CupTournament {
@@ -380,6 +387,9 @@ model PlayerMatchStats {
 
   match  Match  @relation(fields: [matchId], references: [id])
   player Player @relation(fields: [playerId], references: [id])
+
+  // Indexes for ranking queries
+  @@index([matchId, playerId])
 }
 
 model PlayerActionLog {
@@ -508,6 +518,10 @@ model Bid {
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
   fromTeam Team   @relation("BidsMade", fields: [fromTeamId], references: [id], onDelete: Cascade)
   toTeam   Team   @relation("BidsReceived", fields: [toTeamId], references: [id], onDelete: Cascade)
+
+  // Indexes for AI Market queries
+  @@index([status, windowEnds])
+  @@index([playerId, status])
 }
 
 model News {

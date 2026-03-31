@@ -851,7 +851,7 @@ function executePassShort(
         })
     });
 
-    console.log(`Short pass executed. Success: ${success}, New Position: ${ball.position.toFixed(1)}`);
+    // console.log(`Short pass executed. Success: ${success}, New Position: ${ball.position.toFixed(1)}`);
 
     // Potentially trigger throw-in on failure (simplified out of bounds)
     if (!success && Math.random() < 0.2) {
@@ -980,7 +980,7 @@ function executePassLong(
             });
         }
     }
-    console.log(`Long pass executed. Success: ${success}, Target Position: ${targetPosition.toFixed(1)}`);
+    // console.log(`Long pass executed. Success: ${success}, Target Position: ${targetPosition.toFixed(1)}`);
     applyActionDrain(player, 'LOW', getMentalityBuff(attackingTeam.tactics.mentality).fatigue);
 }
 
