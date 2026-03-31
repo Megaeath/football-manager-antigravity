@@ -687,7 +687,12 @@ export async function handleContractRenewal(playerId: string, weeks: number = 10
 }
 
 /**
- * Auto-renew contracts for AI teams (if contract expiring 6-12 months away)
+ * Auto-renew contracts for AI teams with smart logic:
+ * - Check if player is the best in their position on the team
+ * - If best + age <= 30 → Renew contract
+ * - If best + age > 30 → Can release (near retirement)
+ * - If not best + position depth <= 2 → Renew contract
+ * - If not best + position depth > 2 → Can release
  */
 export async function autoRenewContracts(teamId: string): Promise<{
     renewed: number;
@@ -696,28 +701,109 @@ export async function autoRenewContracts(teamId: string): Promise<{
 }> {
     const team = await prisma.team.findUnique({
         where: { id: teamId },
-        include: { players: true }
+        include: { players: { where: { isRetired: false } } }
     });
 
     if (!team) return { renewed: 0, failures: 0, details: [] };
 
     const details: string[] = [];
     let renewed = 0;
-    const failures = 0;
+    let failures = 0;
 
-    // Find players with contracts expiring 26-52 weeks (6-12 months)
-    // Compute new values in memory → 1 transaction instead of N×(findUnique+update)
-    const renewalOps: { id: string; name: string; newWage: number; newEndWeek: number }[] = [];
+    // Group players by position and calculate power
+    const playersByPosition = new Map<string, Array<{ player: Player; power: number }>>();
+    
     for (const player of team.players) {
-        if (player.contractEndWeek >= 26 && player.contractEndWeek <= 52) {
-            renewalOps.push({
-                id: player.id,
-                name: player.name,
-                newWage: Math.round(player.weeklyWage * 1.25),
-                newEndWeek: player.contractEndWeek + 104
-            });
+        // Skip players with long contracts remaining
+        if (player.contractEndWeek > 52) continue;
+        
+        // Skip retired players
+        if (player.isRetired) continue;
+        
+        const pos = player.naturalPosition.split('_')[0];
+        const power = calculatePlayerPower({
+            attributes: toPlayerAttributes(player),
+            targetPosition: pos,
+            condition: 100,
+            exp: player.exp || 0
+        }).powerWithExp;
+        
+        if (!playersByPosition.has(pos)) {
+            playersByPosition.set(pos, []);
+        }
+        playersByPosition.get(pos)!.push({ player, power });
+    }
+
+    // Sort each position by power (highest first)
+    for (const [pos, players] of playersByPosition.entries()) {
+        players.sort((a, b) => b.power - a.power);
+    }
+
+    // Process renewal decisions
+    const renewalOps: Array<{ id: string; name: string; newWage: number; newEndWeek: number; reason: string }> = [];
+    const releaseOps: Array<{ id: string; name: string; position: string; power: number; age: number; reason: string }> = [];
+
+    for (const [pos, players] of playersByPosition.entries()) {
+        for (let i = 0; i < players.length; i++) {
+            const { player, power } = players[i];
+            const isBestInPosition = i === 0;
+            const positionDepth = players.length;
+            
+            // Decision logic
+            let shouldRenew = false;
+            let reason = '';
+            
+            if (isBestInPosition) {
+                // Best player in position
+                if (player.age <= 30) {
+                    shouldRenew = true;
+                    reason = `Best ${pos} (Power: ${power.toFixed(1)}, Age: ${player.age})`;
+                } else {
+                    // Best but old - release for youth
+                    releaseOps.push({
+                        id: player.id,
+                        name: player.name,
+                        position: pos,
+                        power,
+                        age: player.age,
+                        reason: `Best ${pos} but age ${player.age} > 30 (near retirement)`
+                    });
+                    failures++;
+                    continue;
+                }
+            } else {
+                // Not best in position
+                if (positionDepth <= 2) {
+                    shouldRenew = true;
+                    reason = `Backup ${pos} (Depth: ${positionDepth}, Power: ${power.toFixed(1)})`;
+                } else {
+                    // Excess depth - release
+                    releaseOps.push({
+                        id: player.id,
+                        name: player.name,
+                        position: pos,
+                        power,
+                        age: player.age,
+                        reason: `Excess ${pos} (Depth: ${positionDepth}, Power: ${power.toFixed(1)})`
+                    });
+                    failures++;
+                    continue;
+                }
+            }
+            
+            if (shouldRenew) {
+                renewalOps.push({
+                    id: player.id,
+                    name: player.name,
+                    newWage: Math.round(player.weeklyWage * 1.25),
+                    newEndWeek: player.contractEndWeek + 104,
+                    reason
+                });
+            }
         }
     }
+
+    // Execute renewals in batch
     if (renewalOps.length > 0) {
         await prisma.$transaction(
             renewalOps.map(r => prisma.player.update({
@@ -727,8 +813,34 @@ export async function autoRenewContracts(teamId: string): Promise<{
         );
         for (const r of renewalOps) {
             renewed++;
-            details.push(`✓ ${r.name}: Renewed until week ${r.newEndWeek}`);
+            details.push(`✓ ${r.name}: ${r.reason} → Renewed until week ${r.newEndWeek} ($${r.newWage.toLocaleString()}/week)`);
         }
+    }
+
+    // Execute releases in batch
+    if (releaseOps.length > 0) {
+        await prisma.$transaction(
+            releaseOps.map(r => prisma.player.update({
+                where: { id: r.id },
+                data: {
+                    teamId: null,
+                    transferStatus: 'FREE_AGENT',
+                    askingPrice: null,
+                    tacticalPosition: null,
+                    contractEndWeek: 0,
+                    playerRole: null,
+                    attackingRolePreset: null,
+                    defensiveRolePreset: null
+                }
+            }))
+        );
+        for (const r of releaseOps) {
+            details.push(`✗ ${r.name}: ${r.reason} → Released to free agency`);
+        }
+    }
+
+    if (renewalOps.length === 0 && releaseOps.length === 0) {
+        details.push('No contract actions needed');
     }
 
     return { renewed, failures, details };

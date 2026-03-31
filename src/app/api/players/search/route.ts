@@ -22,6 +22,13 @@ export async function GET() {
             }
         });
 
+        // Debug: Check transferStatus values
+        const statusCheck = players.reduce((acc, p) => {
+            acc[p.transferStatus] = (acc[p.transferStatus] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        console.log('[Players API] Transfer Status Distribution:', statusCheck);
+
         // Map to include market value and contract info
         const result = players.map(player => {
             const attrs: PlayerAttributes = toPlayerAttributes({
@@ -64,12 +71,12 @@ export async function GET() {
             // Calculate market value with multiple factors: power, age, popularity, club reputation, form
             const basePrice = power * power * 1000;
             const ageMultiplier = player.age <= 25 ? 1.2 : player.age >= 32 ? 0.6 : 1.0;
-            
+
             const playerPopularityMultiplier = 0.8 + (player.popularity / 100) * 1.0;
             const clubReputationMultiplier = 0.7 + ((player.team?.reputation || 50) / 100) * 0.8;
-            
+
             const formMultiplier = 0.5 + (avgRating / 10) * 1.0;
-            
+
             let marketValue = Math.round(basePrice * ageMultiplier * playerPopularityMultiplier * clubReputationMultiplier * formMultiplier);
             marketValue = applyMarketValuePowerBands(marketValue, power);
 
@@ -86,6 +93,9 @@ export async function GET() {
                 teamId: player.teamId,
                 teamName: player.team?.name || 'Unknown',
                 teamReputation: player.team?.reputation || 50,
+                transferStatus: player.transferStatus || 'NOT_LISTED', // Ensure it's always set
+                askingPrice: player.askingPrice || null,
+                isRetired: player.isRetired || false, // NEW: Add retired status
                 handling: player.handling,
                 tackling: player.tackling,
                 passing: player.passing,
@@ -94,6 +104,10 @@ export async function GET() {
                 dribbling: player.dribbling
             };
         });
+
+        // Debug: Log how many listed players
+        const listedCount = result.filter(p => p.transferStatus === 'LISTED').length;
+        console.log(`[Players API] Total players: ${result.length}, Listed: ${listedCount}`);
 
         return Response.json(result);
     } catch (error) {

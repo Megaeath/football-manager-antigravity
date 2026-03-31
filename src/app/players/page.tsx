@@ -18,6 +18,9 @@ interface Player {
     contractEndWeek: number | null;
     teamId: string | null;
     teamName: string;
+    transferStatus: string; // LISTED, NOT_LISTED, FREE_AGENT
+    askingPrice: number | null;
+    isRetired: boolean; // NEW: Retired status
 }
 
 type SortField = 'power' | 'rating' | 'price' | 'age' | 'name';
@@ -45,6 +48,8 @@ export default function PlayersPage() {
     const [selectedPosition, setSelectedPosition] = useState('');
     const [contractEndingSoon, setContractEndingSoon] = useState(false);
     const [showFreeAgentsOnly, setShowFreeAgentsOnly] = useState(false);
+    const [showListedOnly, setShowListedOnly] = useState(false); // NEW: Show only listed players
+    const [showRetiredOnly, setShowRetiredOnly] = useState(false); // NEW: Show only retired players
     const [sortBy, setSortBy] = useState<SortField>('power');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -115,6 +120,20 @@ export default function PlayersPage() {
             result = result.filter(p => !p.teamId);
         }
 
+        if (showListedOnly) {
+            result = result.filter(p => p.transferStatus === 'LISTED');
+        }
+
+        if (showRetiredOnly) {
+            result = result.filter(p => p.isRetired === true);
+        }
+
+        // Debug log
+        if (showListedOnly) {
+            console.log('[Players Page] Listed filter active. Total:', players.length, 'Filtered:', result.length);
+            console.log('[Players Page] Sample listed player:', result[0]);
+        }
+
         result.sort((a, b) => {
             let compareValue = 0;
             switch (sortBy) {
@@ -139,7 +158,7 @@ export default function PlayersPage() {
 
         setFiltered(result);
         setCurrentPage(1);
-    }, [players, searchName, minPower, maxPower, minPrice, maxPrice, minAge, maxAge, selectedTeam, selectedPosition, contractEndingSoon, showFreeAgentsOnly, sortBy, sortOrder]);
+    }, [players, searchName, minPower, maxPower, minPrice, maxPrice, minAge, maxAge, selectedTeam, selectedPosition, contractEndingSoon, showFreeAgentsOnly, showListedOnly, showRetiredOnly, sortBy, sortOrder]);
 
     const uniqueTeams = Array.from(new Set(players.filter(p => p.teamId).map(p => p.teamId as string)))
         .map(id => {
@@ -184,6 +203,8 @@ export default function PlayersPage() {
         setSelectedPosition('');
         setContractEndingSoon(false);
         setShowFreeAgentsOnly(false);
+        setShowListedOnly(false);
+        setShowRetiredOnly(false);
     };
 
     if (loading) {
@@ -342,39 +363,94 @@ export default function PlayersPage() {
 
                         {/* Contract Status */}
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem' }}>Status</label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--muted)' }}>Status Filters</label>
+                            <div style={{ 
+                                display: 'flex', 
+                                gap: '0.5rem', 
+                                flexWrap: 'wrap',
+                                padding: '12px',
+                                background: 'var(--bg-secondary, #f5f5f5)',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border)'
+                            }}>
                                 <button
                                     onClick={() => setContractEndingSoon(!contractEndingSoon)}
                                     style={{
-                                        flex: 1,
-                                        padding: '10px 12px',
-                                        background: contractEndingSoon ? 'var(--primary)' : 'var(--border)',
+                                        flex: '0 0 auto',
+                                        padding: '10px 16px',
+                                        background: contractEndingSoon ? 'var(--primary)' : 'white',
                                         color: contractEndingSoon ? 'white' : 'var(--foreground)',
-                                        border: 'none',
-                                        borderRadius: '6px',
+                                        border: contractEndingSoon ? 'none' : '1px solid var(--border)',
+                                        borderRadius: '8px',
                                         cursor: 'pointer',
                                         fontSize: '0.85rem',
-                                        fontWeight: '500'
+                                        fontWeight: contractEndingSoon ? '600' : '500',
+                                        transition: 'all 0.2s',
+                                        minWidth: '140px',
+                                        textAlign: 'center'
                                     }}
                                 >
-                                    {contractEndingSoon ? '✓ Ending Soon' : 'Ending Soon'}
+                                    {contractEndingSoon ? '✓ ' : ''}Ending Soon
                                 </button>
                                 <button
                                     onClick={() => setShowFreeAgentsOnly(!showFreeAgentsOnly)}
                                     style={{
-                                        flex: 1,
-                                        padding: '10px 12px',
-                                        background: showFreeAgentsOnly ? 'var(--accent)' : 'var(--border)',
+                                        flex: '0 0 auto',
+                                        padding: '10px 16px',
+                                        background: showFreeAgentsOnly ? 'var(--accent)' : 'white',
                                         color: showFreeAgentsOnly ? 'white' : 'var(--foreground)',
-                                        border: 'none',
-                                        borderRadius: '6px',
+                                        border: showFreeAgentsOnly ? 'none' : '1px solid var(--border)',
+                                        borderRadius: '8px',
                                         cursor: 'pointer',
                                         fontSize: '0.85rem',
-                                        fontWeight: '500'
+                                        fontWeight: showFreeAgentsOnly ? '600' : '500',
+                                        transition: 'all 0.2s',
+                                        minWidth: '140px',
+                                        textAlign: 'center'
                                     }}
                                 >
-                                    {showFreeAgentsOnly ? '✓ Free Agent' : 'Free Agent'}
+                                    {showFreeAgentsOnly ? '✓ ' : ''}🆓 Free Agents
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        console.log('[Players Page] Toggle Listed - Before:', showListedOnly);
+                                        setShowListedOnly(!showListedOnly);
+                                    }}
+                                    style={{
+                                        flex: '0 0 auto',
+                                        padding: '10px 16px',
+                                        background: showListedOnly ? 'var(--secondary)' : 'white',
+                                        color: showListedOnly ? 'white' : 'var(--foreground)',
+                                        border: showListedOnly ? 'none' : '1px solid var(--border)',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: showListedOnly ? '600' : '500',
+                                        transition: 'all 0.2s',
+                                        minWidth: '140px',
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    {showListedOnly ? '✓ ' : ''}🏷️ For Sale
+                                </button>
+                                <button
+                                    onClick={() => setShowRetiredOnly(!showRetiredOnly)}
+                                    style={{
+                                        flex: '0 0 auto',
+                                        padding: '10px 16px',
+                                        background: showRetiredOnly ? '#6b7280' : 'white',
+                                        color: showRetiredOnly ? 'white' : 'var(--foreground)',
+                                        border: showRetiredOnly ? 'none' : '1px solid var(--border)',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: showRetiredOnly ? '600' : '500',
+                                        transition: 'all 0.2s',
+                                        minWidth: '140px',
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    {showRetiredOnly ? '✓ ' : ''}🏆 Retired
                                 </button>
                             </div>
                         </div>
@@ -425,6 +501,7 @@ export default function PlayersPage() {
                                 <th style={{ padding: '12px', textAlign: 'center', width: '100px', cursor: 'pointer' }} onClick={() => handleSortColumnClick('price')}>
                                     {PLAYER_STATS.MARKET_VALUE} {sortBy === 'price' && (sortOrder === 'desc' ? '↓' : '↑')}
                                 </th>
+                                <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>Status</th>
                                 <th style={{ padding: '12px', textAlign: 'left' }}>{PLAYER_STATS.TEAM}</th>
                             </tr>
                         </thead>
@@ -466,8 +543,58 @@ export default function PlayersPage() {
                                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>
                                         {formatCurrency(player.marketValue)}
                                     </td>
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        {player.isRetired ? (
+                                            <span style={{
+                                                background: '#6b7280',
+                                                color: 'white',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '0.85rem',
+                                                fontWeight: '600'
+                                            }}>
+                                                🏆 RETIRED
+                                            </span>
+                                        ) : player.transferStatus === 'LISTED' ? (
+                                            <span style={{
+                                                background: 'var(--secondary)',
+                                                color: 'white',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '0.85rem',
+                                                fontWeight: '600'
+                                            }}>
+                                                🏷️ FOR SALE
+                                            </span>
+                                        ) : player.transferStatus === 'FREE_AGENT' ? (
+                                            <span style={{
+                                                background: 'var(--accent)',
+                                                color: 'white',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '0.85rem',
+                                                fontWeight: '600'
+                                            }}>
+                                                🆓 FREE
+                                            </span>
+                                        ) : (
+                                            <span style={{
+                                                background: 'var(--border)',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '0.85rem',
+                                                fontWeight: '600'
+                                            }}>
+                                                -
+                                            </span>
+                                        )}
+                                    </td>
                                     <td style={{ padding: '12px' }}>
-                                        {player.teamName || <span style={{ color: 'var(--muted)' }}>{PLAYERS.FREE_AGENT}</span>}
+                                        {player.isRetired ? (
+                                            <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>Retired</span>
+                                        ) : (
+                                            player.teamName || <span style={{ color: 'var(--muted)' }}>{PLAYERS.FREE_AGENT}</span>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -504,11 +631,41 @@ export default function PlayersPage() {
                                 <div>{PLAYER_STATS.AGE}: <strong style={{ color: 'var(--foreground)' }}>{player.age}</strong></div>
                                 <div>{PLAYER_STATS.RATING}: <strong style={{ color: 'var(--foreground)' }}>{player.avgRating > 0 ? player.avgRating.toFixed(2) : '-'}</strong></div>
                             </div>
-                            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                                    {player.teamName || PLAYERS.FREE_AGENT}
+                            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--muted)', flex: 1 }}>
+                                    {player.isRetired ? (
+                                        <span style={{ fontStyle: 'italic', color: '#6b7280' }}>🏆 Retired</span>
+                                    ) : (
+                                        player.teamName || PLAYERS.FREE_AGENT
+                                    )}
                                 </div>
-                                <div style={{ fontWeight: '600', color: 'var(--primary)' }}>
+                                {player.transferStatus === 'LISTED' && (
+                                    <span style={{
+                                        background: 'var(--secondary)',
+                                        color: 'white',
+                                        padding: '3px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        🏷️ SALE
+                                    </span>
+                                )}
+                                {player.isRetired && (
+                                    <span style={{
+                                        background: '#6b7280',
+                                        color: 'white',
+                                        padding: '3px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        🏆 RET
+                                    </span>
+                                )}
+                                <div style={{ fontWeight: '600', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
                                     {formatCurrency(player.marketValue)}
                                 </div>
                             </div>

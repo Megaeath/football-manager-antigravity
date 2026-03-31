@@ -114,7 +114,8 @@ export async function submitBid(
                 data: {
                     teamId: fromTeamId,
                     lastTransferredSeason: currentSeason,
-                    transferStatus: 'NOT_LISTED'
+                    transferStatus: 'NOT_LISTED',
+                    contractEndWeek: 104 // 2 years contract for free agents
                 }
             });
 
@@ -369,7 +370,8 @@ export async function processAcceptedTransfers() {
                         teamId: bid.fromTeamId,
                         transferStatus: 'NOT_LISTED',
                         askingPrice: null,
-                        lastTransferredSeason: currentSeason
+                        lastTransferredSeason: currentSeason,
+                        contractEndWeek: 104 // 2 years contract for new signings
                     }
                 });
 

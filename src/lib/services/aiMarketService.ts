@@ -417,9 +417,35 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
 
     const depthMap = buildPositionDepthMap(team.players, team.formation);
 
-    // Collect players to list for batch update
+    // Collect players to list/release/retire for batch update
     const playersToList: Array<{ player: any; playerPower: number; value: number; position: string; depth: number }> = [];
+    const playersToRelease: Array<{ player: any; playerPower: number; position: string; depth: number }> = [];
+    const playersToRetire: Array<{ player: any; playerPower: number; position: string; age: number }> = []; // NEW: Auto-retire
     let projectedSquad = team.players.length;
+
+    // Group players by position to find weakest in each position
+    const playersByPosition = new Map<string, Array<{ player: any; power: number; depth: number }>>();
+    
+    for (const player of team.players) {
+        if (player.transferStatus === 'LISTED') continue;
+        if ((player.lastTransferredSeason ?? -1) === currentSeason) continue;
+
+        const playerPosition = normalizeDepthPosition(player.naturalPosition);
+        const currentDepth = getPositionDepth(depthMap, playerPosition);
+        const playerPower = getPlayerPowerValue(player);
+
+        if (!playersByPosition.has(playerPosition)) {
+            playersByPosition.set(playerPosition, []);
+        }
+        playersByPosition.get(playerPosition)!.push({ player, power: playerPower, depth: currentDepth });
+    }
+
+    // Find weakest players in each position
+    const weakestPlayersByPos = new Map<string, { player: any; power: number; depth: number }>();
+    for (const [pos, players] of playersByPosition.entries()) {
+        const weakest = players.reduce((min, p) => p.power < min.power ? p : min, players[0]);
+        weakestPlayersByPos.set(pos, weakest);
+    }
 
     for (const player of team.players) {
         if (projectedSquad <= MIN_SQUAD_SIZE) break;
@@ -428,31 +454,48 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
 
         const playerPosition = normalizeDepthPosition(player.naturalPosition);
         const currentDepth = getPositionDepth(depthMap, playerPosition);
-        if (currentDepth <= MIN_POSITION_DEPTH) continue;
-
         const playerPower = getPlayerPowerValue(player);
 
         let shouldList = false;
+        let shouldRelease = false;
+        let shouldRetire = false; // NEW: Auto-retire flag
+
+        // === NEW: Auto-retire for very weak old players (power < 60, age > 31) ===
+        // These players are too old and weak to continue playing professionally
+        if (playerPower < 60 && player.age > 31) {
+            shouldRetire = true;
+        }
+
+        // Release weak excess players for FREE (power < 55, age > 25, depth > 2)
+        if (!shouldRetire && playerPower < 55 && player.age > 25 && currentDepth > 2) {
+            shouldRelease = true;
+        }
 
         // Very weak players: always list regardless of depth/age
-        if (playerPower < 50) shouldList = true;
+        if (!shouldRetire && !shouldRelease && playerPower < 50) shouldList = true;
 
         // Very old players: always list if squad not already at minimum
-        if (!shouldList && player.age > 35 && projectedSquad > MIN_SQUAD_SIZE) shouldList = true;
+        if (!shouldRetire && !shouldRelease && !shouldList && player.age > 35 && projectedSquad > MIN_SQUAD_SIZE) shouldList = true;
 
         // Old + below average: list
-        if (!shouldList && player.age > 30 && playerPower < 72) shouldList = true;
-        if (!shouldList && player.age > 33) shouldList = true;
+        if (!shouldRetire && !shouldRelease && !shouldList && player.age > 30 && playerPower < 72) shouldList = true;
+        if (!shouldRetire && !shouldRelease && !shouldList && player.age > 33) shouldList = true;
 
         // Weak at excess depth
-        if (!shouldList && playerPower < 62) {
+        if (!shouldRetire && !shouldRelease && !shouldList && playerPower < 62) {
             if (currentDepth > MIN_POSITION_DEPTH) shouldList = true;
         }
 
         // Even at minimum depth, list if notably weak (frees up wage budget)
-        if (!shouldList && playerPower < 55 && currentDepth >= MIN_POSITION_DEPTH) shouldList = true;
+        if (!shouldRetire && !shouldRelease && !shouldList && playerPower < 55 && currentDepth >= MIN_POSITION_DEPTH) shouldList = true;
 
-        if (shouldList) {
+        if (shouldRetire) {
+            playersToRetire.push({ player, playerPower, position: playerPosition, age: player.age });
+            projectedSquad--;
+        } else if (shouldRelease) {
+            playersToRelease.push({ player, playerPower, position: playerPosition, depth: currentDepth });
+            projectedSquad--;
+        } else if (shouldList) {
             playersToList.push({ player, playerPower, value: 0, position: playerPosition, depth: currentDepth });
             projectedSquad--;
         }
@@ -466,7 +509,58 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
         }))
     );
 
-    // Batch update: List all selected players in one transaction
+    // Batch update: Auto-retire players first (honorably exit)
+    if (playersToRetire.length > 0) {
+        await prisma.$transaction(
+            playersToRetire.map(p =>
+                prisma.player.update({
+                    where: { id: p.player.id },
+                    data: {
+                        isRetired: true,
+                        teamId: null,
+                        transferStatus: 'NOT_LISTED',
+                        askingPrice: null,
+                        tacticalPosition: null,
+                        contractEndWeek: 0,
+                        playerRole: null,
+                        attackingRolePreset: null,
+                        defensiveRolePreset: null
+                    }
+                })
+            )
+        );
+        for (const p of playersToRetire) {
+            log(`[AI Market] ${team.name} 🏆 RETIRED: ${p.player.name} (Age ${p.age}, Power ${p.playerPower.toFixed(1)}, Pos: ${p.position}) - Honorable exit`);
+        }
+        log(`[AI Market] ${team.name} retired ${playersToRetire.length} players (too old and weak to continue)`);
+    }
+
+    // Batch update: Release players to free agency
+    if (playersToRelease.length > 0) {
+        await prisma.$transaction(
+            playersToRelease.map(p =>
+                prisma.player.update({
+                    where: { id: p.player.id },
+                    data: {
+                        teamId: null,
+                        transferStatus: 'FREE_AGENT',
+                        askingPrice: null,
+                        tacticalPosition: null,
+                        contractEndWeek: 0,
+                        playerRole: null,
+                        attackingRolePreset: null,
+                        defensiveRolePreset: null
+                    }
+                })
+            )
+        );
+        for (const p of playersToRelease) {
+            log(`[AI Market] ${team.name} released ${p.player.name} (Age ${p.player.age}, Power ${p.playerPower.toFixed(1)}, Pos: ${p.position}, Depth: ${p.depth}) to FREE AGENCY`);
+        }
+        log(`[AI Market] ${team.name} released ${playersToRelease.length} weak excess players to free agency`);
+    }
+
+    // Batch update: List players for transfer
     if (playersWithValues.length > 0) {
         await prisma.$transaction(
             playersWithValues.map(p =>
@@ -474,10 +568,9 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
                     where: { id: p.player.id },
                     data: { transferStatus: 'LISTED', askingPrice: p.value }
                 })
-            ),
-
+            )
         );
-        
+
         for (const p of playersWithValues) {
             log(`[AI Market] ${team.name} listed ${p.player.name} (Age ${p.player.age}, Power ${p.playerPower.toFixed(1)}) for $${p.value.toLocaleString()}`);
         }
@@ -575,21 +668,22 @@ async function processAIBuyingLogic(
         where: { id: teamId },
         include: { players: { where: { isRetired: false } } }
     });
-    
+
     if (!team) {
         log(`[AI Market] Team ${teamId} not found - skipping`);
         return;
     }
 
     const style = resolveAIPlaystyleForTeam(team);
-    
+
     // Lower minimum balance to allow more transfers (was 1,000,000)
     if (team.balance < 500000) {
         log(`[AI Market] ${team.name} has insufficient balance ($${team.balance.toLocaleString()}) - skipping`);
         return;
     }
 
-    // Include free agents in the pool
+    // === SEPARATE: Free Agents vs Listed Players ===
+    // Fetch free agents separately for priority handling
     const freeAgents = await prisma.player.findMany({
         where: { teamId: null, isRetired: false },
         include: { team: true }
@@ -614,30 +708,32 @@ async function processAIBuyingLogic(
 
     const freeAgentsWithPower = freeAgents.map(p => ({
         player: p,
-        power: calculatePlayerPower({ 
-            attributes: toPlayerAttributes(p), 
+        power: calculatePlayerPower({
+            attributes: toPlayerAttributes(p),
             targetPosition: p.naturalPosition.split('_')[0],
             condition: 100,
             exp: p.exp || 0
         }).powerWithExp
     }));
 
-    const allAvailable = [...listedPlayers, ...freeAgentsWithPower];
     const teamDepthMap = buildPositionDepthMap(team.players, team.formation);
 
     const profileBudgetUsage = Math.max(0.35, Math.min(0.95, style.transferPolicy.budgetUsage || 0.8));
     const maxBudget = isTopTier ? team.balance : team.balance * profileBudgetUsage;
 
-    // Respect one-transfer-per-season rule
-    const targets = allAvailable.filter(lp =>
-        lp.player.teamId !== teamId &&
-        (lp.player.lastTransferredSeason ?? -1) < currentSeason &&
-        // If player is a free agent, avoid immediate return to their latest previous club.
-        !(lp.player.teamId === null && freeAgentLatestClub.get(lp.player.id) === teamId) &&
-        (lp.player.askingPrice || 0) <= maxBudget
+    // === SEPARATE TARGETS: Free Agents vs Paid ===
+    // Free agents: No budget limit (free!)
+    const freeAgentTargets = freeAgentsWithPower.filter(p =>
+        (p.player.lastTransferredSeason ?? -1) < currentSeason &&
+        !(freeAgentLatestClub.get(p.player.id) === teamId) // Avoid return to previous club
     );
 
-    if (targets.length === 0) return;
+    // Listed players: Must fit budget
+    const listedTargets = listedPlayers.filter(lp =>
+        lp.player.teamId !== teamId &&
+        (lp.player.lastTransferredSeason ?? -1) < currentSeason &&
+        (lp.player.askingPrice || 0) <= maxBudget
+    );
 
     const requiredPositions = getRequiredPositionsForFormation(team.formation);
     const urgentPositions = requiredPositions.filter(pos => getPositionDepth(teamDepthMap, pos) < MIN_POSITION_DEPTH);
@@ -656,193 +752,247 @@ async function processAIBuyingLogic(
     const bidsToMake = Math.max(1, Math.min(4, Math.max(squadShortage, urgentMissingCount, urgentPositions.length > 0 ? 1 : 0)));
     let bidsPlaced = 0;
 
-    if (isTopTier) {
-        // Title contenders: prioritize famous + in-form + Top 3 ranking players, ignore power gate
-        const rankedTargets = targets.filter(lp => rankingTop3Ids.has(lp.player.id));
-        const qualityTargets = targets.filter(lp =>
-            (lp.player.popularity || 0) >= 70 ||
-            (lp.player.avgRating || 0) >= 7.0 ||
-            (lp.player.motmCount || 0) >= 2 ||
-            (lp.player.goals || 0) >= 5 ||
-            (lp.player.assists || 0) >= 5
+    // === PRIORITY 1: Sign talented FREE AGENTS first (no cost!) ===
+    // Filter for high-power free agents (power >= 65 is decent)
+    const talentedFreeAgents = freeAgentTargets.filter(p => p.power >= 65);
+    
+    if (talentedFreeAgents.length > 0) {
+        // Sort by power (highest first)
+        const sortedTalent = [...talentedFreeAgents].sort((a, b) => b.power - a.power);
+        
+        for (const t of sortedTalent) {
+            if (bidsPlaced >= bidsToMake) break;
+            if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE) break;
+
+            const targetPos = normalizeDepthPosition(t.player.naturalPosition);
+            
+            // Prioritize urgent positions, but take any talent if no urgent need
+            if (urgentPositions.length > 0 && !urgentPositions.includes(targetPos)) {
+                continue;
+            }
+
+            const res = await submitBid(t.player.id, teamId, 0, 0, true); // Free agent!
+            log(`[AI Market] ${team.name} ⭐ SIGNED TALENT (FREE): ${t.player.name} (Power: ${t.power.toFixed(1)}, Pos: ${targetPos})`);
+
+            if (res.success) {
+                teamDepthMap.set(targetPos, getPositionDepth(teamDepthMap, targetPos) + 1);
+                bidsPlaced++;
+            }
+        }
+    }
+
+    // === PRIORITY 2: Fill urgent positions with remaining free agents ===
+    if (bidsPlaced < bidsToMake && urgentPositions.length > 0) {
+        const urgentFreeAgents = freeAgentTargets.filter(p =>
+            urgentPositions.includes(normalizeDepthPosition(p.player.naturalPosition))
         );
 
-        const preferredPool = rankedTargets.length > 0
-            ? rankedTargets
-            : (qualityTargets.length > 0 ? qualityTargets : targets);
-
-        const urgentPool = urgentPositions.length > 0
-            ? preferredPool.filter(lp => urgentPositions.includes(normalizeDepthPosition(lp.player.naturalPosition)))
-            : preferredPool;
-
-        const finalPool = urgentPool.length > 0 ? urgentPool : preferredPool;
-
-        const sortedPreferred = [...finalPool].sort((a, b) => {
-            const styleScoreA = getStyleTransferFitScore(a.player, style);
-            const styleScoreB = getStyleTransferFitScore(b.player, style);
-            const scoreA = (rankingTop3Ids.has(a.player.id) ? 100 : 0)
-                + Number(a.player.popularity || 0)
-                + Number(a.player.avgRating || 0) * 10
-                + Number(a.player.motmCount || 0) * 3
-                + Number(a.player.goals || 0)
-                + Number(a.player.assists || 0)
-                + styleScoreA;
-            const scoreB = (rankingTop3Ids.has(b.player.id) ? 100 : 0)
-                + Number(b.player.popularity || 0)
-                + Number(b.player.avgRating || 0) * 10
-                + Number(b.player.motmCount || 0) * 3
-                + Number(b.player.goals || 0)
-                + Number(b.player.assists || 0)
-                + styleScoreB;
-            return scoreB - scoreA;
-        });
-
-        const shortList = sortedPreferred.slice(0, Math.min(8, sortedPreferred.length));
-        if (shortList.length > 0) {
-            for (const t of shortList) {
-                if (bidsPlaced >= bidsToMake) break;
-                if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE) break;
-
-                const targetPos = normalizeDepthPosition(t.player.naturalPosition);
-                if (urgentPositions.length > 0 && !urgentPositions.includes(targetPos)) {
-                    continue;
-                }
-
-            const isFreeAgent = !t.player.teamId;
-            const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
-            const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
-            const urgentNote = urgentPositions.length > 0 ? `, Urgent:${urgentPositions.join('/')}` : '';
-            log(`[AI Market] ${team.name} (Top 1-5) bid for ${t.player.name} (${source}, Pop:${t.player.popularity || 50}, RankTop3:${rankingTop3Ids.has(t.player.id) ? 'Y' : 'N'}${urgentNote}): ${res.success ? 'Success' : res.message}`);
-
-                if (res.success) {
-                    teamDepthMap.set(targetPos, getPositionDepth(teamDepthMap, targetPos) + 1);
-                    bidsPlaced++;
-                }
-            }
-        }
-    } else {
-        // All non-top teams: Evaluate positions and buy strategically
-        // Priority: 1) Urgent positions (< 2 players), 2) Upgrades (higher power than average)
-        
-        const positionToTeamPowers = new Map<string, { powers: number[]; avgPower: number }>();
-        for (const p of team.players) {
-            const pos = normalizeDepthPosition(p.naturalPosition);
-            const pwr = calculatePlayerPower({
-                attributes: toPlayerAttributes(p),
-                targetPosition: p.naturalPosition.split('_')[0],
-                condition: 100,
-                exp: p.exp || 0,
-            }).powerWithExp;
-
-            if (!positionToTeamPowers.has(pos)) {
-                positionToTeamPowers.set(pos, { powers: [], avgPower: 0 });
-            }
-            positionToTeamPowers.get(pos)!.powers.push(pwr);
-        }
-
-        // Calculate average power for each position
-        for (const [pos, data] of positionToTeamPowers.entries()) {
-            data.avgPower = data.powers.length > 0
-                ? data.powers.reduce((sum, p) => sum + p, 0) / data.powers.length
-                : 0;
-        }
-
-        const allPositions = new Set<string>([
-            ...Array.from(positionToTeamPowers.keys()),
-            ...targets.map(t => normalizeDepthPosition(t.player.naturalPosition)),
-        ]);
-
-        // Build position priority list
-        const positionPriority = Array.from(allPositions).map(pos => {
-            const posData = positionToTeamPowers.get(pos) || { powers: [], avgPower: 0 };
-            const depth = getPositionDepth(teamDepthMap, pos);
-            const isUrgent = depth < MIN_POSITION_DEPTH;
-            const hasNoDepth = posData.powers.length === 0;
-            
-            return { 
-                pos, 
-                avgPower: posData.avgPower, 
-                depth, 
-                hasNoDepth, 
-                isUrgent,
-                powers: posData.powers
-            };
-        }).sort((a, b) => {
-            // Priority 1: Urgent positions (depth < 2)
-            if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
-            // Priority 2: Positions with no players
-            if (a.hasNoDepth !== b.hasNoDepth) return a.hasNoDepth ? -1 : 1;
-            // Priority 3: Lower depth first
-            if (a.depth !== b.depth) return a.depth - b.depth;
-            // Priority 4: Lower average power first (weaker positions need upgrades)
-            return a.avgPower - b.avgPower;
-        });
-
-        // Determine budget based on urgency
-        const urgentPositions = positionPriority.filter(p => p.isUrgent);
-        const hasUrgentNeed = urgentPositions.length > 0;
-        
-        // Budget: 90% for urgent needs, otherwise follow profile
-        const effectiveMaxBudget = hasUrgentNeed 
-            ? team.balance * 0.90 
-            : team.balance * profileBudgetUsage;
-
-        for (const { pos, avgPower, hasNoDepth, depth, isUrgent, powers } of positionPriority) {
+        for (const t of urgentFreeAgents) {
             if (bidsPlaced >= bidsToMake) break;
-            if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE && !isUrgent) break;
+            if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE) break;
 
-            // Filter targets for this position
-            const posTargets = targets.filter(lp => {
-                const targetPos = getPositionKey(lp.player.naturalPosition);
-                const normalizedTargetPos = normalizeDepthPosition(targetPos);
-                if (normalizedTargetPos !== pos) return false;
-                
-                // Urgent positions: accept any available player
-                if (isUrgent || hasNoDepth) return true;
-                
-                // Non-urgent (upgrade): Must have higher power than team average for this position
-                // This ensures we only buy upgrades, not lateral moves
-                return lp.power > avgPower;
+            const targetPos = normalizeDepthPosition(t.player.naturalPosition);
+            const res = await submitBid(t.player.id, teamId, 0, 0, true);
+            log(`[AI Market] ${team.name} 🆓 FREE: ${t.player.name} (Pos: ${targetPos}, Power: ${t.power.toFixed(1)})`);
+
+            if (res.success) {
+                teamDepthMap.set(targetPos, getPositionDepth(teamDepthMap, targetPos) + 1);
+                bidsPlaced++;
+            }
+        }
+    }
+
+    // === PRIORITY 3: Buy listed players if still need depth ===
+    if (bidsPlaced < bidsToMake) {
+        const remainingBids = bidsToMake - bidsPlaced;
+        
+        if (isTopTier) {
+            // Title contenders: prioritize famous + in-form + Top 3 ranking players
+            const rankedTargets = listedTargets.filter(lp => rankingTop3Ids.has(lp.player.id));
+            const qualityTargets = listedTargets.filter(lp =>
+                (lp.player.popularity || 0) >= 70 ||
+                (lp.player.avgRating || 0) >= 7.0 ||
+                (lp.player.motmCount || 0) >= 2 ||
+                (lp.player.goals || 0) >= 5 ||
+                (lp.player.assists || 0) >= 5
+            );
+
+            const preferredPool = rankedTargets.length > 0
+                ? rankedTargets
+                : (qualityTargets.length > 0 ? qualityTargets : listedTargets);
+
+            const urgentPool = urgentPositions.length > 0
+                ? preferredPool.filter(lp => urgentPositions.includes(normalizeDepthPosition(lp.player.naturalPosition)))
+                : preferredPool;
+
+            const finalPool = urgentPool.length > 0 ? urgentPool : preferredPool;
+
+            const sortedPreferred = [...finalPool].sort((a, b) => {
+                const styleScoreA = getStyleTransferFitScore(a.player, style);
+                const styleScoreB = getStyleTransferFitScore(b.player, style);
+                const scoreA = (rankingTop3Ids.has(a.player.id) ? 100 : 0)
+                    + Number(a.player.popularity || 0)
+                    + Number(a.player.avgRating || 0) * 10
+                    + Number(a.player.motmCount || 0) * 3
+                    + Number(a.player.goals || 0)
+                    + Number(a.player.assists || 0)
+                    + styleScoreA;
+                const scoreB = (rankingTop3Ids.has(b.player.id) ? 100 : 0)
+                    + Number(b.player.popularity || 0)
+                    + Number(b.player.avgRating || 0) * 10
+                    + Number(b.player.motmCount || 0) * 3
+                    + Number(b.player.goals || 0)
+                    + Number(b.player.assists || 0)
+                    + styleScoreB;
+                return scoreB - scoreA;
             });
 
-            if (posTargets.length > 0) {
-                // Sort by power + style fit, prioritize higher power
-                const sortedTargets = [...posTargets].sort((a, b) => {
-                    const scoreA = a.power * 1.2 + getStyleTransferFitScore(a.player, style) * 0.3;
-                    const scoreB = b.power * 1.2 + getStyleTransferFitScore(b.player, style) * 0.3;
-                    return scoreB - scoreA;
-                });
-                
-                // Take top 3 candidates
-                const pool = sortedTargets.slice(0, Math.min(3, sortedTargets.length));
-                
-                // Check if we can afford any of them
-                const affordableTargets = pool.filter(t => {
-                    const price = t.player.askingPrice || 0;
-                    return price <= effectiveMaxBudget;
-                });
-                
-                if (affordableTargets.length === 0) {
-                    // Can't afford any upgrade for this position
-                    // If urgent, log warning; if not urgent, skip silently (save money for next round)
-                    if (isUrgent) {
-                        const cheapestPrice = pool[0]?.player.askingPrice || 0;
-                        log(`[AI Market] ${team.name} [Style:${style.id}] ⚠️ URGENT: Cannot afford ${pos} upgrade. Need $${cheapestPrice.toLocaleString()}, Budget: $${effectiveMaxBudget.toLocaleString()}. Saving money for next round.`);
+            const shortList = sortedPreferred.slice(0, Math.min(8, sortedPreferred.length));
+            if (shortList.length > 0) {
+                for (const t of shortList) {
+                    if (bidsPlaced >= bidsToMake) break;
+                    if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE) break;
+
+                    const targetPos = normalizeDepthPosition(t.player.naturalPosition);
+                    if (urgentPositions.length > 0 && !urgentPositions.includes(targetPos)) {
+                        continue;
                     }
-                    continue; // Skip this position, try next
+
+                    const isFreeAgent = !t.player.teamId;
+                    const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
+                    const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
+                    const urgentNote = urgentPositions.length > 0 ? `, Urgent:${urgentPositions.join('/')}` : '';
+                    log(`[AI Market] ${team.name} (Top 1-5) bid for ${t.player.name} (${source}, Pop:${t.player.popularity || 50}, RankTop3:${rankingTop3Ids.has(t.player.id) ? 'Y' : 'N'}${urgentNote}): ${res.success ? 'Success' : res.message}`);
+
+                    if (res.success) {
+                        teamDepthMap.set(targetPos, getPositionDepth(teamDepthMap, targetPos) + 1);
+                        bidsPlaced++;
+                    }
                 }
-                
-                // Pick random from affordable targets
-                const t = affordableTargets[Math.floor(Math.random() * affordableTargets.length)];
-                const isFreeAgent = !t.player.teamId;
-                const res = await submitBid(t.player.id, teamId, isFreeAgent ? 0 : (t.player.askingPrice || 0), 0, isFreeAgent);
-                const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
-                const powerDiff = t.power - avgPower;
-                log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)} ${powerDiff > 0 ? '+' + powerDiff.toFixed(1) : powerDiff.toFixed(1)}, Depth:${depth}, Urgent:${isUrgent ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
-                
-                if (res.success) {
-                    teamDepthMap.set(pos, getPositionDepth(teamDepthMap, pos) + 1);
-                    bidsPlaced++;
+            }
+        } else {
+            // All non-top teams: Evaluate positions and buy strategically
+            // Priority: 1) Urgent positions (< 2 players), 2) Upgrades (higher power than average)
+
+            const positionToTeamPowers = new Map<string, { powers: number[]; avgPower: number }>();
+            for (const p of team.players) {
+                const pos = normalizeDepthPosition(p.naturalPosition);
+                const pwr = calculatePlayerPower({
+                    attributes: toPlayerAttributes(p),
+                    targetPosition: p.naturalPosition.split('_')[0],
+                    condition: 100,
+                    exp: p.exp || 0,
+                }).powerWithExp;
+
+                if (!positionToTeamPowers.has(pos)) {
+                    positionToTeamPowers.set(pos, { powers: [], avgPower: 0 });
+                }
+                positionToTeamPowers.get(pos)!.powers.push(pwr);
+            }
+
+            // Calculate average power for each position
+            for (const [pos, data] of positionToTeamPowers.entries()) {
+                data.avgPower = data.powers.length > 0
+                    ? data.powers.reduce((sum, p) => sum + p, 0) / data.powers.length
+                    : 0;
+            }
+
+            const allPositions = new Set<string>([
+                ...Array.from(positionToTeamPowers.keys()),
+                ...listedTargets.map(t => normalizeDepthPosition(t.player.naturalPosition)),
+            ]);
+
+            // Build position priority list
+            const positionPriority = Array.from(allPositions).map(pos => {
+                const posData = positionToTeamPowers.get(pos) || { powers: [], avgPower: 0 };
+                const depth = getPositionDepth(teamDepthMap, pos);
+                const isUrgent = depth < MIN_POSITION_DEPTH;
+                const hasNoDepth = posData.powers.length === 0;
+
+                return {
+                    pos,
+                    avgPower: posData.avgPower,
+                    depth,
+                    hasNoDepth,
+                    isUrgent,
+                    powers: posData.powers
+                };
+            }).sort((a, b) => {
+                // Priority 1: Urgent positions (depth < 2)
+                if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
+                // Priority 2: Positions with no players
+                if (a.hasNoDepth !== b.hasNoDepth) return a.hasNoDepth ? -1 : 1;
+                // Priority 3: Lower depth first
+                if (a.depth !== b.depth) return a.depth - b.depth;
+                // Priority 4: Lower average power first (weaker positions need upgrades)
+                return a.avgPower - b.avgPower;
+            });
+
+            // Determine budget based on urgency
+            const urgentPriorityPositions = positionPriority.filter(p => p.isUrgent);
+            const hasUrgentNeed = urgentPriorityPositions.length > 0;
+
+            // Budget: 90% for urgent needs, otherwise follow profile
+            const effectiveMaxBudget = hasUrgentNeed
+                ? team.balance * 0.90
+                : team.balance * profileBudgetUsage;
+
+            for (const { pos, avgPower, hasNoDepth, depth, isUrgent, powers } of positionPriority) {
+                if (bidsPlaced >= bidsToMake) break;
+                if ((team.players.length + bidsPlaced) >= MAX_SQUAD_SIZE && !isUrgent) break;
+
+                // Filter targets for this position
+                const posTargets = listedTargets.filter(lp => {
+                    const targetPos = getPositionKey(lp.player.naturalPosition);
+                    const normalizedTargetPos = normalizeDepthPosition(targetPos);
+                    if (normalizedTargetPos !== pos) return false;
+
+                    // Urgent positions: accept any available player
+                    if (isUrgent || hasNoDepth) return true;
+
+                    // Non-urgent (upgrade): Must have higher power than team average for this position
+                    // This ensures we only buy upgrades, not lateral moves
+                    return lp.power > avgPower;
+                });
+
+                if (posTargets.length > 0) {
+                    // Sort by power + style fit, prioritize higher power
+                    const sortedTargets = [...posTargets].sort((a, b) => {
+                        const scoreA = a.power * 1.2 + getStyleTransferFitScore(a.player, style) * 0.3;
+                        const scoreB = b.power * 1.2 + getStyleTransferFitScore(b.player, style) * 0.3;
+                        return scoreB - scoreA;
+                    });
+
+                    // Take top 3 candidates
+                    const pool = sortedTargets.slice(0, Math.min(3, sortedTargets.length));
+
+                    // Check if we can afford any of them
+                    const affordableTargets = pool.filter(t => {
+                        const price = t.player.askingPrice || 0;
+                        return price <= effectiveMaxBudget;
+                    });
+
+                    if (affordableTargets.length === 0) {
+                        // Can't afford any upgrade for this position
+                        // If urgent, log warning; if not urgent, skip silently (save money for next round)
+                        if (isUrgent) {
+                            const cheapestPrice = pool[0]?.player.askingPrice || 0;
+                            log(`[AI Market] ${team.name} [Style:${style.id}] ⚠️ URGENT: Cannot afford ${pos} upgrade. Need $${cheapestPrice.toLocaleString()}, Budget: $${effectiveMaxBudget.toLocaleString()}. Saving money for next round.`);
+                        }
+                        continue; // Skip this position, try next
+                    }
+
+                    // Pick random from affordable targets
+                    const t = affordableTargets[Math.floor(Math.random() * affordableTargets.length)];
+                    const res = await submitBid(t.player.id, teamId, t.player.askingPrice || 0, 0, false);
+                    const source = t.player.teamId ? `${t.player.team?.name}` : 'Free Agent';
+                    const powerDiff = t.power - avgPower;
+                    log(`[AI Market] ${team.name} [Style:${style.id}] bid for ${t.player.name} (${pos}, ${source}, P:${t.power.toFixed(1)} > TeamAvg:${avgPower.toFixed(1)} ${powerDiff > 0 ? '+' + powerDiff.toFixed(1) : powerDiff.toFixed(1)}, Depth:${depth}, Urgent:${isUrgent ? 'Y' : 'N'}): ${res.success ? 'Success' : res.message}`);
+
+                    if (res.success) {
+                        teamDepthMap.set(pos, getPositionDepth(teamDepthMap, pos) + 1);
+                        bidsPlaced++;
+                    }
                 }
             }
         }
