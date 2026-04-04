@@ -26,63 +26,41 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         // Fetch notification counters for sidebar badges
         const fetchMenuNotiCounts = async () => {
             try {
-                const userRes = await fetch('/api/game/info');
-                const userData = await userRes.json();
-                
-                if (userData.userTeamId) {
-                    const bidsRes = await fetch(`/api/market/incoming-bids?teamId=${userData.userTeamId}`);
-                    if (bidsRes.ok) {
-                        const data = await bidsRes.json();
-                        setIncomingBidsCount(data.count || 0);
+                // Get basic info and user team ID first
+                const infoRes = await fetch('/api/game/info');
+                const infoData = await infoRes.json();
+                const teamId = infoData.userTeamId;
+
+                if (teamId) {
+                    // Fetch consolidated notifications
+                    const summaryRes = await fetch(`/api/game/sidebar-summary?teamId=${teamId}`);
+                    if (summaryRes.ok) {
+                        const summary = await summaryRes.json();
+                        setIncomingBidsCount(summary.notifications.incomingBids || 0);
+                        setExpiringContractsCount(summary.notifications.expiringContracts || 0);
                     }
 
-                    const contractsRes = await fetch(`/api/contracts?teamId=${userData.userTeamId}`);
-                    if (contractsRes.ok) {
-                        const contractsData = await contractsRes.json();
-                        setExpiringContractsCount(contractsData.totalExpiring || 0);
-                    }
-
-                    // Training alerts:
-                    // 1) Empty/unconfigured slots (needs assignment)
-                    // 2) Slots where focus attribute already reached cap 20 (needs change)
+                    // Training alerts (separate for now as it needs full state for logic)
                     const trainingRes = await fetch('/api/training');
                     if (trainingRes.ok) {
                         const trainingData = await trainingRes.json();
+                        const slots = trainingData?.slots || [];
+                        const players = trainingData?.players || [];
+                        const playerMap = new Map(players.map((p: any) => [p.id, p]));
 
-                        const slots: Array<{
-                            playerId: string | null;
-                            focusAttribute: string | null;
-                            isActive: boolean;
-                        }> = trainingData?.slots || [];
-
-                        const players: Array<{
-                            id: string;
-                            effectiveAttributes?: Record<string, number>;
-                        }> = trainingData?.players || [];
-
-                        const playerMap = new Map(players.map((p) => [p.id, p]));
-
-                        let emptyOrUnconfigured = 0;
-                        let reachedCap = 0;
-
+                        let alerts = 0;
                         for (const slot of slots) {
-                            // Slot needs user action if no player, no attribute, inactive,
-                            // OR player has left the team (stale assignment)
                             const player = slot.playerId ? playerMap.get(slot.playerId) : undefined;
                             if (!slot.playerId || !slot.focusAttribute || !slot.isActive || (slot.playerId && !player)) {
-                                emptyOrUnconfigured++;
+                                alerts++;
                                 continue;
                             }
-
                             const focusedValue = player?.effectiveAttributes?.[slot.focusAttribute] ?? 0;
-
-                            // If focused training stat is already capped, slot should be reassigned
                             if (focusedValue >= 20) {
-                                reachedCap++;
+                                alerts++;
                             }
                         }
-
-                        setTrainingAlertCount(emptyOrUnconfigured + reachedCap);
+                        setTrainingAlertCount(alerts);
                     }
                 }
             } catch (error) {

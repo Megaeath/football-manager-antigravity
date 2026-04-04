@@ -320,21 +320,39 @@ function generateSuperstarAttributes(position: string, naturalPosition: string):
 }
 
 export async function initializeNewGame(userTeamName: string) {
+    // Match-level and action-level state
     await prisma.playerActionLog.deleteMany();
     await prisma.playerMatchStats.deleteMany();
     await prisma.matchEvent.deleteMany();
 
+    // Market / news state
     await prisma.transferHistory.deleteMany();
     await prisma.bid.deleteMany();
     await prisma.news.deleteMany();
 
+    // Finance / reputation state
     await prisma.financialEvent.deleteMany();
     await prisma.clubFinance.deleteMany();
     await prisma.teamReputation.deleteMany();
     await prisma.playerReputation.deleteMany();
     await prisma.teamTactics.deleteMany();
 
+    // Training state
+    await prisma.trainingWeeklyLedger.deleteMany();
+    await prisma.trainingAssignment.deleteMany();
+    await prisma.playerTrainingFraction.deleteMany();
+
+    // Fixtures and matches
     await prisma.match.deleteMany();
+
+    // Cup / Swiss tournament state (must be cleared so a new game starts from round 1)
+    await prisma.swissMatchHistory.deleteMany();
+    await prisma.swissStanding.deleteMany();
+    if ((prisma as any).cupTournament) {
+        await (prisma as any).cupTournament.deleteMany();
+    }
+
+    // Core entities
     await prisma.player.deleteMany();
     await prisma.team.deleteMany();
     await prisma.seasonHistory.deleteMany();

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
@@ -17,8 +18,11 @@ function cupPhaseLabel(phase: string | null, round: number | null): string {
 }
 
 export default async function Home() {
+    noStore();
+
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
+    let displayedBalance = 0;
 
     // Get settings to find user team
     const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
@@ -66,6 +70,8 @@ export default async function Home() {
             where: { teamId: userTeamId },
             orderBy: { createdAt: 'desc' }
         });
+
+        displayedBalance = teamFinance?.balance ?? userTeam?.balance ?? 0;
 
         // Get league table
         const allTeams = await prisma.team.findMany({
@@ -244,10 +250,11 @@ export default async function Home() {
                     {/* Finances Card */}
                     <div className="card card-gradient-success">
                         <h4 className="text-lg font-semibold" style={{ margin: '0 0 1rem 0', color: 'var(--success)' }}>💰 {FINANCES.TITLE}</h4>
+                        <div className="text-sm text-muted mb-2">{userTeam.name}</div>
                         <div className="text-3xl font-bold mb-2" style={{ color: 'var(--success)' }}>
-                            ${(userTeam?.balance ?? teamFinance?.balance ?? 0).toLocaleString()}
+                            ${displayedBalance.toLocaleString()}
                         </div>
-                        <div className="text-sm text-muted">{FINANCES.AVAILABLE_BUDGET}</div>
+                        <div className="text-sm text-muted">{FINANCES.BALANCE}</div>
                         <Link href="/finances" className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--success)', color: 'white' }}>
                             {FINANCES.VIEW_DETAILS} →
                         </Link>

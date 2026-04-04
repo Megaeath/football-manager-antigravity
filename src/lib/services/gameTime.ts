@@ -9,6 +9,11 @@ import { processWeeklyTraining } from './training';
 import { processAllAITeamsWeeklyTraining, upgradeAITeamFacilities } from './aiTrainingService';
 import { ensureDivisionLeagues } from './divisionSystem';
 import { initializeCupTournamentForSeason } from './SwissTournament';
+import { getCache, setCache, invalidateCache } from '../cache';
+
+const CACHE_KEY_GAME_SETTINGS = 'game:settings';
+const CACHE_KEY_MAINTENANCE_SEASON = 'game:maintenance:season';
+const CACHE_KEY_MAINTENANCE_DAY = 'game:maintenance:day';
 
 const TH_FIRST_NAMES = ['Anan', 'Somchai', 'Kittipong', 'Narin', 'Phumin', 'Thanin', 'Soran', 'Kawin', 'Pinit', 'Chaiyaphum'];
 const TH_LAST_NAMES = ['Srisuk', 'Wattanakul', 'Boonmee', 'Rattanakorn', 'Sombat', 'Ritthichai', 'Chaiyo', 'Sanguan', 'Prasert', 'Kanan'];
@@ -168,6 +173,10 @@ async function generateMonthlyFreeAgentProspects(currentDate: Date, count: numbe
 }
 
 export async function getGameTime() {
+    // Try cache first
+    const cached = getCache<GlobalGameSettings>(CACHE_KEY_GAME_SETTINGS);
+    if (cached) return cached;
+
     let settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
     if (!settings) {
         // Try to find a default user team (e.g., Red FC)
@@ -199,16 +208,27 @@ export async function getGameTime() {
         }
         await initializeCupTournamentForSeason(1);
     } else {
-        await ensureDivisionLeagues(settings.currentSeason);
-
-        // Ensure cup exists for current season (safe no-op when already initialized)
-        try {
-            await initializeCupTournamentForSeason(settings.currentSeason);
-        } catch (error) {
-            console.error('[GameTime] Failed to ensure cup tournament for current season:', error);
+        // Optimization: Skip expensive "ensure" logic if already done for this session/day
+        const maintenanceKey = `${CACHE_KEY_MAINTENANCE_SEASON}:${settings.currentSeason}`;
+        if (!getCache(maintenanceKey)) {
+            await ensureDivisionLeagues(settings.currentSeason);
+            try {
+                await initializeCupTournamentForSeason(settings.currentSeason);
+                // Mark maintenance as done for this season (ttl 1 hour)
+                setCache(maintenanceKey, true, 3600);
+            } catch (error) {
+                console.error('[GameTime] Failed to ensure cup tournament for current season:', error);
+            }
         }
     }
+    
+    // Cache settings for 60 seconds (safe for info/sidebar requests)
+    setCache(CACHE_KEY_GAME_SETTINGS, settings, 60);
     return settings;
+}
+
+export function invalidateGameCache() {
+    invalidateCache(CACHE_KEY_GAME_SETTINGS);
 }
 
 export async function advanceDay() {
@@ -217,6 +237,7 @@ export async function advanceDay() {
     nextDate.setUTCDate(nextDate.getUTCDate() + 1);
 
     // 1. Age update (UTC-safe): recalculate from birthDate and correct stale ages.
+    console.time('advanceDay: Age Update');
     // NOTE: SQLite `strftime` can return NULL for ISO strings like `2011-09-10T00:00:00.000Z`.
     // We avoid SQL date parsing and compute age in TypeScript using UTC fields.
     const playersForAgeUpdate = await prisma.player.findMany({
@@ -253,8 +274,10 @@ export async function advanceDay() {
             }
         }
     }
+    console.timeEnd('advanceDay: Age Update');
 
     // 2. Daily Fitness Recovery (based on stamina with randomness)
+    console.time('advanceDay: Fitness Recovery');
     const activePlayers = await prisma.player.findMany({
         where: { isRetired: false },
         select: { id: true, condition: true, stamina: true }
@@ -281,8 +304,10 @@ export async function advanceDay() {
             conditionUpdates.map(u => prisma.player.update({ where: { id: u.id }, data: { condition: u.condition } }))
         );
     }
+    console.timeEnd('advanceDay: Fitness Recovery');
 
     // Process expired bids and transfers (daily)
+    console.time('advanceDay: Market Rules');
     try {
         await processBiddingRules();
         await processAcceptedTransfers();
@@ -292,6 +317,7 @@ export async function advanceDay() {
     } catch (error) {
         console.error('Error processing market rules:', error);
     }
+    console.timeEnd('advanceDay: Market Rules');
 
     // Check if it's a new year (New Season)
     const isNewYear = nextDate.getUTCFullYear() > settings.currentDate.getUTCFullYear();
@@ -304,7 +330,10 @@ export async function advanceDay() {
     const nextWeek = Math.floor(nextDate.getUTCDate() / 7);
     const weekChanged = nextWeek !== currentWeek || nextDate.getUTCMonth() !== settings.currentDate.getUTCMonth();
 
+    let isWeeklyBatchProcessed = false;
     if (weekChanged) {
+        isWeeklyBatchProcessed = true;
+        console.time('advanceDay: Weekly Tasks');
         const weekKey = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24 * 7));
 
         // Weekly injury recovery progression
@@ -361,8 +390,12 @@ export async function advanceDay() {
             console.error('[GameTime] Error generating monthly free-agent prospects:', error);
         }
     }
+        if (isWeeklyBatchProcessed) {
+            console.timeEnd('advanceDay: Weekly Tasks');
+        }
 
     // Distributed AI Market Movements - process overdue teams daily
+    console.time('advanceDay: AI Market');
     try {
         // Find teams that haven't been processed in the last 30 days
         // Find teams that haven't been processed in the last 14 days
@@ -411,6 +444,7 @@ export async function advanceDay() {
     } catch (error) {
         console.error('[GameTime] Error in distributed AI Market processing:', error);
     }
+    console.timeEnd('advanceDay: AI Market');
 
     if (isNewYear) {
         console.log('[GameTime] *** STARTING NEW SEASON ***');
@@ -418,10 +452,14 @@ export async function advanceDay() {
     }
 
 
-    return await prisma.globalGameSettings.update({
+    const result = await prisma.globalGameSettings.update({
         where: { id: settings.id },
         data: { currentDate: nextDate }
     });
+
+    // Invalidate cache AFTER update to ensure next fetch gets fresh DB values
+    invalidateGameCache();
+    return result;
 }
 
 async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
@@ -694,6 +732,8 @@ async function startNewSeason(settings: GlobalGameSettings, nextDate: Date) {
         }
     });
 
+    // CRITICAL: Invalidate cache AFTER updating DB
+    invalidateGameCache();
     console.log('[StartNewSeason] *** NEW SEASON STARTED SUCCESSFULLY ***');
     return result;
 }

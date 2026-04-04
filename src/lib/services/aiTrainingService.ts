@@ -98,18 +98,21 @@ export async function initAITeamTraining(teamId: string): Promise<void> {
 
   await ensureAITeamSlots(teamId);
 
-  for (let i = 0; i < TRAINING_SLOT_COUNT; i++) {
-    const slot = slots[i];
-    await prisma.trainingAssignment.update({
-      where: { teamId_slotIndex: { teamId, slotIndex: i + 1 } },
-      data: {
-        playerId: slot?.playerId ?? null,
-        focusAttribute: slot?.attribute ?? null,
-        isActive: slot != null,
-        lastGain: 0,
-      },
-    });
-  }
+  // We have 5 slots to update. Instead of 5 separate updates, we can update them in parallel.
+  await Promise.all(
+    Array.from({ length: TRAINING_SLOT_COUNT }).map((_, i) => {
+      const slot = slots[i];
+      return prisma.trainingAssignment.update({
+        where: { teamId_slotIndex: { teamId, slotIndex: i + 1 } },
+        data: {
+          playerId: slot?.playerId ?? null,
+          focusAttribute: slot?.attribute ?? null,
+          isActive: slot != null,
+          lastGain: 0,
+        },
+      });
+    })
+  );
 }
 
 /**
@@ -127,19 +130,22 @@ export async function processAllAITeamsWeeklyTraining(
     select: { id: true },
   });
 
-  // Process teams in parallel batches of 10. Turso (libSQL over HTTP) has no
-  // file-level write locks, so concurrent writes across teams are safe.
-  const BATCH_SIZE = 10;
-  for (let i = 0; i < aiTeams.length; i += BATCH_SIZE) {
-    const batch = aiTeams.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (team) => {
-      try {
-        await initAITeamTraining(team.id);
-        await processWeeklyTraining(team.id, weekKey);
-      } catch (err) {
-        console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
+  // Strategy: Process teams SEQUENTIALLY to ensure absolute stability and atomicity.
+  // Batching (Promise.all) causes database contention in Turso/SQLite, leading to P2028.
+  let count = 0;
+  for (const team of aiTeams) {
+    count++;
+    const start = Date.now();
+    try {
+      await initAITeamTraining(team.id);
+      await processWeeklyTraining(team.id, weekKey);
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      if (count % 10 === 0 || count === aiTeams.length) {
+        console.log(`[AI Training] Processed ${count}/${aiTeams.length} teams... (last: ${duration}s)`);
       }
-    }));
+    } catch (err) {
+      console.error(`[AI Training] Weekly training failed for team ${team.id}:`, err);
+    }
   }
 }
 
@@ -166,6 +172,10 @@ export async function upgradeAITeamFacilities(userTeamId: string | null): Promis
     if (team.reputation < reputationThreshold) continue;
     if (team.balance < nextLevelConfig.upgradeCost) continue;
 
+    // Push to a batch instead of processing one by one
+    // But since transactions are per team, we still need them isolated.
+    // However, we can run them in parallel to some extent.
+    // Given Prisma/Turso limits, we'll keep it simple but maybe use Promise.all for groups.
     try {
       await prisma.$transaction([
         prisma.team.update({

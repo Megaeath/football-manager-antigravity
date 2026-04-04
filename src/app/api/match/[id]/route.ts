@@ -120,6 +120,7 @@ export async function GET(
         }
 
         // Format the response to match what MatchPage expects
+        const MATCH_EXP_GAIN_CAP = 3;
         const formattedStats: Record<string, any> = {};
         match.playerStats.forEach((ps: any) => {
             const fouls = ps.fouls ?? foulCountByPlayerId.get(ps.playerId) ?? 0;
@@ -166,7 +167,7 @@ export async function GET(
                 
                 const age = playerAges.get(ps.playerId) || 25;
                 const adjustedGain = applyAgeEfficiency(expResult.totalGain, age);
-                expGain = Math.round(adjustedGain);
+                expGain = Math.min(MATCH_EXP_GAIN_CAP, Math.round(adjustedGain));
             }
             
             formattedStats[ps.playerId] = {

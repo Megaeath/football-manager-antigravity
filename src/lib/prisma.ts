@@ -11,6 +11,13 @@ const prismaClientSingleton = () => {
     process.env.DATABASE_URL = datasourceUrl;
   }
 
+  const logConfig = process.env.NODE_ENV === 'production' 
+    ? [] 
+    : [
+        // { emit: 'stdout', level: 'query' },
+        // { emit: 'stdout', level: 'warn' },
+      ];
+
   if (useTurso) {
     if (!tursoUrl || tursoUrl === 'undefined') {
       throw new Error('PRISMA_USE_TURSO=true but TURSO_DATABASE_URL is missing/invalid');
@@ -30,7 +37,7 @@ const prismaClientSingleton = () => {
       console.log(`[Prisma] Turso mode enabled -> ${host}`);
     }
 
-    return new PrismaClient({ adapter });
+    return new PrismaClient({ adapter, log: logConfig });
   }
 
   // Fallback to Prisma datasource URL (e.g. sqlite via DATABASE_URL)
@@ -38,7 +45,7 @@ const prismaClientSingleton = () => {
     console.log(`[Prisma] Local mode enabled -> ${datasourceUrl}`);
   }
 
-  return new PrismaClient({ datasourceUrl });
+  return new PrismaClient({ datasourceUrl, log: logConfig });
 };
 
 declare global {

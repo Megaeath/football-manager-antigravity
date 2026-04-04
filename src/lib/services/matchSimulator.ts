@@ -169,7 +169,7 @@ function getRankRevenueRatio(rank: number, divisionLevel: number = 1): number {
         3: { min: 0.70, max: 0.80 }
     };
     
-    const range = attendanceRanges[divisionLevel] || attendanceRanges[3];
+    const range = (attendanceRanges as Record<number, { min: number; max: number }>)[divisionLevel] || attendanceRanges[3];
     
     // Random attendance within the range for this division
     // Higher rank gets slightly higher attendance within the range
@@ -181,7 +181,16 @@ function getRankRevenueRatio(rank: number, divisionLevel: number = 1): number {
     return Math.max(range.min, Math.min(range.max, attendance));
 }
 
+const rankCache = new Map<string, { rank: number; divisionLevel: number }>();
+
+export function clearLeagueRankCache() {
+    rankCache.clear();
+}
+
 async function getTeamLeagueRank(teamId: string, season: number): Promise<{ rank: number; divisionLevel: number }> {
+    const cacheKey = `${teamId}_${season}`;
+    if (rankCache.has(cacheKey)) return rankCache.get(cacheKey)!;
+
     const targetTeam = await prisma.team.findUnique({
         where: { id: teamId },
         include: { league: { select: { id: true, level: true } } }
@@ -263,6 +272,13 @@ async function getTeamLeagueRank(teamId: string, season: number): Promise<{ rank
         if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
         if (a.goalsAgainst !== b.goalsAgainst) return a.goalsAgainst - b.goalsAgainst;
         return a.name.localeCompare(b.name);
+    });
+
+    table.forEach((row, index) => {
+        rankCache.set(`${row.teamId}_${season}`, {
+            rank: index + 1,
+            divisionLevel: targetTeam.league?.level || 1
+        });
     });
 
     const rankIndex = table.findIndex((row) => row.teamId === teamId);
@@ -437,12 +453,12 @@ export async function processMatch(matchId: string) {
                 data: { tacticalPosition: null }
             });
 
-            for (const assignment of homeAssignments) {
-                await tx.player.update({
+            await Promise.all(homeAssignments.map(assignment =>
+                tx.player.update({
                     where: { id: assignment.playerId },
                     data: { tacticalPosition: assignment.position }
-                });
-            }
+                })
+            ));
         }
 
         if (!awayHasManual) {
@@ -451,12 +467,12 @@ export async function processMatch(matchId: string) {
                 data: { tacticalPosition: null }
             });
 
-            for (const assignment of awayAssignments) {
-                await tx.player.update({
+            await Promise.all(awayAssignments.map(assignment =>
+                tx.player.update({
                     where: { id: assignment.playerId },
                     data: { tacticalPosition: assignment.position }
-                });
-            }
+                })
+            ));
         }
     });
 
@@ -764,22 +780,13 @@ export async function processMatch(matchId: string) {
         const postPlayerEvents: Array<{ minute: number; type: string; text: string; teamId?: string; playerId?: string }> = [];
         const playedPlayerIds = new Set<string>();
         const playedExpGainByTeam: Record<string, number[]> = {};
+        const MATCH_EXP_GAIN_CAP = 3;
+
+        const playerUpdatePromises: Promise<any>[] = [];
 
         for (const stat of playerStats) {
             // Calculate EXP gain from match performance
-            const player = await tx.player.findUnique({
-                where: { id: stat.playerId },
-                select: {
-                    naturalPosition: true,
-                    age: true,
-                    exp: true,
-                    yellowCardAccumulation: true,
-                    suspensionMatchesRemaining: true,
-                    injuryWeeksRemaining: true,
-                    stamina: true,
-                    strength: true
-                }
-            });
+            const player = [...matchDB.homeTeam.players, ...matchDB.awayTeam.players].find((p: any) => p.id === stat.playerId);
             
                 if (!player) continue; // Skip if player not found
             
@@ -841,7 +848,7 @@ export async function processMatch(matchId: string) {
             
                 // Apply age-efficiency to match EXP and round to integer for persisted Int field
                 const adjustedGain = applyAgeEfficiency(expGain.totalGain, player.age);
-                const gainToApply = Math.round(adjustedGain);
+                const gainToApply = Math.min(MATCH_EXP_GAIN_CAP, Math.round(adjustedGain));
                 const currentExp = player.exp || 0;
                 const newExp = currentExp + gainToApply;
 
@@ -881,7 +888,7 @@ export async function processMatch(matchId: string) {
             }
             
             // Update player stats including EXP
-            await (tx.player as any).update({
+            playerUpdatePromises.push((tx.player as any).update({
                 where: { id: stat.playerId },
                 data: {
                     goals: { increment: stat.goals },
@@ -905,8 +912,10 @@ export async function processMatch(matchId: string) {
                     injuryWeeksRemaining: injuryWeeksToApply,
                     injurySeverity: injuryWeeksToApply > 0 ? (injurySeverityToApply || (player.injuryWeeksRemaining > 0 ? undefined : null)) : null
                 }
-            });
+            }));
         }
+
+        await Promise.all(playerUpdatePromises);
 
 
         // 1) Non-playing veterans (>30 years old) lose EXP (decline phase)
@@ -921,14 +930,10 @@ export async function processMatch(matchId: string) {
             .filter((p: any) => (p.age || 0) > 30)
             .map((p: any) => p.id);
         if (veteranNonPlayingIds.length > 0) {
-            await Promise.all(
-                veteranNonPlayingIds.map((playerId) =>
-                    (tx.player as any).update({
-                        where: { id: playerId },
-                        data: { exp: { decrement: 1 } }
-                    })
-                )
-            );
+            await (tx.player as any).updateMany({
+                where: { id: { in: veteranNonPlayingIds } },
+                data: { exp: { decrement: 1 } }
+            });
         }
 
         // Youth EXP for non-playing youth (age < 25) in both teams
@@ -941,14 +946,10 @@ export async function processMatch(matchId: string) {
                     .filter((p: any) => p.teamId === teamId && (p.age || 0) < 25)
                     .map((p: any) => p.id);
                 if (youthNonPlayingIds.length > 0) {
-                    await Promise.all(
-                        youthNonPlayingIds.map((playerId) =>
-                            (tx.player as any).update({
-                                where: { id: playerId },
-                                data: { exp: { increment: minPlayedGain } }
-                            })
-                        )
-                    );
+                    await (tx.player as any).updateMany({
+                        where: { id: { in: youthNonPlayingIds } },
+                        data: { exp: { increment: minPlayedGain } }
+                    });
                 }
             }
         }
@@ -1009,10 +1010,16 @@ export async function processMatchFinancials(matchId: string) {
     // - Away receives 50% * away-rank-ratio share of home gate
     
     const isCupMatch = match.competitionType === 'CUP';
-    const [homeRankInfo, awayRankInfo] = await Promise.all([
-        getTeamLeagueRank(match.homeTeamId, match.season),
-        getTeamLeagueRank(match.awayTeamId, match.season)
-    ]);
+    
+    let homeRankInfo = { rank: 1, divisionLevel: 1 };
+    let awayRankInfo = { rank: 1, divisionLevel: 1 };
+    
+    if (!isCupMatch) {
+        [homeRankInfo, awayRankInfo] = await Promise.all([
+            getTeamLeagueRank(match.homeTeamId, match.season),
+            getTeamLeagueRank(match.awayTeamId, match.season)
+        ]);
+    }
 
     const ticketPrice = 20; // Standard ticket price for all matches
     

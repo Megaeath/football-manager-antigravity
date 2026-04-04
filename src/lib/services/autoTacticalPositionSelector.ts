@@ -218,32 +218,31 @@ export async function autoAssignTacticalPositions(teamId: string): Promise<numbe
         });
 
         // Apply assignments to database
-        await prisma.$transaction(async (tx) => {
-            await tx.player.updateMany({
-                where: {
-                    teamId,
-                    OR: [
-                        { suspensionMatchesRemaining: { gt: 0 } },
-                        { injuryWeeksRemaining: { gt: 0 } }
-                    ]
-                } as any,
-                data: { tacticalPosition: null }
-            });
-
-            // Clear all existing tactical positions for this team
-            await tx.player.updateMany({
-                where: { teamId },
-                data: { tacticalPosition: null }
-            });
-
-            // Assign new tactical positions
-            for (const assignment of assignments) {
-                await tx.player.update({
-                    where: { id: assignment.playerId },
-                    data: { tacticalPosition: assignment.position }
-                });
-            }
+        // Sequential updates are safer in Turso when running in parallel batches
+        await prisma.player.updateMany({
+            where: {
+                teamId,
+                OR: [
+                    { suspensionMatchesRemaining: { gt: 0 } },
+                    { injuryWeeksRemaining: { gt: 0 } }
+                ]
+            } as any,
+            data: { tacticalPosition: null }
         });
+
+        // Clear all existing tactical positions for this team
+        await prisma.player.updateMany({
+            where: { teamId },
+            data: { tacticalPosition: null }
+        });
+
+        // Assign new tactical positions in parallel (small set of ~11 players)
+        await Promise.all(assignments.map(assignment =>
+            prisma.player.update({
+                where: { id: assignment.playerId },
+                data: { tacticalPosition: assignment.position }
+            })
+        ));
 
         return assignments.length;
     } catch (error) {
@@ -267,10 +266,11 @@ export async function autoAssignTacticalPositionsForAllAITeams(excludeTeamId?: s
         });
 
         let teamsProcessed = 0;
-
-        for (const team of teams) {
-            await autoAssignTacticalPositions(team.id);
-            teamsProcessed++;
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < teams.length; i += BATCH_SIZE) {
+            const batch = teams.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(team => autoAssignTacticalPositions(team.id)));
+            teamsProcessed += batch.length;
         }
 
         console.log(`[autoTacticalPositionSelector] Assigned tactical positions for ${teamsProcessed} AI teams`);

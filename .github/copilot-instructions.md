@@ -1,12 +1,51 @@
 # Football Manager Engine - AI Coding Instructions
 
+## Mandatory Read Order
+
+Before making **any** code, API, schema, service, simulation, or UI change, read documents in this order:
+
+1. `.github/personal-game-dev-skill.md`
+2. `DOCUMENTATION_GUIDE.md`
+3. `API_REFERENCE.md`
+4. `.github/copilot-instructions.md`
+
+This order is mandatory for all future work in this repository.
+
+---
+
+## Personal Developer Contract
+
+This AI assistant acts as the user's **personal game developer** for this project.
+
+That means every change must:
+- preserve existing architecture and reuse existing APIs/services before creating anything new
+- keep UX/UI aligned with the current visual and interaction language
+- update the relevant documentation in the same task
+- leave the project easier to debug than before
+
+If a task changes behavior, structure, API contracts, setup, or screen behavior, documentation must be updated before the task is considered complete.
+
 ## Project Overview
 
-A Next.js 16 + TypeScript tactical football simulation engine with SQLite persistence. The engine simulates realistic matches with 300-600 passes per team, dynamic player ratings, and deep squad management. Current date context: March 2026.
+A Next.js 16 + TypeScript tactical football simulation engine with Prisma persistence. The engine simulates realistic matches with 300-600 passes per team, dynamic player ratings, and deep squad management. Current date context: April 2026.
 
-**Core Architecture**: Next.js App Router → Server Actions (actions.ts) → Prisma ORM → SQLite  
+**Core Architecture**: Next.js App Router → Server Actions (actions.ts) → Prisma ORM → SQLite or Turso (libSQL adapter)  
 **Match Engine**: Pure TypeScript simulation with minute-by-minute action resolution and probabilistic outcomes  
 **State Pattern**: Database-driven with tactical/financial modifiers applied at match time
+
+---
+
+## Documentation Maintenance Rule
+
+Every implementation task must also evaluate documentation impact.
+
+At minimum:
+- API changes → update `API_REFERENCE.md`
+- architecture/workflow/debugging changes → update `.github/copilot-instructions.md`
+- feature navigation / decision-tree changes → update `DOCUMENTATION_GUIDE.md`
+- tactic behavior or UX wording changes → update `TACTICAL_GUIDE.md` when relevant
+
+Never leave the repository with code that no longer matches the docs.
 
 ---
 
@@ -175,6 +214,14 @@ const effectiveAttrs = getEffectiveAttributes(playerState.attributes, dbPlayer.e
 
 **Location**: `src/app/api/[resource]/route.ts`
 
+Use shared Prisma singleton in routes:
+
+```typescript
+import prisma from '@/lib/prisma';
+```
+
+Do not instantiate `new PrismaClient()` directly in route files, to keep DB mode (SQLite/Turso) consistent.
+
 Standard structure:
 ```typescript
 export async function POST(req: Request) {
@@ -202,11 +249,22 @@ export async function updateTacticalPosition(playerId: string, teamId: string, p
 }
 ```
 
+### Home Dashboard Live Data
+
+**Location**: `src/app/page.tsx`
+
+The dashboard home page shows user-team-sensitive cards (team name, balance, next match, league position).
+
+- The page must opt out of route caching with `noStore()` so it reflects the current `GlobalGameSettings.userTeamId`
+- This is especially important after `initializeNewGame()`, day processing, or any balance-changing workflow
+- If home dashboard cards show the wrong team or stale budget, check that `src/app/page.tsx` still calls `noStore()` before Prisma reads
+
 ### Experience Decay System
 
 Current behavior:
 - Legacy monthly decay path is disabled (kept only as month marker guard)
 - Match EXP is applied per match with age efficiency in `processMatch()`
+- Match EXP gain per player is hard-capped at `+3` per match before persistence (all positions including GK)
 - Season-end correction is applied in `applySeasonExpAdjustments()`:
   - age efficiency + seasonal cap + award/relegation bonuses + annual decay
   - correction delta is written to `player.exp`
@@ -216,6 +274,16 @@ Current behavior:
 ---
 
 ## Development Workflows
+
+### Required Workflow For Every Change
+
+1. Read `.github/personal-game-dev-skill.md`
+2. Read `DOCUMENTATION_GUIDE.md`
+3. Read `API_REFERENCE.md` before adding or changing API-related behavior
+4. Reuse existing server actions, services, engine functions, and UI patterns when possible
+5. Implement the smallest correct change
+6. Update docs in the same task
+7. Verify UX/UI consistency on affected screens
 
 ### Building & Running
 
@@ -261,6 +329,12 @@ npx prisma migrate  # List/create migrations
 3. If weekly timing changes, update `advanceDay()` hook in `src/lib/services/gameTime.ts`
 4. Keep API surface aligned in `API_REFERENCE.md`
 
+**Fix/reset new game initialization**:
+1. Ensure reset clears **all** match/tournament state in `initializeNewGame()`
+2. Clear league + cup state together (Match, CupTournament, SwissStanding, SwissMatchHistory)
+3. Clear training state tables (TrainingAssignment, PlayerTrainingFraction, TrainingWeeklyLedger)
+4. Rebuild fixtures only after all old state is fully removed
+
 ---
 
 ## Key Files by Purpose
@@ -303,14 +377,17 @@ Run: `node scripts/test-power.js` (requires node, no build step)
 
 5. **Time Zone Handling**: Game uses UTC internally (`GlobalGameSettings.currentDate`). All match scheduling respects this for calendar transitions.
 
+6. **Cup Season Year Mapping**: Cup tournament `season` is an index (1,2,3...), not a calendar year. Always map to real year when generating cup dates (season 1 => 2026) to avoid legacy dates like 1901 and perpetual “match due” behavior.
+
 ---
 
 ## 🗂️ Related Documentation
 
 **Before starting ANY development**:
-1. Read this file (copilot-instructions.md) - Architecture overview
-2. Check [API_REFERENCE.md](../API_REFERENCE.md) - To avoid duplicating endpoints/functions
-3. Consult [DOCUMENTATION_GUIDE.md](../DOCUMENTATION_GUIDE.md) - To find the right document for your task
+1. Read [personal-game-dev-skill.md](personal-game-dev-skill.md) - Personal developer contract and mandatory workflow
+2. Read this file (copilot-instructions.md) - Architecture overview
+3. Check [API_REFERENCE.md](../API_REFERENCE.md) - To avoid duplicating endpoints/functions
+4. Consult [DOCUMENTATION_GUIDE.md](../DOCUMENTATION_GUIDE.md) - To find the right document for your task
 
 **Other Reference Files**:
 - [TACTICAL_GUIDE.md](../TACTICAL_GUIDE.md) - How each tactic affects match outcomes
@@ -332,4 +409,6 @@ When modifying this file:
 - [API_REFERENCE.md](../API_REFERENCE.md) with the new endpoint/function
 - [DOCUMENTATION_GUIDE.md](../DOCUMENTATION_GUIDE.md) if it changes the decision tree
 
-Last updated: March 2026 (Training + EXP updates)
+If you change UX/UI behavior, setup flow, DB mode behavior, or architecture assumptions, also update the relevant documentation in the same task.
+
+Last updated: April 2026 (Personal skill + documentation-first workflow + Turso-aware architecture)

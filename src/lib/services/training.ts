@@ -107,7 +107,13 @@ async function getUserTeamId(): Promise<string | null> {
 }
 
 async function ensureTeamSlots(teamId: string) {
-  const existing = await db.trainingAssignment.findMany({ where: { teamId } });
+  const count = await db.trainingAssignment.count({ where: { teamId } });
+  if (count >= TRAINING_SLOT_COUNT) return;
+
+  const existing = await db.trainingAssignment.findMany({ 
+    where: { teamId },
+    select: { slotIndex: true }
+  });
   const existingIndexes = new Set<number>(existing.map((s) => s.slotIndex));
 
   const toCreate: Array<{
@@ -135,7 +141,6 @@ async function ensureTeamSlots(teamId: string) {
     try {
       await db.trainingAssignment.createMany({ data: toCreate });
     } catch (e: unknown) {
-      // Ignore unique constraint errors — another concurrent request already created the slots
       if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) {
         throw e;
       }
@@ -156,6 +161,7 @@ export async function getTrainingState(teamId?: string | null) {
 
   await ensureTeamSlots(resolvedTeamId);
 
+  // Optimization: Single findUnique for team
   const team = await db.team.findUnique({
     where: { id: resolvedTeamId },
     select: { id: true, name: true, balance: true, trainingFacilityLevel: true }
@@ -163,68 +169,61 @@ export async function getTrainingState(teamId?: string | null) {
 
   if (!team) throw new Error('Team not found');
 
-  const players = await db.player.findMany({
-    where: { teamId: resolvedTeamId, isRetired: false },
-    orderBy: [{ tacticalPosition: 'asc' }, { name: 'asc' }],
-    select: {
-      id: true,
-      name: true,
-      naturalPosition: true,
-      tacticalPosition: true,
-      age: true,
-      condition: true,
-      exp: true,
-      handling: true,
-      tackling: true,
-      passing: true,
-      shooting: true,
-      heading: true,
-      dribbling: true,
-      crossing: true,
-      setPieces: true,
-      throw: true,
-      aggression: true,
-      positioning: true,
-      vision: true,
-      bravery: true,
-      leadership: true,
-      teamwork: true,
-      composure: true,
-      pace: true,
-      acceleration: true,
-      stamina: true,
-      strength: true,
-      agility: true,
-      balance: true
+  // Optimization: Parallel fetching of players, slots and fractions
+  const [players, slotsRaw] = await Promise.all([
+    db.player.findMany({
+      where: { teamId: resolvedTeamId, isRetired: false },
+      orderBy: [{ tacticalPosition: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true, name: true, naturalPosition: true, tacticalPosition: true,
+        age: true, condition: true, exp: true,
+        handling: true, tackling: true, passing: true, shooting: true, heading: true,
+        dribbling: true, crossing: true, setPieces: true, throw: true,
+        aggression: true, positioning: true, vision: true, bravery: true,
+        leadership: true, teamwork: true, composure: true,
+        pace: true, acceleration: true, stamina: true, strength: true,
+        agility: true, balance: true
+      }
+    }),
+    db.trainingAssignment.findMany({
+      where: { teamId: resolvedTeamId },
+      include: { player: { select: { id: true, name: true, naturalPosition: true, tacticalPosition: true } } },
+      orderBy: { slotIndex: 'asc' }
+    })
+  ]);
+
+  // Optimization: Database-level stale slot clearing
+  const teamPlayerIds = players.map((p) => p.id);
+  const staleSlotsCount = await db.trainingAssignment.count({
+    where: {
+      teamId: resolvedTeamId,
+      playerId: { notIn: teamPlayerIds, not: null }
     }
   });
 
-  const slotsRaw = await db.trainingAssignment.findMany({
-    where: { teamId: resolvedTeamId },
-    include: { player: { select: { id: true, name: true, naturalPosition: true, tacticalPosition: true } } },
-    orderBy: { slotIndex: 'asc' }
-  });
-
-  // Auto-clear slots where assigned player has left the team (transferred/released)
-  const teamPlayerIds = new Set(players.map((p) => p.id));
-  const staleSlots = slotsRaw.filter((s) => s.playerId && !teamPlayerIds.has(s.playerId));
-  if (staleSlots.length > 0) {
+  if (staleSlotsCount > 0) {
     await db.trainingAssignment.updateMany({
-      where: { id: { in: staleSlots.map((s) => s.id) } },
+      where: {
+        teamId: resolvedTeamId,
+        playerId: { notIn: teamPlayerIds, not: null }
+      },
       data: { playerId: null, focusAttribute: null, isActive: false, lastGain: 0 }
     });
-    // Reflect cleared state in slotsRaw
-    staleSlots.forEach((s) => {
-      s.playerId = null;
-      s.focusAttribute = null;
-      s.isActive = false;
-      s.lastGain = 0;
-      s.player = null;
-    });
+    
+    // Patch local slotsRaw to avoid re-fetching
+    for (const s of slotsRaw) {
+      if (s.playerId && !teamPlayerIds.includes(s.playerId)) {
+        s.playerId = null;
+        s.focusAttribute = null;
+        s.isActive = false;
+        s.lastGain = 0;
+        s.player = null;
+      }
+    }
   }
 
   const fractions = await db.playerTrainingFraction.findMany({
-    where: { playerId: { in: players.map((p) => p.id) } }
+    where: { playerId: { in: teamPlayerIds } }
   });
 
   const fractionMap = new Map<string, Map<string, number>>();
@@ -464,7 +463,7 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
           chargedFee: 0
         }
       });
-    });
+    }, { timeout: 90000 });
     return { skipped: true, reason: 'insufficient-funds' };
   }
 
@@ -569,7 +568,7 @@ export async function processWeeklyTraining(teamId: string, weekKey: number) {
         chargedFee: facility.weeklyFee
       }
     });
-  }, { timeout: 15000 });
+  }, { timeout: 90000 });
 
   return { skipped: false, reason: null };
 }

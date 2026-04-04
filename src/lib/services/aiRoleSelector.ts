@@ -116,10 +116,12 @@ export async function autoAssignRolesForAllAITeams(excludeTeamId?: string): Prom
     });
 
     let teamsProcessed = 0;
-
-    for (const team of teams) {
-      await autoAssignPlayerRoles(team.id);
-      teamsProcessed++;
+    // Batch in groups of 10 to reduce round-trips while managing transaction load
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < teams.length; i += BATCH_SIZE) {
+      const batch = teams.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(team => autoAssignPlayerRoles(team.id)));
+      teamsProcessed += batch.length;
     }
 
     console.log(`[aiRoleSelector] Assigned roles for ${teamsProcessed} AI teams`);

@@ -81,6 +81,10 @@ model Team {
   trainingAssignments TrainingAssignment[]
   trainingLedgers     TrainingWeeklyLedger[]
   swissStandings      SwissStanding[]
+
+  // Indexes for Performance
+  @@index([aiPlaystyleProfileId])
+  @@index([lastAIMarketProcessedDate])
 }
 
 model Player {
@@ -188,6 +192,13 @@ model Player {
   @@index([teamId, isRetired])
   @@index([age, transferStatus])
   @@index([lastTransferredSeason])
+
+  // Indexes for initialization checks (tactics and roles)
+  @@index([teamId, tacticalPosition, isRetired])
+  @@index([teamId, playerRole, isRetired])
+  @@index([teamId, attackingRolePreset, isRetired])
+  @@index([teamId, defensiveRolePreset, isRetired])
+  @@index([teamId, suspensionMatchesRemaining, injuryWeeksRemaining])
 }
 
 model TrainingAssignment {
@@ -205,6 +216,7 @@ model TrainingAssignment {
 
   @@unique([teamId, slotIndex])
   @@index([teamId, playerId])
+  @@index([teamId, isActive]) // For training.ts processing
 }
 
 model PlayerTrainingFraction {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { advanceDay, getGameTime } from '@/lib/services/gameTime';
-import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
-import { autoAssignTacticalPositions } from '@/lib/services/autoTacticalPositionSelector';
+import { processMatch, processMatchFinancials, clearLeagueRankCache } from '@/lib/services/matchSimulator';
+// Removed unused autoAssignTacticalPositions import
 import { autoSelectTactics } from '@/lib/services/tacticSelector';
 import { pickDeterministicAIPlaystyle, resolveAIPlaystyleForTeam, syncAIPlaystyleTeamBase } from '@/lib/services/aiPlaystyleService';
 import { drawNextSwissRoundIfReady, ensureCupFixturesForDate } from '@/lib/services/SwissTournament';
@@ -37,7 +37,6 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
     // Auto-select for home team if it's AI
     if (match.homeTeamId !== userTeamId) {
         await syncAIPlaystyleTeamBase(match.homeTeamId);
-        await autoAssignTacticalPositions(match.homeTeamId);
 
         const homeTeam = await prisma.team.findUnique({
             where: { id: match.homeTeamId },
@@ -58,7 +57,6 @@ async function autoSelectTacticsForAITeams(match: any, userTeamId: string) {
     // Auto-select for away team if it's AI
     if (match.awayTeamId !== userTeamId) {
         await syncAIPlaystyleTeamBase(match.awayTeamId);
-        await autoAssignTacticalPositions(match.awayTeamId);
 
         const awayTeam = await prisma.team.findUnique({
             where: { id: match.awayTeamId },
@@ -104,6 +102,8 @@ export async function POST(req: Request) {
         const { action, matchId, homeTactics, awayTactics } = await req.json();
         const settings = await getGameTime();
         const userTeamId = settings.userTeamId || '';
+
+        console.time('AI Initialization');
 
         // Initialize AI team assignments on first access (if missing)
         try {
@@ -159,12 +159,15 @@ export async function POST(req: Request) {
                     await autoAssignTacticalPositionsForAllAITeams(userTeamId || undefined);
                 }
             }
+            console.timeEnd('AI Initialization');
         } catch (error) {
             console.error('[Process API] Failed to initialize AI teams:', error);
             // Don't fail the whole request, just log the error
         }
 
         if (action === 'update_match_tactics') {
+            console.time('Action: update_match_tactics');
+            clearLeagueRankCache();
             // Save match-specific tactics AND prep config before simulation (for user team)
             const updates: any = {};
             
@@ -209,10 +212,13 @@ export async function POST(req: Request) {
                 await tryAdvanceCupRound(matchId);
             }
             
+            console.timeEnd('Action: update_match_tactics');
             return NextResponse.json(result);
         }
 
         if (action === 'simulate_match') {
+            console.time('Action: simulate_match');
+            clearLeagueRankCache();
             // Auto-select tactics for AI teams before simulation
             const match = await prisma.match.findUnique({ where: { id: matchId } });
             if (match) {
@@ -231,13 +237,18 @@ export async function POST(req: Request) {
                 await tryAdvanceCupRound(matchId);
             }
             
+            console.timeEnd('Action: simulate_match');
             return NextResponse.json(result);
         }
 
         if (action === 'next_process') {
+            console.time('Action: next_process');
+            clearLeagueRankCache();
             // Ensure cup fixtures are drawn when their scheduled date is reached.
             try {
+                console.time('Cup Fixture Check');
                 await ensureCupFixturesForDate(settings.currentSeason, new Date(settings.currentDate));
+                console.timeEnd('Cup Fixture Check');
             } catch (error) {
                 console.error('[Process API] Failed to ensure cup fixtures for date:', error);
             }
@@ -256,6 +267,7 @@ export async function POST(req: Request) {
             console.log('[Process API] Season:', settings.currentSeason);
             console.log('[Process API] Searching pending matches before:', todayRangeEnd.toISOString());
 
+            console.time('Pending Matches Query');
             const pendingMatches = await prisma.match.findMany({
                 where: {
                     date: {
@@ -265,6 +277,7 @@ export async function POST(req: Request) {
                 },
                 orderBy: { date: 'asc' }
             });
+            console.timeEnd('Pending Matches Query');
 
             const overdueCount = pendingMatches.filter(m => m.date < todayRangeStart).length;
             const todayCount = pendingMatches.length - overdueCount;
@@ -275,55 +288,22 @@ export async function POST(req: Request) {
             const isUserMatch = (m: any) => m.homeTeamId === userTeamId || m.awayTeamId === userTeamId;
             const userOverdueMatches = pendingMatches.filter((m) => isUserMatch(m) && m.date < todayRangeStart);
             const userTodayMatch = pendingMatches.find((m) => isUserMatch(m) && m.date >= todayRangeStart && m.date < todayRangeEnd);
-
-            // Check if user has set lineup for their matches (any player with tacticalPosition)
-            // If user hasn't set lineup, we should NOT auto-process even if overdue
-            const getUserTeamIdForMatch = (m: any) => {
-                if (m.homeTeamId === userTeamId) return m.homeTeamId;
-                if (m.awayTeamId === userTeamId) return m.awayTeamId;
-                return null;
-            };
-
-            const userTeamHasLineup = async (teamId: string): Promise<boolean> => {
-                const playerWithPosition = await prisma.player.findFirst({
-                    where: { teamId, tacticalPosition: { not: null }, isRetired: false }
-                });
-                return !!playerWithPosition;
-            };
+            const userPendingMatch = pendingMatches.find((m) => isUserMatch(m));
+            const userPendingType = userPendingMatch
+                ? (userPendingMatch.date < todayRangeStart ? 'overdue' : 'today')
+                : null;
 
             // Process queue now:
-            // - all AI-only matches
-            // - user matches ONLY if user has set lineup (prevents auto-sim when user cleared positions)
+            // - AI-only matches only
+            // User-team matches are always manual to prevent unintended fitness/stat changes.
             const matchesToAutoProcess = pendingMatches.filter((m) => {
-                // Skip today's user match - let user play it manually
-                if (userTodayMatch && m.id === userTodayMatch.id) return false;
-                
-                // For user matches, check if user has set lineup
-                const userTeamIdForMatch = getUserTeamIdForMatch(m);
-                if (userTeamIdForMatch) {
-                    // We'll check lineup in the loop to avoid blocking filter
-                    return true;
-                }
-                
-                // AI-only match - always process
-                return true;
+                return !isUserMatch(m);
             });
 
             let simulatedCount = 0;
-            let skippedUserNoLineupCount = 0;
             
+            console.time('Loop: Match Simulation');
             for (const match of matchesToAutoProcess) {
-                // For user matches: skip if user hasn't set lineup (cleared all positions)
-                const userTeamIdForMatch = getUserTeamIdForMatch(match);
-                if (userTeamIdForMatch) {
-                    const hasLineup = await userTeamHasLineup(userTeamIdForMatch);
-                    if (!hasLineup) {
-                        console.log(`[Process API] Skipping match ${match.id} - user team ${userTeamIdForMatch} has no lineup set`);
-                        skippedUserNoLineupCount++;
-                        continue; // Skip this match - user needs to set lineup first
-                    }
-                }
-                
                 // Auto-select tactics for AI teams (safe for user-overdue auto processing too)
                 await autoSelectTacticsForAITeams(match, userTeamId);
                 const result = await processMatch(match.id);
@@ -339,29 +319,34 @@ export async function POST(req: Request) {
                     await tryAdvanceCupRound(match.id);
                 }
             }
+            console.timeEnd('Loop: Match Simulation');
 
-            // If user has a match TODAY, stop here and let user play it manually.
-            if (userTodayMatch) {
+            // If user has any pending match (today or overdue), stop here and let user play it manually.
+            if (userPendingMatch) {
                 return NextResponse.json({
                     success: true,
-                    userMatchId: userTodayMatch.id,
+                    userMatchId: userPendingMatch.id,
+                    userPendingType,
+                    userPendingDate: userPendingMatch.date,
                     simulatedCount,
                     overdueProcessedCount: overdueCount,
                     autoProcessedUserOverdueCount: userOverdueMatches.length,
-                    skippedUserNoLineupCount,
                     requiresUserAction: true
                 });
             }
 
             // Otherwise advance day as normal.
+            console.time('Action: advanceDay');
             const updatedSettings = await advanceDay();
+            console.timeEnd('Action: advanceDay');
+            
+            console.timeEnd('Action: next_process');
             return NextResponse.json({
                 success: true,
                 currentDate: updatedSettings.currentDate,
                 simulatedCount,
                 overdueProcessedCount: overdueCount,
                 autoProcessedUserOverdueCount: userOverdueMatches.length,
-                skippedUserNoLineupCount,
                 autoAdvanced: true
             });
         }

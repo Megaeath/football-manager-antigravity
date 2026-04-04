@@ -417,7 +417,10 @@ export async function processWeeklyFinances(teamId: string, week: number): Promi
     }
 
     const team = await prisma.team.findUnique({ where: { id: teamId } });
-    if (!team) throw new Error(`Team ${teamId} not found`);
+    if (!team) {
+        console.warn(`[Weekly Finance] Team ${teamId} not found, skipping.`);
+        return;
+    }
 
     // 1. Handle contract expiration (release free agents)
     const expiredContracts = await handleContractExpiration(teamId);

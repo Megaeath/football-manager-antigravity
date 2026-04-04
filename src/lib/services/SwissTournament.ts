@@ -34,6 +34,12 @@ function normalizeUTCDate(date: Date) {
   return d;
 }
 
+function getCupSeasonStartDate(season: number) {
+  // Season 1 starts in year 2026.
+  const seasonYear = 2025 + season;
+  return new Date(Date.UTC(seasonYear, 9, 1)); // October 1st UTC
+}
+
 function getCupRoundDate(startDate: Date, phase: 'SWISS' | 'KNOCKOUT', round: number) {
   const date = normalizeUTCDate(startDate);
   const offset = phase === 'SWISS'
@@ -174,19 +180,51 @@ export async function initializeCupTournamentForSeason(season: number) {
     where: { season }
   });
   if (existing) {
+    const expectedStartDate = getCupSeasonStartDate(season);
     const existingStandingsCount = await prisma.swissStanding.count({ where: { tournamentId: existing.id } });
-    const isCorrupted = existingStandingsCount === 0;
+    const hasLegacyStartDate = existing.startDate.getUTCFullYear() < 2000;
+    const hasMismatchedStartDate = normalizeUTCDate(existing.startDate).getTime() !== expectedStartDate.getTime();
+
+    const isCorrupted =
+      existingStandingsCount === 0 ||
+      hasLegacyStartDate ||
+      hasMismatchedStartDate;
+
     if (!isCorrupted) return existing;
 
     console.warn(
       `[SwissTournament] Detected corrupted tournament state for season ${season} ` +
-      `(standings=${existingStandingsCount}). Rebuilding tournament state...`
+      `(standings=${existingStandingsCount}, startDate=${existing.startDate.toISOString()}). Rebuilding tournament state...`
     );
 
     const teams = await prisma.team.findMany({ select: { id: true } });
     if (teams.length < 2) throw new Error('Not enough teams to rebuild Cup tournament');
 
     await prisma.$transaction([
+      prisma.playerActionLog.deleteMany({
+        where: {
+          match: {
+            cupTournamentId: existing.id,
+            competitionType: 'CUP'
+          }
+        }
+      }),
+      prisma.playerMatchStats.deleteMany({
+        where: {
+          match: {
+            cupTournamentId: existing.id,
+            competitionType: 'CUP'
+          }
+        }
+      }),
+      prisma.matchEvent.deleteMany({
+        where: {
+          match: {
+            cupTournamentId: existing.id,
+            competitionType: 'CUP'
+          }
+        }
+      }),
       prisma.match.deleteMany({ where: { cupTournamentId: existing.id, competitionType: 'CUP' } }),
       prisma.swissStanding.deleteMany({ where: { tournamentId: existing.id } }),
       prisma.swissMatchHistory.deleteMany({ where: { tournamentId: existing.id } })
@@ -214,6 +252,7 @@ export async function initializeCupTournamentForSeason(season: number) {
         status: 'ACTIVE',
         phase: 'SWISS',
         currentRound: 1,
+        startDate: expectedStartDate,
         finishedAt: null
       }
     });
@@ -222,9 +261,9 @@ export async function initializeCupTournamentForSeason(season: number) {
   const teams = await prisma.team.findMany({ select: { id: true } });
   if (teams.length < 2) throw new Error('Not enough teams to initialize Cup tournament');
 
-  // Cup tournament starts on October 1st of the season year
-  // League runs Feb-Aug (38 matches), Cup runs Oct-Nov (10 matches), September is rest period
-  const startDate = new Date(Date.UTC(season, 9, 1)); // October 1st (month is 0-indexed: 9 = October)
+  // Cup tournament starts on October 1st of the season year.
+  // Season index is not a calendar year (e.g. season=1 => year 2026).
+  const startDate = getCupSeasonStartDate(season);
 
   const tournament = await cupTournamentModel.create({
     data: {
