@@ -1,0 +1,11 @@
+-- CreateTable
+CREATE TABLE "News" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "date" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "title" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "teamId" TEXT,
+    "type" TEXT NOT NULL DEFAULT 'GLOBAL',
+    "isRead" BOOLEAN NOT NULL DEFAULT false,
+    CONSTRAINT "News_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);

@@ -439,8 +439,15 @@ export async function initializeNewGame(userTeamName: string) {
         );
     }
 
-    await prisma.globalGameSettings.create({
-        data: {
+    await prisma.globalGameSettings.upsert({
+        where: { id: 1 },
+        update: {
+            currentDate: new Date('2026-01-01'),
+            currentSeason: 1,
+            isConfigured: true,
+            userTeamId: selectedUserTeam?.id || null
+        },
+        create: {
             id: 1,
             currentDate: new Date('2026-01-01'),
             currentSeason: 1,

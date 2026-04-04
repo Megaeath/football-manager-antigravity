@@ -108,4 +108,10 @@ Distributed under the MIT License. See `LICENSE` for more information.
 npx kill-port 3000
 ---
 
+comment db url on .env
+
+npx prisma generate
+npm run dev
+
+
 *Developed with ❤️ for the Football Management community.*

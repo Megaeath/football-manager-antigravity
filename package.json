@@ -7,9 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:cup:integration": "node scripts/test-cup-integration.mjs"
+    "db:mode": "node scripts/print-db-mode.mjs",
+    "test:cup:integration": "node scripts/test-cup-integration.mjs",
+    "migrate:turso:schema": "node scripts/migrate-to-turso.js",
+    "migrate:turso:data": "node scripts/migrate-devdb-to-turso.js",
+    "migrate:turso:all": "npm run migrate:turso:data"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
+    "@prisma/adapter-libsql": "^7.6.0",
     "@prisma/client": "^6.19.2",
     "next": "16.1.6",
     "react": "19.2.3",

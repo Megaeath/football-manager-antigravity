@@ -168,15 +168,23 @@ async function generateMonthlyFreeAgentProspects(currentDate: Date, count: numbe
 }
 
 export async function getGameTime() {
-    let settings = await prisma.globalGameSettings.findFirst();
+    let settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
     if (!settings) {
         // Try to find a default user team (e.g., Red FC)
         const defaultTeam = await prisma.team.findFirst({
             where: { name: { contains: 'Red FC' } }
         });
 
-        settings = await prisma.globalGameSettings.create({
-            data: {
+        settings = await prisma.globalGameSettings.upsert({
+            where: { id: 1 },
+            update: {
+                currentDate: new Date('2026-01-01'),
+                currentSeason: 1,
+                isConfigured: true,
+                userTeamId: defaultTeam?.id || null
+            },
+            create: {
+                id: 1,
                 currentDate: new Date('2026-01-01'),
                 currentSeason: 1,
                 isConfigured: true,
