@@ -676,10 +676,11 @@ async function processAIBuyingLogic(
 
     const style = resolveAIPlaystyleForTeam(team);
 
-    // Lower minimum balance to allow more transfers (was 1,000,000)
-    if (team.balance < 500000) {
-        log(`[AI Market] ${team.name} has insufficient balance ($${team.balance.toLocaleString()}) - skipping`);
-        return;
+    // Teams with low balance should still be allowed to sign free agents for depth repairs.
+    // Paid transfers will be constrained separately via maxBudget.
+    const canDoPaidTransfers = team.balance >= 500000;
+    if (!canDoPaidTransfers) {
+        log(`[AI Market] ${team.name} has low balance ($${team.balance.toLocaleString()}) - free-agent only mode`);
     }
 
     // === SEPARATE: Free Agents vs Listed Players ===
@@ -719,7 +720,9 @@ async function processAIBuyingLogic(
     const teamDepthMap = buildPositionDepthMap(team.players, team.formation);
 
     const profileBudgetUsage = Math.max(0.35, Math.min(0.95, style.transferPolicy.budgetUsage || 0.8));
-    const maxBudget = isTopTier ? team.balance : team.balance * profileBudgetUsage;
+    const maxBudget = canDoPaidTransfers
+        ? (isTopTier ? team.balance : team.balance * profileBudgetUsage)
+        : 0;
 
     // === SEPARATE TARGETS: Free Agents vs Paid ===
     // Free agents: No budget limit (free!)
@@ -729,7 +732,7 @@ async function processAIBuyingLogic(
     );
 
     // Listed players: Must fit budget
-    const listedTargets = listedPlayers.filter(lp =>
+    let listedTargets = listedPlayers.filter(lp =>
         lp.player.teamId !== teamId &&
         (lp.player.lastTransferredSeason ?? -1) < currentSeason &&
         (lp.player.askingPrice || 0) <= maxBudget
@@ -742,6 +745,66 @@ async function processAIBuyingLogic(
         return sum + Math.max(0, MIN_POSITION_DEPTH - depth);
     }, 0);
     const squadShortage = Math.max(0, MIN_SQUAD_SIZE - team.players.length);
+
+    // Emergency sourcing: if urgent positions have zero market candidates,
+    // allow scouting non-listed players from other teams for those positions.
+    const uncoveredUrgentPositions = urgentPositions.filter((pos) => {
+        const hasFreeAgent = freeAgentTargets.some(
+            (p) => normalizeDepthPosition(p.player.naturalPosition) === pos
+        );
+        const hasListed = listedTargets.some(
+            (p) => normalizeDepthPosition(p.player.naturalPosition) === pos
+        );
+        return !hasFreeAgent && !hasListed;
+    });
+
+    if (canDoPaidTransfers && uncoveredUrgentPositions.length > 0) {
+        const emergencyCandidatesRaw = await prisma.player.findMany({
+            where: {
+                isRetired: false,
+                lastTransferredSeason: { lt: currentSeason },
+                AND: [
+                    { teamId: { not: null } },
+                    { teamId: { not: teamId } }
+                ]
+            },
+            include: { team: true }
+        });
+
+        const listedIdSet = new Set(listedTargets.map((t) => t.player.id));
+        const emergencyCandidates = emergencyCandidatesRaw.filter((p) => {
+            const pos = normalizeDepthPosition(p.naturalPosition);
+            return uncoveredUrgentPositions.includes(pos) && !listedIdSet.has(p.id);
+        });
+
+        if (emergencyCandidates.length > 0) {
+            const emergencyTargets = await Promise.all(
+                emergencyCandidates.map(async (player) => {
+                    const estimatedPrice = await getCachedMarketValue(player);
+                    const power = calculatePlayerPower({
+                        attributes: toPlayerAttributes(player),
+                        targetPosition: player.naturalPosition.split('_')[0],
+                        condition: 100,
+                        exp: player.exp || 0,
+                    }).powerWithExp;
+
+                    return {
+                        player: {
+                            ...player,
+                            askingPrice: estimatedPrice,
+                            transferStatus: player.transferStatus || 'NOT_LISTED',
+                        },
+                        power,
+                    };
+                })
+            );
+
+            listedTargets = [...listedTargets, ...emergencyTargets.filter((t) => (t.player.askingPrice || 0) <= maxBudget)];
+            log(`[AI Market] ${team.name} emergency scout added ${emergencyTargets.length} candidates for urgent positions: ${uncoveredUrgentPositions.join('/')}`);
+        } else {
+            log(`[AI Market] ${team.name} no emergency candidates found for urgent positions: ${uncoveredUrgentPositions.join('/')}`);
+        }
+    }
 
     // Keep roster in 22-30 range unless there is urgent structural shortage.
     if (team.players.length >= MAX_SQUAD_SIZE && urgentMissingCount === 0) {

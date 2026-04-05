@@ -105,10 +105,15 @@ interface PlayerData {
     }>;
 }
 
-export default function PlayerModal() {
+interface PlayerModalProps {
+    playerId?: string | null;
+    onClose?: () => void;
+}
+
+export default function PlayerModal({ playerId: propPlayerId, onClose }: PlayerModalProps = {}) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const playerId = searchParams.get('playerId');
+    const playerId = propPlayerId ?? searchParams.get('playerId');
 
     const [player, setPlayer] = useState<PlayerData | null>(null);
     const [loading, setLoading] = useState(false);
@@ -185,6 +190,10 @@ export default function PlayerModal() {
     }, []);
 
     const closeModal = () => {
+        if (onClose) {
+            onClose();
+            return;
+        }
         router.back();
     };
 

@@ -184,6 +184,47 @@ Execution behavior:
 3. If funds are sufficient, weekly fee is charged once and active slots roll random gain (`0.10..maxGain`)
 4. Base attributes remain integers; decimal progress is stored in fraction table and shown in training UI analytics
 
+### 6.1 AI Market Daily Distribution (Overdue + Emergency Depth)
+
+**Location**: `src/lib/services/gameTime.ts` + `src/lib/services/aiMarketService.ts`
+
+`advanceDay()` runs distributed AI transfer processing in two buckets:
+
+1. **Overdue bucket**: teams not processed for 14+ days (default batch size `5`, via `AI_MARKET_BATCH_SIZE`)
+2. **Emergency depth bucket**: extra teams with required-position depth `< 2` (default batch size `3`, via `AI_MARKET_ISSUE_BATCH_SIZE`)
+
+Depth checks are formation-aware and normalized by role groups (`FW* -> FW`, `DC* -> DC`, `MC* -> MC`).
+Effective depth also includes active incoming bids (`PENDING`/`ACCEPTED`/`HIJACKED` with live window),
+to prevent emergency teams from over-bidding the same position every day.
+This allows structurally short squads (e.g. only one GK) to get extra daily buying chances without waiting for monthly cadence.
+
+### 6.2 Squad Transfer Tab (History + In-Process)
+
+**Location**: `src/app/squad/page.tsx` + `src/app/squad/SquadClient.tsx`
+
+The Squad transfer panel now shows two layers of transfer state:
+
+- **Completed history** from `TransferHistory`
+- **In-process deals** from active `Bid` records (`PENDING`/`ACCEPTED`/`HIJACKED`) with non-expired `windowEnds`
+
+Design intent:
+- Users can see players who already have an agreed/active deal but have not moved yet
+- In-process entries should show direction (IN/OUT), status, fee, and move window deadline
+
+### 7. Season Summary Analytics
+
+**Location**: `src/app/season-summary/page.tsx`
+
+The season summary page now includes richer records/leaderboards by selected season + competition filter:
+
+- Top 5 transfer fees (`TransferHistory`)
+- Highest total-goals match
+- Highest winner-goals match
+- Top 3 awards display (Golden Boot, Golden Glove, Player of the Season)
+- Top 3 skill leaderboards (dribbles won, passes completed, assists)
+
+When debugging mismatched numbers, verify filter scope first (`season`, `competition`, `division`) before checking raw records.
+
 ---
 
 ## Critical Conventions & Patterns

@@ -55,7 +55,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                                 alerts++;
                                 continue;
                             }
-                            const focusedValue = player?.effectiveAttributes?.[slot.focusAttribute] ?? 0;
+                            const focusedValue = (player as any)?.effectiveAttributes?.[slot.focusAttribute] ?? 0;
                             if (focusedValue >= 20) {
                                 alerts++;
                             }

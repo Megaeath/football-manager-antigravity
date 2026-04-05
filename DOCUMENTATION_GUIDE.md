@@ -23,6 +23,8 @@
 - เข้าใจระบบการเงิน → `.github/copilot-instructions.md` หัวข้อ `Data Flow: Financial & Reputation`
 - เข้าใจระบบฝึกซ้อม → [TRAINING.md](TRAINING.md) และ [.github/copilot-instructions.md](.github/copilot-instructions.md)
 - เข้าใจกลวิธี → [TACTICAL_GUIDE.md](TACTICAL_GUIDE.md)
+- เข้าใจสรุปซีซัน / leaderboards แบบคลิกได้ → หน้า `/season-summary` (ชื่อนักเตะเปิด modal, นัดเปิดหน้า `/match`, ทีมเปิดหน้า team)
+- เข้าใจการนำทางไปหน้ารายละเอียดการแข่งขัน → ใช้หน้า `/fixtures` หรือการ์ด match ต่าง ๆ ที่ลิงก์ไป `/match?matchId=...`
 
 ---
 

@@ -6,6 +6,7 @@ import { calculateCupRewards } from '@/lib/services/cupRewards';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Link from 'next/link';
 import { getLeagueByDivisionLevel } from '@/lib/services/divisionSystem';
+import SeasonSummaryClient from './SeasonSummaryClient';
 
 export const revalidate = 0;
 
@@ -20,6 +21,44 @@ type StandingRow = {
     ga: number;
     gd: number;
     points: number;
+};
+
+type LeaderRow = {
+    playerId: string;
+    playerName: string;
+    teamId: string;
+    teamName: string;
+    value: number;
+    matches: number;
+};
+
+type CleanSheetLeader = {
+    playerId: string;
+    playerName: string;
+    teamId: string;
+    teamName: string;
+    cleanSheets: number;
+};
+
+type MatchRecord = {
+    id: string;
+    homeTeamId: string;
+    homeTeamName: string;
+    awayTeamId: string;
+    awayTeamName: string;
+    homeScore: number;
+    awayScore: number;
+};
+
+type TransferFeeRow = {
+    id: string;
+    playerId: string;
+    playerName: string;
+    fromTeamId: string | null;
+    fromTeamName: string | null;
+    toTeamId: string;
+    toTeamName: string;
+    fee: number;
 };
 
 export default async function SeasonSummaryPage({
@@ -100,6 +139,283 @@ export default async function SeasonSummaryPage({
     const combinedRewards = [...rewardMap.entries()]
         .map(([teamId, item]) => ({ teamId, teamName: item.teamName, league: item.league, cup: item.cup, total: item.league + item.cup }))
         .sort((a, b) => b.total - a.total);
+
+    const scopedLeagueTeams = (isLeague || isAll) && league
+        ? await prisma.team.findMany({
+            where: { leagueId: league.id },
+            select: { id: true, name: true }
+        })
+        : [];
+    const scopedLeagueTeamIds = scopedLeagueTeams.map((team) => team.id);
+
+    const matchScopeWhere: any = {
+        season: selectedSeason,
+        isPlayed: true,
+        ...(isLeague ? { competitionType: 'LEAGUE' } : isCup ? { competitionType: 'CUP' } : {}),
+        ...((isLeague || isAll) && scopedLeagueTeamIds.length > 0
+            ? {
+                OR: [
+                    { homeTeamId: { in: scopedLeagueTeamIds } },
+                    { awayTeamId: { in: scopedLeagueTeamIds } }
+                ]
+            }
+            : {})
+    };
+
+    const playerStatsScopeWhere: any = {
+        match: {
+            season: selectedSeason,
+            isPlayed: true,
+            ...(isLeague ? { competitionType: 'LEAGUE' } : isCup ? { competitionType: 'CUP' } : {})
+        },
+        ...((isLeague || isAll) && scopedLeagueTeamIds.length > 0
+            ? { teamId: { in: scopedLeagueTeamIds } }
+            : {})
+    };
+
+    const [summaryMatches, summaryPlayerStats, rawTransferFees] = await Promise.all([
+        prisma.match.findMany({
+            where: matchScopeWhere,
+            include: {
+                homeTeam: { select: { id: true, name: true } },
+                awayTeam: { select: { id: true, name: true } }
+            },
+            orderBy: { date: 'asc' }
+        }),
+        prisma.playerMatchStats.findMany({
+            where: playerStatsScopeWhere,
+            include: {
+                player: { select: { id: true, name: true, naturalPosition: true } },
+                match: {
+                    select: {
+                        id: true,
+                        competitionType: true,
+                        homeTeamId: true,
+                        awayTeamId: true,
+                        homeScore: true,
+                        awayScore: true,
+                        homeTeam: { select: { id: true, name: true } },
+                        awayTeam: { select: { id: true, name: true } }
+                    }
+                }
+            }
+        }),
+        prisma.transferHistory.findMany({
+            where: {
+                season: selectedSeason,
+                ...((isLeague || isAll) && scopedLeagueTeamIds.length > 0
+                    ? {
+                        OR: [
+                            { fromTeamId: { in: scopedLeagueTeamIds } },
+                            { toTeamId: { in: scopedLeagueTeamIds } }
+                        ]
+                    }
+                    : {})
+            },
+            include: {
+                player: { select: { id: true, name: true } },
+                fromTeam: { select: { id: true, name: true } },
+                toTeam: { select: { id: true, name: true } }
+            },
+            orderBy: { fee: 'desc' },
+            take: 5
+        })
+    ]);
+
+    const leaderboardMap = new Map<string, {
+        playerId: string;
+        playerName: string;
+        teamId: string;
+        teamName: string;
+        goals: number;
+        assists: number;
+        passesCompleted: number;
+        dribblesWon: number;
+        totalRating: number;
+        matches: number;
+    }>();
+
+    const cleanSheetMap = new Map<string, CleanSheetLeader>();
+
+    for (const stat of summaryPlayerStats) {
+        if ((stat.minutes || 0) <= 0) continue;
+
+        const teamId = stat.teamId;
+        const teamName = stat.teamId === stat.match.homeTeamId
+            ? stat.match.homeTeam.name
+            : stat.match.awayTeam.name;
+
+        const current = leaderboardMap.get(stat.playerId) || {
+            playerId: stat.playerId,
+            playerName: stat.player.name,
+            teamId,
+            teamName,
+            goals: 0,
+            assists: 0,
+            passesCompleted: 0,
+            dribblesWon: 0,
+            totalRating: 0,
+            matches: 0
+        };
+
+        current.goals += stat.goals || 0;
+        current.assists += stat.assists || 0;
+        current.passesCompleted += stat.passesCompleted || 0;
+        current.dribblesWon += stat.dribblesWon || 0;
+        current.totalRating += stat.rating || 0;
+        current.matches += 1;
+
+        leaderboardMap.set(stat.playerId, current);
+    }
+
+    for (const match of summaryMatches) {
+        const homeClean = (match.awayScore || 0) === 0;
+        const awayClean = (match.homeScore || 0) === 0;
+
+        if (homeClean) {
+            const gk = summaryPlayerStats
+                .filter((stat) => stat.matchId === match.id && stat.teamId === match.homeTeamId && stat.player.naturalPosition.startsWith('GK') && stat.minutes > 0)
+                .sort((a, b) => b.minutes - a.minutes)[0];
+            if (gk) {
+                const current = cleanSheetMap.get(gk.playerId) || {
+                    playerId: gk.playerId,
+                    playerName: gk.player.name,
+                    teamId: gk.teamId,
+                    teamName: match.homeTeam.name,
+                    cleanSheets: 0
+                };
+                current.cleanSheets += 1;
+                cleanSheetMap.set(gk.playerId, current);
+            }
+        }
+
+        if (awayClean) {
+            const gk = summaryPlayerStats
+                .filter((stat) => stat.matchId === match.id && stat.teamId === match.awayTeamId && stat.player.naturalPosition.startsWith('GK') && stat.minutes > 0)
+                .sort((a, b) => b.minutes - a.minutes)[0];
+            if (gk) {
+                const current = cleanSheetMap.get(gk.playerId) || {
+                    playerId: gk.playerId,
+                    playerName: gk.player.name,
+                    teamId: gk.teamId,
+                    teamName: match.awayTeam.name,
+                    cleanSheets: 0
+                };
+                current.cleanSheets += 1;
+                cleanSheetMap.set(gk.playerId, current);
+            }
+        }
+    }
+
+    const aggregatedLeaders = Array.from(leaderboardMap.values()).map((row) => ({
+        ...row,
+        avgRating: row.matches > 0 ? row.totalRating / row.matches : 0
+    }));
+
+    const playerOfSeasonLeaderboardSource = (() => {
+        if (isCup) {
+            return aggregatedLeaders;
+        }
+
+        const leagueOnlyMap = new Map<string, {
+            playerId: string;
+            playerName: string;
+            teamId: string;
+            teamName: string;
+            goals: number;
+            assists: number;
+            totalRating: number;
+            matches: number;
+        }>();
+
+        for (const stat of summaryPlayerStats) {
+            if ((stat.minutes || 0) <= 0) continue;
+            if (stat.match.competitionType !== 'LEAGUE') continue;
+            if (scopedLeagueTeamIds.length > 0 && !scopedLeagueTeamIds.includes(stat.teamId)) continue;
+
+            const teamName = stat.teamId === stat.match.homeTeamId
+                ? stat.match.homeTeam.name
+                : stat.match.awayTeam.name;
+
+            const current = leagueOnlyMap.get(stat.playerId) || {
+                playerId: stat.playerId,
+                playerName: stat.player.name,
+                teamId: stat.teamId,
+                teamName,
+                goals: 0,
+                assists: 0,
+                totalRating: 0,
+                matches: 0
+            };
+
+            current.goals += stat.goals || 0;
+            current.assists += stat.assists || 0;
+            current.totalRating += stat.rating || 0;
+            current.matches += 1;
+
+            leagueOnlyMap.set(stat.playerId, current);
+        }
+
+        return Array.from(leagueOnlyMap.values()).map((row) => ({
+            ...row,
+            avgRating: row.matches > 0 ? row.totalRating / row.matches : 0
+        }));
+    })();
+
+    const topScorers: LeaderRow[] = aggregatedLeaders
+        .filter((row) => row.goals > 0)
+        .sort((a, b) => (b.goals - a.goals) || (b.assists - a.assists) || (b.avgRating - a.avgRating))
+        .slice(0, 5)
+        .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: row.goals, matches: row.matches }));
+
+    const topAssisters: LeaderRow[] = aggregatedLeaders
+        .filter((row) => row.assists > 0)
+        .sort((a, b) => (b.assists - a.assists) || (b.goals - a.goals) || (b.avgRating - a.avgRating))
+        .slice(0, 5)
+        .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: row.assists, matches: row.matches }));
+
+    const topPassers: LeaderRow[] = aggregatedLeaders
+        .filter((row) => row.passesCompleted > 0)
+        .sort((a, b) => (b.passesCompleted - a.passesCompleted) || (b.avgRating - a.avgRating))
+        .slice(0, 5)
+        .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: row.passesCompleted, matches: row.matches }));
+
+    const topDribblers: LeaderRow[] = aggregatedLeaders
+        .filter((row) => row.dribblesWon > 0)
+        .sort((a, b) => (b.dribblesWon - a.dribblesWon) || (b.avgRating - a.avgRating))
+        .slice(0, 5)
+        .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: row.dribblesWon, matches: row.matches }));
+
+    const topPlayersOfSeason: LeaderRow[] = playerOfSeasonLeaderboardSource
+        .filter((row) => row.matches >= 5)
+        .sort((a, b) => (b.avgRating - a.avgRating) || (b.goals - a.goals) || (b.assists - a.assists))
+        .slice(0, 5)
+        .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: Number(row.avgRating.toFixed(2)), matches: row.matches }));
+
+    const topGoalkeepers: CleanSheetLeader[] = Array.from(cleanSheetMap.values())
+        .sort((a, b) => b.cleanSheets - a.cleanSheets)
+        .slice(0, 5);
+
+    const highestTotalGoalsMatch: MatchRecord | null = summaryMatches.length > 0
+        ? [...summaryMatches]
+            .sort((a, b) => ((b.homeScore || 0) + (b.awayScore || 0)) - ((a.homeScore || 0) + (a.awayScore || 0)))[0]
+        : null;
+
+    const highestWinnerGoalsMatch: MatchRecord | null = summaryMatches.length > 0
+        ? [...summaryMatches]
+            .sort((a, b) => Math.max(b.homeScore || 0, b.awayScore || 0) - Math.max(a.homeScore || 0, a.awayScore || 0))[0]
+        : null;
+
+    const topTransferFees: TransferFeeRow[] = rawTransferFees.map((row) => ({
+        id: row.id,
+        playerId: row.playerId,
+        playerName: row.player?.name || 'Unknown',
+        fromTeamId: row.fromTeamId,
+        fromTeamName: row.fromTeam?.name || null,
+        toTeamId: row.toTeamId,
+        toTeamName: row.toTeam.name,
+        fee: row.fee
+    }));
 
     const subtitle = isCup
         ? `Season ${selectedSeason} · Cup`
@@ -215,6 +531,35 @@ export default async function SeasonSummaryPage({
                 </div>
             </Card>
             )}
+
+            <SeasonSummaryClient
+                competition={competition}
+                topScorers={topScorers}
+                topAssisters={topAssisters}
+                topPassers={topPassers}
+                topDribblers={topDribblers}
+                topPlayersOfSeason={topPlayersOfSeason}
+                topGoalkeepers={topGoalkeepers}
+                highestTotalGoalsMatch={highestTotalGoalsMatch ? {
+                    id: highestTotalGoalsMatch.id,
+                    homeTeamId: highestTotalGoalsMatch.homeTeam.id,
+                    homeTeamName: highestTotalGoalsMatch.homeTeam.name,
+                    awayTeamId: highestTotalGoalsMatch.awayTeam.id,
+                    awayTeamName: highestTotalGoalsMatch.awayTeam.name,
+                    homeScore: highestTotalGoalsMatch.homeScore || 0,
+                    awayScore: highestTotalGoalsMatch.awayScore || 0
+                } : null}
+                highestWinnerGoalsMatch={highestWinnerGoalsMatch ? {
+                    id: highestWinnerGoalsMatch.id,
+                    homeTeamId: highestWinnerGoalsMatch.homeTeam.id,
+                    homeTeamName: highestWinnerGoalsMatch.homeTeam.name,
+                    awayTeamId: highestWinnerGoalsMatch.awayTeam.id,
+                    awayTeamName: highestWinnerGoalsMatch.awayTeam.name,
+                    homeScore: highestWinnerGoalsMatch.homeScore || 0,
+                    awayScore: highestWinnerGoalsMatch.awayScore || 0
+                } : null}
+                topTransferFees={topTransferFees}
+            />
 
             {/* Cup Rewards */}
             {(isCup || isAll) && (

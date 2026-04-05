@@ -71,7 +71,9 @@ export default async function Home() {
             orderBy: { createdAt: 'desc' }
         });
 
-        displayedBalance = teamFinance?.balance ?? userTeam?.balance ?? 0;
+        // Always prioritize current team balance (source of truth).
+        // clubFinance is historical snapshot and can lag behind.
+        displayedBalance = userTeam?.balance ?? teamFinance?.balance ?? 0;
 
         // Get league table
         const allTeams = await prisma.team.findMany({

@@ -124,8 +124,11 @@ export default function PlayersPage() {
             result = result.filter(p => p.transferStatus === 'LISTED');
         }
 
+        // Default behavior: hide retired players unless explicitly requested
         if (showRetiredOnly) {
             result = result.filter(p => p.isRetired === true);
+        } else {
+            result = result.filter(p => p.isRetired !== true);
         }
 
         // Debug log

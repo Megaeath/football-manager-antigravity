@@ -69,6 +69,23 @@ export default async function SquadPage() {
         orderBy: { date: 'desc' }
     });
 
+    const inProcessTransfers = await prisma.bid.findMany({
+        where: {
+            status: { in: ['PENDING', 'ACCEPTED', 'HIJACKED'] },
+            windowEnds: { gte: settings.currentDate },
+            OR: [
+                { fromTeamId: team.id },
+                { toTeamId: team.id }
+            ]
+        },
+        include: {
+            player: { select: { id: true, name: true, naturalPosition: true, age: true } },
+            fromTeam: { select: { id: true, name: true } },
+            toTeam: { select: { id: true, name: true } }
+        },
+        orderBy: { windowEnds: 'asc' }
+    });
+
     const ensuredTactics = team.tactics ?? await prisma.teamTactics.upsert({
         where: { teamId: team.id },
         update: {},
@@ -298,6 +315,7 @@ export default async function SquadPage() {
                     upcomingMatch={upcomingMatch as any}
                     opponentPlayers={opponentPlayers}
                     transferHistory={transferHistory as any} 
+                    inProcessTransfers={inProcessTransfers as any}
                 />
             </Suspense>
         </div>

@@ -397,7 +397,27 @@ export async function advanceDay() {
     // Distributed AI Market Movements - process overdue teams daily
     console.time('advanceDay: AI Market');
     try {
-        // Find teams that haven't been processed in the last 30 days
+        const normalizeDepthPosition = (position: string) => {
+            const pos = (position || '').trim().toUpperCase();
+            if (pos.startsWith('FW')) return 'FW';
+            if (pos.startsWith('DC')) return 'DC';
+            if (pos.startsWith('MC')) return 'MC';
+            return pos;
+        };
+
+        const formationPositionRequirements: Record<string, string[]> = {
+            '4-4-2': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'],
+            '4-3-3': ['GK', 'DR', 'DC', 'DL', 'MC', 'FW'],
+            '4-5-1': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'],
+            '5-3-2': ['GK', 'DR', 'DC', 'DL', 'MC', 'FW']
+        };
+
+        const getRequiredPositionsForFormation = (formation?: string | null) => {
+            return formationPositionRequirements[formation || ''] || formationPositionRequirements['4-4-2'];
+        };
+
+        const shuffle = <T,>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
+
         // Find teams that haven't been processed in the last 14 days
         const fourteenDaysAgo = new Date(nextDate);
         fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 14);
@@ -414,27 +434,114 @@ export async function advanceDay() {
             select: { id: true }
         });
 
-        if (overdueTeams.length > 0) {
-            // Shuffle and take batch from .env (default 5)
-            const batchSize = parseInt(process.env.AI_MARKET_BATCH_SIZE || '5', 10);
-            const shuffled = overdueTeams.sort(() => Math.random() - 0.5);
-            const toProcess = shuffled.slice(0, Math.min(batchSize, shuffled.length));
+        // Find teams with structural depth issues (< 2 players in any required formation position)
+        const allTeams = await prisma.team.findMany({
+            where: { id: { not: settings.userTeamId || undefined } },
+            select: {
+                id: true,
+                formation: true,
+                players: { where: { isRetired: false }, select: { naturalPosition: true } }
+            }
+        });
 
-            console.log(`[GameTime] Processing AI Market for ${toProcess.length}/${overdueTeams.length} overdue teams...`);
+        const allTeamIds = allTeams.map((t) => t.id);
+
+        // Include active incoming bids in depth calculation to avoid overbuying every day.
+        // If a team already has an active GK bid, effective GK depth should reflect that.
+        const activeIncomingBids = allTeamIds.length > 0
+            ? await prisma.bid.findMany({
+                where: {
+                    fromTeamId: { in: allTeamIds },
+                    status: { in: ['PENDING', 'ACCEPTED', 'HIJACKED'] },
+                    windowEnds: { gte: nextDate }
+                },
+                select: {
+                    fromTeamId: true,
+                    playerId: true,
+                    player: { select: { naturalPosition: true } }
+                }
+            })
+            : [];
+
+        const incomingDepthByTeam = new Map<string, Map<string, number>>();
+        const countedIncomingKeys = new Set<string>();
+        for (const bid of activeIncomingBids) {
+            if (!bid.fromTeamId) continue;
+
+            const uniqueKey = `${bid.fromTeamId}:${bid.playerId}`;
+            if (countedIncomingKeys.has(uniqueKey)) continue;
+            countedIncomingKeys.add(uniqueKey);
+
+            const normalizedPos = normalizeDepthPosition(bid.player?.naturalPosition || '');
+            if (!normalizedPos) continue;
+
+            if (!incomingDepthByTeam.has(bid.fromTeamId)) {
+                incomingDepthByTeam.set(bid.fromTeamId, new Map<string, number>());
+            }
+
+            const teamMap = incomingDepthByTeam.get(bid.fromTeamId)!;
+            teamMap.set(normalizedPos, (teamMap.get(normalizedPos) || 0) + 1);
+        }
+
+        const teamsWithDepthIssues = allTeams.filter((team) => {
+            const requiredPositions = getRequiredPositionsForFormation(team.formation);
+            const depthMap = new Map<string, number>();
+            const incomingMap = incomingDepthByTeam.get(team.id) || new Map<string, number>();
+
+            for (const pos of requiredPositions) {
+                depthMap.set(pos, 0);
+            }
+
+            for (const player of team.players) {
+                const pos = normalizeDepthPosition(player.naturalPosition);
+                depthMap.set(pos, (depthMap.get(pos) || 0) + 1);
+            }
+
+            for (const [pos, count] of incomingMap.entries()) {
+                depthMap.set(pos, (depthMap.get(pos) || 0) + count);
+            }
+
+            // Team is considered issue-team if any required position has effective depth < 2
+            // (current squad + active incoming bids)
+            return requiredPositions.some((pos) => (depthMap.get(pos) || 0) < 2);
+        });
+
+        // Daily processing buckets
+        // 1) overdue batch keeps regular monthly cadence (default 5)
+        // 2) issue batch is extra emergency buying chance (default 3)
+        const overdueBatchSize = parseInt(process.env.AI_MARKET_BATCH_SIZE || '5', 10);
+        const issueBatchSize = parseInt(process.env.AI_MARKET_ISSUE_BATCH_SIZE || '3', 10);
+
+        const overdueSelected = shuffle(overdueTeams.map((t) => t.id)).slice(0, Math.min(overdueBatchSize, overdueTeams.length));
+
+        const overdueSelectedSet = new Set(overdueSelected);
+        const issueCandidates = teamsWithDepthIssues
+            .map((t) => t.id)
+            .filter((id) => !overdueSelectedSet.has(id));
+        const issueSelected = shuffle(issueCandidates).slice(0, Math.min(issueBatchSize, issueCandidates.length));
+
+        const toProcess = [...overdueSelected, ...issueSelected];
+
+        if (toProcess.length > 0) {
+            console.log(
+                `[GameTime] Processing AI Market for ${toProcess.length} teams ` +
+                `(${overdueSelected.length}/${overdueTeams.length} overdue + ` +
+                `${issueSelected.length}/${teamsWithDepthIssues.length} depth-issue)`
+            );
 
             const { processAIMarketForTeam } = await import('./aiMarketService');
 
             // Process in series with atomic date updates to avoid race conditions
-            for (const team of toProcess) {
+            for (const teamId of toProcess) {
                 try {
-                    await processAIMarketForTeam(team.id);
+                    await processAIMarketForTeam(teamId);
                     // Update timestamp only after successful processing
                     await prisma.team.update({
-                        where: { id: team.id },
+                        where: { id: teamId },
                         data: { lastAIMarketProcessedDate: nextDate }
                     });
                 } catch (teamError) {
-                    console.error(`[GameTime] Failed to process AI market for team ${team.id}:`, teamError);
+                    console.error(`[GameTime] Failed to process AI market for team ${teamId}:`, teamError);
                     // Don't update timestamp on failure - team will be retried next day
                 }
             }

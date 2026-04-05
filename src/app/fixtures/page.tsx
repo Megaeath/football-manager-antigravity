@@ -320,7 +320,8 @@ export default async function FixturesPage({
                                     const hasPenalties = m.wentToPenalties && m.penaltyHome !== null && m.penaltyAway !== null;
 
                                     return (
-                                        <div key={m.id} className="card" style={{
+                                        <Link key={m.id} href={`/match?matchId=${m.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                        <div className="card" style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '0',
@@ -330,7 +331,9 @@ export default async function FixturesPage({
                                                 ? '2.5px solid #fbbf24'
                                                 : `1px solid ${isCupMatch ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
                                             overflow: 'hidden',
-                                            boxShadow: isNextCupMatch ? '0 0 0 2px #fbbf24' : '0 2px 4px rgba(0,0,0,0.02)'
+                                            boxShadow: isNextCupMatch ? '0 0 0 2px #fbbf24' : '0 2px 4px rgba(0,0,0,0.02)',
+                                            cursor: 'pointer',
+                                            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
                                         }}>
                                             {/* Cup phase badge row + Next Match badge */}
                                             {(isCupMatch || isAll) && isCupMatch && (
@@ -416,18 +419,16 @@ export default async function FixturesPage({
 
                                                 {/* Details Link */}
                                                 <div style={{ marginLeft: '2rem', minWidth: '80px', textAlign: 'right' }}>
-                                                    {isPlayed && (
-                                                        <Link
-                                                            href={`/match?matchId=${m.id}`}
-                                                            className="btn btn-sm btn-ghost"
-                                                            style={{ fontSize: '0.85rem', color: 'var(--primary)', padding: '6px 12px' }}
-                                                        >
-                                                            {MATCH.DETAILS} →
-                                                        </Link>
-                                                    )}
+                                                    <span
+                                                        className="btn btn-sm btn-ghost"
+                                                        style={{ fontSize: '0.85rem', color: 'var(--primary)', padding: '6px 12px' }}
+                                                    >
+                                                        {MATCH.DETAILS} →
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
+                                        </Link>
                                     );
                                 })}
                             </div>

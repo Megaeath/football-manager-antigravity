@@ -68,6 +68,20 @@ type TransferHistoryItem = {
     toTeam: { id: string; name: string };
 };
 
+type InProcessTransferItem = {
+    id: string;
+    date: Date;
+    season: number;
+    amount: number;
+    status: string;
+    windowEnds: Date;
+    fromTeamId: string;
+    toTeamId: string;
+    player: { id: string; name: string; naturalPosition: string; age: number };
+    fromTeam: { id: string; name: string };
+    toTeam: { id: string; name: string };
+};
+
 type PresetKey = 'A' | 'B' | 'C';
 
 type SavedLineupPreset = {
@@ -127,7 +141,7 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [], transferHistory = [] }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [], transferHistory = [], inProcessTransfers = [] }: {
     teamId: string,
     players: PlayerProps[],
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
@@ -141,7 +155,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         awayTeam: { id: string; name: string };
     },
     opponentPlayers?: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[],
-    transferHistory?: TransferHistoryItem[]
+    transferHistory?: TransferHistoryItem[],
+    inProcessTransfers?: InProcessTransferItem[]
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power' | 'age'>('pos');
@@ -519,6 +534,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     // Filter matches by season
     const seasonMatches = matches.filter(m => m.season === selectedSeason).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const sortedTransferHistory = [...transferHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sortedInProcessTransfers = [...inProcessTransfers].sort((a, b) => new Date(a.windowEnds).getTime() - new Date(b.windowEnds).getTime());
     const listedCount = players.filter(p => p.transferStatus === 'LISTED').length;
     const filteredTransfers = sortedTransferHistory.filter((t) => {
         if (transferFilter === 'all') return true;
@@ -527,6 +543,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     });
     const transferInCount = sortedTransferHistory.filter(t => t.toTeamId === teamId).length;
     const transferOutCount = sortedTransferHistory.filter(t => t.fromTeamId === teamId).length;
+    const transferInProcessCount = sortedInProcessTransfers.length;
     const formatCurrency = (num: number) => `$${new Intl.NumberFormat('en-US').format(Math.abs(Math.round(num || 0)))}`;
 
     const handleSort = (key: typeof sortKey) => {
@@ -1229,6 +1246,69 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                         </div>
                     </div>
 
+                    {sortedInProcessTransfers.length > 0 && (
+                        <div style={{ marginBottom: '1rem', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.9rem 1rem', background: 'rgba(59,130,246,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>⏳ In Process ({transferInProcessCount})</h4>
+                                <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>รอปิดดีล/ย้ายทีมตามกำหนด</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                {sortedInProcessTransfers.map((t) => {
+                                    const isIn = t.fromTeamId === teamId;
+                                    return (
+                                        <div
+                                            key={t.id}
+                                            style={{
+                                                border: '1px solid var(--border)',
+                                                borderLeft: `4px solid ${isIn ? '#10b981' : '#ef4444'}`,
+                                                borderRadius: '8px',
+                                                padding: '0.7rem 0.85rem',
+                                                display: 'grid',
+                                                gridTemplateColumns: '2fr 1.6fr 1fr',
+                                                gap: '0.65rem',
+                                                alignItems: 'center',
+                                                background: 'var(--card-bg)'
+                                            }}
+                                        >
+                                            <div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>
+                                                    ดีลจะสิ้นสุด: {new Date(t.windowEnds).toLocaleDateString('th-TH-u-ca-gregory')} • Season {t.season}
+                                                </div>
+                                                <div style={{ fontWeight: 700 }}>
+                                                    <button
+                                                        onClick={() => openPlayerModal(t.player.id)}
+                                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, fontWeight: 700, textDecoration: 'underline' }}
+                                                    >
+                                                        {t.player.name}
+                                                    </button>
+                                                    <span style={{ color: 'var(--muted)', fontWeight: 400 }}> ({t.player.naturalPosition}, {t.player.age}y)</span>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ fontSize: '0.9rem' }}>
+                                                <div>
+                                                    <span style={{ color: 'var(--muted)' }}>From: </span>
+                                                    <Link href={`/team/${t.toTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.toTeam.name}</Link>
+                                                </div>
+                                                <div>
+                                                    <span style={{ color: 'var(--muted)' }}>To: </span>
+                                                    <Link href={`/team/${t.fromTeam.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{t.fromTeam.name}</Link>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ display: 'inline-block', background: '#dbeafe', color: '#1d4ed8', padding: '0.15rem 0.5rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                                                    {t.status}
+                                                </div>
+                                                <div style={{ fontWeight: 700 }}>{t.amount > 0 ? formatCurrency(t.amount) : 'Free'}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {filteredTransfers.length === 0 ? (
                         <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)' }}>
                             No transfer records for this filter.
@@ -1254,7 +1334,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                     >
                                         <div>
                                             <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>
-                                                {new Date(t.date).toLocaleDateString('th-TH')} • Season {t.season}
+                                                {new Date(t.date).toLocaleDateString('th-TH-u-ca-gregory')} • Season {t.season}
                                             </div>
                                             <div style={{ fontWeight: 700 }}>
                                                 <button
