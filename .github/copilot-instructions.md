@@ -370,6 +370,12 @@ npx prisma migrate  # List/create migrations
 3. If weekly timing changes, update `advanceDay()` hook in `src/lib/services/gameTime.ts`
 4. Keep API surface aligned in `API_REFERENCE.md`
 
+**Import legend squads from CSV**:
+1. Ensure `LegendPlayer` model in `prisma/schema.prisma` is up to date
+2. Run `npx prisma db push` after schema changes
+3. Run `npm run legends:import` to load files in `reports/legend-csv/`
+4. Verify row count/team count in script output before using legend-mode features
+
 **Fix/reset new game initialization**:
 1. Ensure reset clears **all** match/tournament state in `initializeNewGame()`
 2. Clear league + cup state together (Match, CupTournament, SwissStanding, SwissMatchHistory)
@@ -386,6 +392,7 @@ npx prisma migrate  # List/create migrations
 | **Financial System** | `financial.ts`, `market.ts` (bidding) |
 | **Experience & Progression** | `experience.ts`, `financial.ts` (decay) |
 | **Training System** | `training.ts` (service), `constants/training.ts`, `app/training/*` |
+| **Legend Data Import** | `scripts/import-legend-csv.mjs`, `reports/legend-csv/*`, `schema.prisma` (`LegendPlayer`) |
 | **Services (Long-running)** | `matchSimulator.ts`, `aiMarketService.ts`, `seasonAwards.ts` |
 | **Database** | `schema.prisma`, `prisma.ts` (singleton client) |
 | **UI State & Forms** | `TacticsForm.tsx`, `SquadClient.tsx`, `PlayerModal.tsx` |

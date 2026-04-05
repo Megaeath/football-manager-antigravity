@@ -42,12 +42,16 @@ type CleanSheetLeader = {
 
 type MatchRecord = {
     id: string;
-    homeTeamId: string;
-    homeTeamName: string;
-    awayTeamId: string;
-    awayTeamName: string;
-    homeScore: number;
-    awayScore: number;
+    homeTeam: {
+        id: string;
+        name: string;
+    };
+    awayTeam: {
+        id: string;
+        name: string;
+    };
+    homeScore: number | null;
+    awayScore: number | null;
 };
 
 type TransferFeeRow = {
@@ -317,6 +321,8 @@ export default async function SeasonSummaryPage({
             return aggregatedLeaders;
         }
 
+        // Keep league ranking criteria aligned with calculateSeasonAwards()
+        // so "Player of Season" card and "Player of Season Ranking" list match.
         const leagueOnlyMap = new Map<string, {
             playerId: string;
             playerName: string;
@@ -329,7 +335,6 @@ export default async function SeasonSummaryPage({
         }>();
 
         for (const stat of summaryPlayerStats) {
-            if ((stat.minutes || 0) <= 0) continue;
             if (stat.match.competitionType !== 'LEAGUE') continue;
             if (scopedLeagueTeamIds.length > 0 && !scopedLeagueTeamIds.includes(stat.teamId)) continue;
 
@@ -388,7 +393,7 @@ export default async function SeasonSummaryPage({
 
     const topPlayersOfSeason: LeaderRow[] = playerOfSeasonLeaderboardSource
         .filter((row) => row.matches >= 5)
-        .sort((a, b) => (b.avgRating - a.avgRating) || (b.goals - a.goals) || (b.assists - a.assists))
+        .sort((a, b) => (b.avgRating - a.avgRating) || (b.goals - a.goals))
         .slice(0, 5)
         .map((row) => ({ playerId: row.playerId, playerName: row.playerName, teamId: row.teamId, teamName: row.teamName, value: Number(row.avgRating.toFixed(2)), matches: row.matches }));
 

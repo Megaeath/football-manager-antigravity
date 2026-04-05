@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:mode": "node scripts/print-db-mode.mjs",
+    "legends:import": "node scripts/import-legend-csv.mjs",
     "test:cup:integration": "node scripts/test-cup-integration.mjs",
     "migrate:turso:schema": "node scripts/migrate-to-turso.js",
     "migrate:turso:data": "node scripts/migrate-devdb-to-turso.js",
