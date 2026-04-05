@@ -164,6 +164,13 @@ The `/match` page provides deep player performance analysis with interactive vis
 4. Update team reputation (based on recent match results and league position)
 5. Check FFP compliance and apply penalties if over budget
 
+**AI Contract Auto-Renew Guardrails** (`autoRenewContracts`):
+- Contract flow should not force immediate free-agent release for non-expiring players.
+- Position-depth renewal floors are role-aware:
+  - Center core (`DC`, `MC`, `FWC`) target minimum depth = 4
+  - Specific positions (`GK`, `DR`, `DL`, wide/other roles) target minimum depth = 2
+- If depth is above floor, the contract can be marked as non-auto-renew, but release decisions should be left to dedicated market logic.
+
 **Player Value** (`evaluateMarketValue`):
 - Base: (overall * 10,000) + (age factor * 5,000,000)
 - Modifiers: popularity, recent performance, remaining contract weeks
@@ -380,7 +387,14 @@ npx prisma migrate  # List/create migrations
 1. Ensure reset clears **all** match/tournament state in `initializeNewGame()`
 2. Clear league + cup state together (Match, CupTournament, SwissStanding, SwissMatchHistory)
 3. Clear training state tables (TrainingAssignment, PlayerTrainingFraction, TrainingWeeklyLedger)
-4. Rebuild fixtures only after all old state is fully removed
+4. Preserve and restore the `LegendPlayer` catalog across team resets before recreating squads
+5. Rebuild fixtures only after all old state is fully removed
+
+**Legend mode new game**:
+1. Keep `normal` mode behavior unchanged (random squad generation)
+2. For `legend` mode, recreate imported legend players from `LegendPlayer` first, then add random fillers until each squad reaches 23 players
+3. Fit legend attributes against `calculatePlayerPower()` so the resulting in-game power matches stored legend power targets as closely as possible
+4. Reassign starting `tacticalPosition` values from the final roster so mixed legend/random squads still open with a valid lineup
 
 ---
 

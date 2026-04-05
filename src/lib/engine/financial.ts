@@ -713,7 +713,24 @@ export async function autoRenewContracts(teamId: string): Promise<{
     let renewed = 0;
     let failures = 0;
 
-    // Group players by position and calculate power
+    const normalizeContractPosition = (position: string) => {
+        const pos = (position || '').toUpperCase();
+        if (pos.startsWith('FW')) return 'FWC';
+        if (pos.startsWith('DC')) return 'DC';
+        if (pos.startsWith('MC')) return 'MC';
+        return pos;
+    };
+
+    const getMinDepthForPosition = (position: string) => {
+        // Center-core positions need deeper coverage.
+        // Requested rule: DC/MC/FWC should keep depth >= 4.
+        const pos = normalizeContractPosition(position);
+        if (pos === 'DC' || pos === 'MC' || pos === 'FWC') return 4;
+        // Specific positions (GK/DR/DL/MR/ML/AMC/DMC etc.) keep depth >= 2.
+        return 2;
+    };
+
+    // Group players by normalized position and calculate power
     const playersByPosition = new Map<string, Array<{ player: Player; power: number }>>();
     
     for (const player of team.players) {
@@ -723,7 +740,7 @@ export async function autoRenewContracts(teamId: string): Promise<{
         // Skip retired players
         if (player.isRetired) continue;
         
-        const pos = player.naturalPosition.split('_')[0];
+        const pos = normalizeContractPosition(player.naturalPosition.split('_')[0]);
         const power = calculatePlayerPower({
             attributes: toPlayerAttributes(player),
             targetPosition: pos,
@@ -744,9 +761,11 @@ export async function autoRenewContracts(teamId: string): Promise<{
 
     // Process renewal decisions
     const renewalOps: Array<{ id: string; name: string; newWage: number; newEndWeek: number; reason: string }> = [];
-    const releaseOps: Array<{ id: string; name: string; position: string; power: number; age: number; reason: string }> = [];
+    const nonRenewOps: Array<{ id: string; name: string; position: string; power: number; age: number; reason: string }> = [];
 
     for (const [pos, players] of playersByPosition.entries()) {
+        const minDepth = getMinDepthForPosition(pos);
+
         for (let i = 0; i < players.length; i++) {
             const { player, power } = players[i];
             const isBestInPosition = i === 0;
@@ -757,37 +776,41 @@ export async function autoRenewContracts(teamId: string): Promise<{
             let reason = '';
             
             if (isBestInPosition) {
-                // Best player in position
-                if (player.age <= 30) {
+                // Best player in position: keep core quality, don't proactively release here.
+                if (player.age <= 34 || power >= 78 || positionDepth <= minDepth) {
                     shouldRenew = true;
-                    reason = `Best ${pos} (Power: ${power.toFixed(1)}, Age: ${player.age})`;
+                    reason = `Best ${pos} (Power: ${power.toFixed(1)}, Age: ${player.age}, MinDepth: ${minDepth})`;
                 } else {
-                    // Best but old - release for youth
-                    releaseOps.push({
+                    // Don't auto-release from contract flow. Let market flow handle exits.
+                    nonRenewOps.push({
                         id: player.id,
                         name: player.name,
                         position: pos,
                         power,
                         age: player.age,
-                        reason: `Best ${pos} but age ${player.age} > 30 (near retirement)`
+                        reason: `Best ${pos} not renewed (Age ${player.age}, Power ${power.toFixed(1)}, Depth ${positionDepth} > MinDepth ${minDepth})`
                     });
                     failures++;
                     continue;
                 }
             } else {
-                // Not best in position
-                if (positionDepth <= 2) {
+                // Not best in position: renew while depth is at/below position-specific floor.
+                if (positionDepth <= minDepth) {
                     shouldRenew = true;
-                    reason = `Backup ${pos} (Depth: ${positionDepth}, Power: ${power.toFixed(1)})`;
+                    reason = `Backup ${pos} (Depth: ${positionDepth}, MinDepth: ${minDepth}, Power: ${power.toFixed(1)})`;
+                } else if (player.age <= 25 && power >= 68) {
+                    // Keep high-potential young players even when depth is above floor.
+                    shouldRenew = true;
+                    reason = `Young high-potential ${pos} (Age: ${player.age}, Power: ${power.toFixed(1)}, Depth: ${positionDepth})`;
                 } else {
-                    // Excess depth - release
-                    releaseOps.push({
+                    // Depth above floor: skip renewal, but do not force free-agent release.
+                    nonRenewOps.push({
                         id: player.id,
                         name: player.name,
                         position: pos,
                         power,
                         age: player.age,
-                        reason: `Excess ${pos} (Depth: ${positionDepth}, Power: ${power.toFixed(1)})`
+                        reason: `Excess ${pos} not renewed (Depth: ${positionDepth}, MinDepth: ${minDepth}, Power: ${power.toFixed(1)}, Age: ${player.age})`
                     });
                     failures++;
                     continue;
@@ -820,29 +843,14 @@ export async function autoRenewContracts(teamId: string): Promise<{
         }
     }
 
-    // Execute releases in batch
-    if (releaseOps.length > 0) {
-        await prisma.$transaction(
-            releaseOps.map(r => prisma.player.update({
-                where: { id: r.id },
-                data: {
-                    teamId: null,
-                    transferStatus: 'FREE_AGENT',
-                    askingPrice: null,
-                    tacticalPosition: null,
-                    contractEndWeek: 0,
-                    playerRole: null,
-                    attackingRolePreset: null,
-                    defensiveRolePreset: null
-                }
-            }))
-        );
-        for (const r of releaseOps) {
-            details.push(`✗ ${r.name}: ${r.reason} → Released to free agency`);
+    // Non-renewals are informational only; no forced free-agent release from this flow.
+    if (nonRenewOps.length > 0) {
+        for (const r of nonRenewOps) {
+            details.push(`• ${r.name}: ${r.reason} → Contract not auto-renewed`);
         }
     }
 
-    if (renewalOps.length === 0 && releaseOps.length === 0) {
+    if (renewalOps.length === 0 && nonRenewOps.length === 0) {
         details.push('No contract actions needed');
     }
 

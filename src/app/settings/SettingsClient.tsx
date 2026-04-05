@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { resetGameWithSelectedTeam, updateTeamPlaystyleProfile, updateYellowSuspensionThreshold } from '../actions';
+import type { NewGameMode } from '@/lib/services/newGameInitializer';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SETTINGS, ACTIONS } from '@/lib/constants/uiLabels';
@@ -44,6 +45,7 @@ export default function SettingsClient({
     const [step, setStep] = useState<'idle' | 'confirm' | 'choose'>('idle');
     const [loading, setLoading] = useState(false);
     const [selectedTeamName, setSelectedTeamName] = useState(currentUserTeamName || newGameDivisionTeams[0]?.teams[0] || '');
+    const [selectedGameMode, setSelectedGameMode] = useState<NewGameMode>('normal');
     const [yellowThreshold, setYellowThreshold] = useState(yellowSuspensionThreshold || 4);
     const [selectedPlaystyle, setSelectedPlaystyle] = useState(currentUserTeamStyleProfileId);
     const [message, setMessage] = useState('');
@@ -70,16 +72,16 @@ export default function SettingsClient({
         }
 
         setLoading(true);
-        setMessage('Starting new game...');
+        setMessage(`Starting new ${selectedGameMode} game...`);
 
         try {
-            const result = await resetGameWithSelectedTeam(selectedTeamName);
-            setMessage(`✅ New game started! Selected team: ${result.userTeamName || 'Unknown'}`);
+            const result = await resetGameWithSelectedTeam(selectedTeamName, selectedGameMode);
+            setMessage(`✅ ${selectedGameMode === 'legend' ? 'Legend' : 'Normal'} new game started! Selected team: ${result.userTeamName || 'Unknown'}`);
             router.push('/squad');
             router.refresh();
         } catch (error) {
             console.error('Failed to reset game', error);
-            setMessage('❌ Error starting new game');
+            setMessage(error instanceof Error ? `❌ ${error.message}` : '❌ Error starting new game');
         } finally {
             setLoading(false);
         }
@@ -244,6 +246,23 @@ export default function SettingsClient({
 
                     {step === 'choose' && (
                         <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '420px' }}>
+                            <label style={{ fontWeight: 600 }}>Select new game mode</label>
+                            <select
+                                value={selectedGameMode}
+                                onChange={(e) => setSelectedGameMode(e.target.value as NewGameMode)}
+                                className="select"
+                                disabled={loading}
+                            >
+                                <option value="normal">Normal - current random squad generation</option>
+                                <option value="legend">Legend - legend stars from DB + random fillers to 23 players</option>
+                            </select>
+
+                            <div style={{ fontSize: '0.92rem', color: 'var(--muted)' }}>
+                                {selectedGameMode === 'legend'
+                                    ? 'Legend mode recreates imported legend players from the database using their stored power targets, then fills any remaining roster spots with random players.'
+                                    : 'Normal mode keeps the current random new-game player generation system.'}
+                            </div>
+
                             <label style={{ fontWeight: 600 }}>Select team to manage in new game</label>
                             <select
                                 value={selectedTeamName}
@@ -270,7 +289,7 @@ export default function SettingsClient({
                                     onClick={handleStartNewGame}
                                     disabled={loading}
                                 >
-                                    {loading ? '⏳ Resetting...' : '✅ Confirm New Game'}
+                                    {loading ? '⏳ Resetting...' : `✅ Confirm ${selectedGameMode === 'legend' ? 'Legend' : 'Normal'} New Game`}
                                 </Button>
                                 <Button
                                     variant="ghost"

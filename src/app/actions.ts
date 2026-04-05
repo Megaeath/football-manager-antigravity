@@ -2,7 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { initializeNewGame } from '@/lib/services/newGameInitializer';
+import { initializeNewGame, type NewGameMode } from '@/lib/services/newGameInitializer';
 import { AI_PLAYSTYLE_PROFILE_MAP } from '@/lib/services/aiPlaystyleProfiles';
 
 async function assertPlayerAvailableForSelection(playerId: string, teamId: string) {
@@ -118,12 +118,12 @@ export async function updateTeamTactics(teamId: string, tactics: { formation?: s
     revalidatePath('/squad');
 }
 
-export async function resetGameWithSelectedTeam(teamName: string) {
+export async function resetGameWithSelectedTeam(teamName: string, mode: NewGameMode = 'normal') {
     if (!teamName) {
         throw new Error('Team is required');
     }
 
-    const result = await initializeNewGame(teamName);
+    const result = await initializeNewGame(teamName, mode);
 
     revalidatePath('/', 'layout');
     revalidatePath('/');

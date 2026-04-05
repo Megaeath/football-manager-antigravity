@@ -5,7 +5,61 @@ import { generateSeasonFixtures } from './fixtureGenerator';
 import { initializeCupTournamentForSeason } from './SwissTournament';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 
+export type NewGameMode = 'normal' | 'legend';
+
 type PlayerAttributeSet = {
+    handling: number;
+    tackling: number;
+    passing: number;
+    shooting: number;
+    heading: number;
+    dribbling: number;
+    crossing: number;
+    setPieces: number;
+    throw: number;
+    aggression: number;
+    positioning: number;
+    vision: number;
+    bravery: number;
+    leadership: number;
+    teamwork: number;
+    composure: number;
+    pace: number;
+    acceleration: number;
+    stamina: number;
+    strength: number;
+    agility: number;
+    balance: number;
+};
+
+type SquadTemplateSlot = {
+    pos: string;
+    nat: string;
+};
+
+type LegendCatalogEntry = {
+    teamName: string;
+    playerName: string;
+    position: string;
+    age: number;
+    power: number;
+    division: number;
+    sourceFile: string;
+};
+
+type SeedPlayerRecord = {
+    name: string;
+    age: number;
+    naturalPosition: string;
+    retirementAge: number;
+    tacticalPosition: string | null;
+    morale: number;
+    condition: number;
+    isRetired: boolean;
+    popularity: number;
+    exp: number;
+    birthDate: Date;
+    power: number;
     handling: number;
     tackling: number;
     passing: number;
@@ -57,6 +111,58 @@ const DIVISION_TEAM_NAMES = [
     DIVISION_3_TEAM_NAMES
 ];
 
+const SQUAD_TEMPLATE: SquadTemplateSlot[] = [
+    { pos: 'GK', nat: 'GK' }, { pos: 'GK', nat: 'GK' },
+    { pos: 'DR', nat: 'DR' }, { pos: 'DL', nat: 'DL' },
+    { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' },
+    { pos: 'MR', nat: 'MR' }, { pos: 'ML', nat: 'ML' },
+    { pos: 'MC', nat: 'MC' }, { pos: 'MC', nat: 'MC' }, { pos: 'MC', nat: 'MC' },
+    { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' },
+    { pos: 'GK', nat: 'GK' }, { pos: 'DR', nat: 'DR' }, { pos: 'DL', nat: 'DL' }, { pos: 'MC', nat: 'MC' }, { pos: 'MR', nat: 'MR' }, { pos: 'ML', nat: 'ML' }
+];
+
+const STARTING_TACTICAL_SLOTS = ['GK', 'DR', 'DL', 'DC_L', 'DC_R', 'MR', 'ML', 'MC_L', 'MC_R', 'FW_L', 'FW_R'] as const;
+
+const POSITION_FALLBACKS: Record<string, string[]> = {
+    GK: ['GK'],
+    DR: ['DR', 'DL', 'DC', 'DMC'],
+    DL: ['DL', 'DR', 'DC', 'DMC'],
+    DC: ['DC', 'DMC', 'DR', 'DL'],
+    DMC: ['DMC', 'MC', 'DC'],
+    MC: ['MC', 'DMC', 'AMC', 'MR', 'ML'],
+    AMC: ['AMC', 'MC', 'FWC', 'MR', 'ML'],
+    MR: ['MR', 'ML', 'AMC', 'MC', 'FWC'],
+    ML: ['ML', 'MR', 'AMC', 'MC', 'FWC'],
+    FWC: ['FWC', 'AMC', 'MR', 'ML']
+};
+
+const TACTICAL_SLOT_PREFERENCES: Record<(typeof STARTING_TACTICAL_SLOTS)[number], string[]> = {
+    GK: ['GK'],
+    DR: ['DR', 'DL', 'DC', 'DMC'],
+    DL: ['DL', 'DR', 'DC', 'DMC'],
+    DC_L: ['DC', 'DMC', 'DR', 'DL'],
+    DC_R: ['DC', 'DMC', 'DR', 'DL'],
+    MR: ['MR', 'ML', 'AMC', 'MC', 'FWC'],
+    ML: ['ML', 'MR', 'AMC', 'MC', 'FWC'],
+    MC_L: ['MC', 'DMC', 'AMC', 'MR', 'ML'],
+    MC_R: ['MC', 'DMC', 'AMC', 'MR', 'ML'],
+    FW_L: ['FWC', 'AMC', 'MR', 'ML'],
+    FW_R: ['FWC', 'AMC', 'MR', 'ML']
+};
+
+const LEGEND_PRIMARY_ATTRS: Record<string, Array<keyof PlayerAttributeSet>> = {
+    GK: ['handling', 'positioning', 'agility', 'composure', 'throw', 'teamwork'],
+    DR: ['pace', 'acceleration', 'crossing', 'tackling', 'stamina', 'agility', 'positioning'],
+    DL: ['pace', 'acceleration', 'crossing', 'tackling', 'stamina', 'agility', 'positioning'],
+    DC: ['tackling', 'heading', 'positioning', 'strength', 'bravery', 'balance', 'teamwork'],
+    DMC: ['passing', 'vision', 'tackling', 'teamwork', 'positioning', 'composure', 'stamina'],
+    MC: ['passing', 'vision', 'stamina', 'teamwork', 'dribbling', 'composure', 'positioning'],
+    AMC: ['passing', 'dribbling', 'vision', 'shooting', 'positioning', 'composure', 'teamwork'],
+    MR: ['pace', 'acceleration', 'dribbling', 'crossing', 'agility', 'passing', 'stamina'],
+    ML: ['pace', 'acceleration', 'dribbling', 'crossing', 'agility', 'passing', 'stamina'],
+    FWC: ['shooting', 'heading', 'pace', 'composure', 'positioning', 'balance', 'acceleration']
+};
+
 export const NEW_GAME_DIVISION_TEAMS = [
     { level: 1, name: 'Division 1', teams: DIVISION_1_TEAM_NAMES },
     { level: 2, name: 'Division 2', teams: DIVISION_2_TEAM_NAMES },
@@ -97,6 +203,31 @@ const LAST_NAMES = [
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+const clampStat = (value: number) => Math.max(1, Math.min(20, Math.round(value)));
+
+function normalizeLegendPosition(position: string) {
+    const upper = position.toUpperCase();
+    if (upper === 'FW' || upper === 'ST') return 'FWC';
+    return upper;
+}
+
+function getGeneratorPosition(position: string) {
+    const normalized = normalizeLegendPosition(position);
+    if (normalized === 'FWC') return 'FW';
+    if (normalized === 'AMC' || normalized === 'DMC') return 'MC';
+    return normalized;
+}
+
+function getRelevantAttributes(position: string) {
+    const normalized = normalizeLegendPosition(position);
+    return LEGEND_PRIMARY_ATTRS[normalized] || LEGEND_PRIMARY_ATTRS[getGeneratorPosition(normalized)] || LEGEND_PRIMARY_ATTRS.MC;
+}
+
+function getPositionPreferences(position: string) {
+    const normalized = normalizeLegendPosition(position);
+    return POSITION_FALLBACKS[normalized] || [normalized, getGeneratorPosition(normalized)];
+}
+
 function pickRandomAIPlaystyleId() {
     if (AI_PLAYSTYLE_PROFILES.length === 0) {
         return null;
@@ -128,6 +259,301 @@ function buildUniqueName(usedNames: Set<string>) {
     const emergencyName = `${FIRST_NAMES[0]} ${LAST_NAMES[0]} ${Math.floor(Math.random() * 99)}`;
     usedNames.add(emergencyName);
     return emergencyName;
+}
+
+function calculatePlayerSeedPower(attrs: PlayerAttributeSet, naturalPosition: string, exp = 0): number {
+    return calculatePlayerPower({
+        attributes: toPlayerAttributes(attrs),
+        targetPosition: normalizeLegendPosition(naturalPosition),
+        naturalPosition: normalizeLegendPosition(naturalPosition),
+        condition: 100,
+        exp
+    }).powerWithExp;
+}
+
+function getCandidateSlotIndex(remainingSlots: SquadTemplateSlot[], naturalPosition: string) {
+    const preferences = getPositionPreferences(naturalPosition);
+
+    for (const preferred of preferences) {
+        const exactIndex = remainingSlots.findIndex((slot) => slot.nat === preferred);
+        if (exactIndex >= 0) {
+            return exactIndex;
+        }
+    }
+
+    const normalizedGenerator = getGeneratorPosition(naturalPosition);
+    return remainingSlots.findIndex((slot) => slot.pos === normalizedGenerator);
+}
+
+function assignStartingTacticalPositions(players: SeedPlayerRecord[]) {
+    const assignedPlayers = new Set<number>();
+
+    for (const tacticalSlot of STARTING_TACTICAL_SLOTS) {
+        const preferences = TACTICAL_SLOT_PREFERENCES[tacticalSlot];
+        let bestPlayerIndex = -1;
+        let bestScore = Number.NEGATIVE_INFINITY;
+
+        players.forEach((player, index) => {
+            if (assignedPlayers.has(index)) return;
+
+            const normalizedPosition = normalizeLegendPosition(player.naturalPosition);
+            const preferenceIndex = preferences.indexOf(normalizedPosition);
+            if (preferenceIndex === -1) return;
+
+            const preferenceScore = (preferences.length - preferenceIndex) * 1000;
+            const score = preferenceScore + player.power;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestPlayerIndex = index;
+            }
+        });
+
+        if (bestPlayerIndex >= 0) {
+            players[bestPlayerIndex].tacticalPosition = tacticalSlot;
+            assignedPlayers.add(bestPlayerIndex);
+        }
+    }
+}
+
+function createLegendSeedAttributes(naturalPosition: string, targetPower: number, expBonus: number): PlayerAttributeSet {
+    const generatorPosition = getGeneratorPosition(naturalPosition);
+    const attrs = generateAttributes(generatorPosition);
+    const relevantAttributes = getRelevantAttributes(naturalPosition);
+    const weightedBase = clampStat(targetPower / 5 - expBonus + 1);
+    const supportBase = clampStat(weightedBase - 2);
+    const neutralBase = clampStat(weightedBase - 4);
+
+    (Object.keys(attrs) as Array<keyof PlayerAttributeSet>).forEach((key) => {
+        if (key === 'handling' && generatorPosition !== 'GK') {
+            attrs[key] = randomInt(1, 3);
+            return;
+        }
+
+        if (relevantAttributes.includes(key)) {
+            attrs[key] = clampStat(weightedBase + randomInt(-2, 2));
+            return;
+        }
+
+        if (['stamina', 'teamwork', 'composure', 'positioning', 'balance'].includes(key)) {
+            attrs[key] = clampStat(supportBase + randomInt(-2, 2));
+            return;
+        }
+
+        attrs[key] = clampStat(neutralBase + randomInt(-3, 2));
+    });
+
+    return attrs;
+}
+
+function optimizeAttributesForTargetPower(attrs: PlayerAttributeSet, naturalPosition: string, targetPower: number, exp: number) {
+    const relevantKeys = getRelevantAttributes(naturalPosition);
+    const supportKeys: Array<keyof PlayerAttributeSet> = ['stamina', 'teamwork', 'composure', 'positioning', 'balance', 'strength', 'agility'];
+    const allKeys = Array.from(new Set<keyof PlayerAttributeSet>([...relevantKeys, ...supportKeys, ...(Object.keys(attrs) as Array<keyof PlayerAttributeSet>)]));
+
+    for (let iteration = 0; iteration < 320; iteration++) {
+        const currentPower = calculatePlayerSeedPower(attrs, naturalPosition, exp);
+        if (currentPower === targetPower) {
+            break;
+        }
+
+        const direction = currentPower < targetPower ? 1 : -1;
+        let bestKey: keyof PlayerAttributeSet | null = null;
+        let bestValue = 0;
+        let bestError = Math.abs(currentPower - targetPower);
+
+        for (const key of allKeys) {
+            const nextValue = attrs[key] + direction;
+            if (nextValue < 1 || nextValue > 20) continue;
+            if (key === 'handling' && getGeneratorPosition(naturalPosition) !== 'GK' && direction > 0 && nextValue > 5) continue;
+
+            const candidate = { ...attrs, [key]: nextValue };
+            const nextPower = calculatePlayerSeedPower(candidate, naturalPosition, exp);
+            const nextError = Math.abs(nextPower - targetPower);
+
+            if (nextError < bestError) {
+                bestError = nextError;
+                bestKey = key;
+                bestValue = nextValue;
+                if (nextError === 0) {
+                    break;
+                }
+            }
+        }
+
+        if (!bestKey) {
+            break;
+        }
+
+        attrs[bestKey] = bestValue;
+    }
+
+    return attrs;
+}
+
+function buildLegendPlayerAttributes(naturalPosition: string, targetPower: number) {
+    let bestAttrs = createLegendSeedAttributes(naturalPosition, targetPower, 0);
+    let bestExp = 0;
+    let bestPower = calculatePlayerSeedPower(bestAttrs, naturalPosition, bestExp);
+    let bestError = Math.abs(bestPower - targetPower);
+
+    for (const expBonus of [0, 1, 2, 3]) {
+        const exp = expBonus * 100;
+
+        for (let seed = 0; seed < 18; seed++) {
+            const candidate = optimizeAttributesForTargetPower(
+                createLegendSeedAttributes(naturalPosition, targetPower, expBonus),
+                naturalPosition,
+                targetPower,
+                exp
+            );
+            const power = calculatePlayerSeedPower(candidate, naturalPosition, exp);
+            const error = Math.abs(power - targetPower);
+
+            if (error < bestError) {
+                bestAttrs = candidate;
+                bestExp = exp;
+                bestPower = power;
+                bestError = error;
+            }
+
+            if (power === targetPower) {
+                return { attrs: candidate, exp, power };
+            }
+        }
+    }
+
+    return { attrs: bestAttrs, exp: bestExp, power: bestPower };
+}
+
+async function snapshotLegendCatalog(): Promise<LegendCatalogEntry[]> {
+    const legends = await prisma.legendPlayer.findMany({
+        select: {
+            teamName: true,
+            playerName: true,
+            position: true,
+            age: true,
+            power: true,
+            division: true,
+            sourceFile: true
+        }
+    });
+
+    return legends.map((legend) => ({
+        ...legend,
+        position: normalizeLegendPosition(legend.position)
+    }));
+}
+
+async function restoreLegendCatalog(teams: Array<{ id: string; name: string }>, snapshot: LegendCatalogEntry[]) {
+    if (snapshot.length === 0) {
+        return;
+    }
+
+    const teamIdByName = new Map(teams.map((team) => [team.name, team.id]));
+    const rows = snapshot
+        .map((legend) => {
+            const teamId = teamIdByName.get(legend.teamName);
+            if (!teamId) return null;
+
+            return {
+                teamId,
+                teamName: legend.teamName,
+                playerName: legend.playerName,
+                position: legend.position,
+                age: legend.age,
+                power: legend.power,
+                division: legend.division,
+                sourceFile: legend.sourceFile
+            };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    if (rows.length > 0) {
+        await prisma.legendPlayer.createMany({ data: rows });
+    }
+}
+
+function createRandomSeedPlayer(usedNames: Set<string>, naturalPosition: string, isSuperstar = false): SeedPlayerRecord {
+    const generatorPosition = getGeneratorPosition(naturalPosition);
+    const superstar = isSuperstar ? generateSuperstarAttributes(generatorPosition, normalizeLegendPosition(naturalPosition)) : null;
+    const stats = superstar?.attrs || generateAttributes(generatorPosition);
+    const exp = superstar?.exp || 0;
+    const power = calculatePlayerSeedPower(stats, naturalPosition, exp);
+    const age = isSuperstar ? randomInt(26, 33) : randomInt(18, 35);
+
+    return {
+        name: buildUniqueName(usedNames),
+        age,
+        naturalPosition: normalizeLegendPosition(naturalPosition),
+        retirementAge: isSuperstar ? randomInt(Math.max(age + 3, 35), 40) : randomInt(31, 38),
+        tacticalPosition: null,
+        morale: 100,
+        condition: 100,
+        isRetired: false,
+        popularity: isSuperstar ? randomInt(10, 30) : randomInt(0, 10),
+        exp,
+        birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
+        power,
+        ...stats
+    };
+}
+
+function createLegendSeedPlayer(legend: LegendCatalogEntry): SeedPlayerRecord {
+    const build = buildLegendPlayerAttributes(legend.position, legend.power);
+    const age = Math.max(18, legend.age);
+    const popularityFloor = Math.max(25, Math.min(90, Math.round(legend.power * 0.7)));
+
+    return {
+        name: legend.playerName,
+        age,
+        naturalPosition: normalizeLegendPosition(legend.position),
+        retirementAge: randomInt(Math.max(age + 8, 34), 40),
+        tacticalPosition: null,
+        morale: 100,
+        condition: 100,
+        isRetired: false,
+        popularity: randomInt(popularityFloor, Math.min(99, popularityFloor + 8)),
+        exp: build.exp,
+        birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
+        power: build.power,
+        ...build.attrs
+    };
+}
+
+function buildNormalModeSquad(usedNames: Set<string>) {
+    const superstarIndex = randomInt(0, SQUAD_TEMPLATE.length - 1);
+    const players = SQUAD_TEMPLATE.map((slot, index) =>
+        createRandomSeedPlayer(usedNames, slot.nat, index === superstarIndex)
+    );
+
+    assignStartingTacticalPositions(players);
+    return players;
+}
+
+function buildLegendModeSquad(usedNames: Set<string>, teamLegends: LegendCatalogEntry[]) {
+    const legends = [...teamLegends]
+        .sort((left, right) => right.power - left.power)
+        .slice(0, SQUAD_TEMPLATE.length)
+        .map((legend) => createLegendSeedPlayer(legend));
+
+    const remainingSlots = [...SQUAD_TEMPLATE];
+    for (const legend of legends) {
+        const slotIndex = getCandidateSlotIndex(remainingSlots, legend.naturalPosition);
+        if (slotIndex >= 0) {
+            remainingSlots.splice(slotIndex, 1);
+        }
+    }
+
+    const fillersNeeded = Math.max(0, SQUAD_TEMPLATE.length - legends.length);
+    const fillers = Array.from({ length: fillersNeeded }, (_, index) => {
+        const slot = remainingSlots[index] || SQUAD_TEMPLATE[index % SQUAD_TEMPLATE.length];
+        return createRandomSeedPlayer(usedNames, slot.nat);
+    });
+
+    const squad = [...legends, ...fillers];
+    assignStartingTacticalPositions(squad);
+    return squad;
 }
 
 function generateAttributes(position: string): PlayerAttributeSet {
@@ -218,20 +644,10 @@ function generateAttributes(position: string): PlayerAttributeSet {
     return base;
 }
 
-function calculateSeedPower(attrs: PlayerAttributeSet, naturalPosition: string, exp = 0): number {
-    const targetPosition = naturalPosition.split('_')[0];
-    return calculatePlayerPower({
-        attributes: toPlayerAttributes(attrs),
-        targetPosition,
-        condition: 100,
-        exp
-    }).powerWithExp;
-}
-
 function generateSuperstarAttributes(position: string, naturalPosition: string): { attrs: PlayerAttributeSet; exp: number } {
     let bestAttrs = generateAttributes(position);
     let bestExp = 0;
-    let bestPower = calculateSeedPower(bestAttrs, naturalPosition, bestExp);
+    let bestPower = calculatePlayerSeedPower(bestAttrs, naturalPosition, bestExp);
 
     for (let i = 0; i < 50; i++) {
         const exp = randomInt(50, 110);
@@ -305,7 +721,7 @@ function generateSuperstarAttributes(position: string, naturalPosition: string):
             candidate.passing = randomInt(16, 20);
         }
 
-        const power = calculateSeedPower(candidate, naturalPosition, exp);
+        const power = calculatePlayerSeedPower(candidate, naturalPosition, exp);
         if (power > bestPower) {
             bestAttrs = candidate;
             bestExp = exp;
@@ -319,7 +735,13 @@ function generateSuperstarAttributes(position: string, naturalPosition: string):
     return { attrs: bestAttrs, exp: bestExp };
 }
 
-export async function initializeNewGame(userTeamName: string) {
+export async function initializeNewGame(userTeamName: string, mode: NewGameMode = 'normal') {
+    const legendCatalogSnapshot = await snapshotLegendCatalog();
+
+    if (mode === 'legend' && legendCatalogSnapshot.length === 0) {
+        throw new Error('Legend mode requires imported legend players in the database');
+    }
+
     // Match-level and action-level state
     await prisma.playerActionLog.deleteMany();
     await prisma.playerMatchStats.deleteMany();
@@ -370,6 +792,7 @@ export async function initializeNewGame(userTeamName: string) {
     );
 
     const usedNames = new Set<string>();
+    const createdTeams: Array<{ id: string; name: string; leagueId: string }> = [];
 
     for (const [index, divisionTeams] of DIVISION_TEAM_NAMES.entries()) {
         const league = leagues[index];
@@ -387,58 +810,33 @@ export async function initializeNewGame(userTeamName: string) {
                 }
             });
 
-            const squadTemplate = [
-                { pos: 'GK', nat: 'GK' }, { pos: 'GK', nat: 'GK' },
-                { pos: 'DR', nat: 'DR' }, { pos: 'DL', nat: 'DL' },
-                { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' }, { pos: 'DC', nat: 'DC' },
-                { pos: 'MR', nat: 'MR' }, { pos: 'ML', nat: 'ML' },
-                { pos: 'MC', nat: 'MC' }, { pos: 'MC', nat: 'MC' }, { pos: 'MC', nat: 'MC' },
-                { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' }, { pos: 'FW', nat: 'FWC' },
-                { pos: 'GK', nat: 'GK' }, { pos: 'DR', nat: 'DR' }, { pos: 'DL', nat: 'DL' }, { pos: 'MC', nat: 'MC' }, { pos: 'MR', nat: 'MR' }, { pos: 'ML', nat: 'ML' }
-            ];
-
-            const assigned = { GK: 0, DR: 0, DL: 0, DC: 0, MR: 0, ML: 0, MC: 0, FW: 0 };
-
-            const superstarIndex = randomInt(0, squadTemplate.length - 1);
-
-            const playersData = squadTemplate.map((p, idx) => {
-                const isSuperstar = idx === superstarIndex;
-                const superstar = isSuperstar ? generateSuperstarAttributes(p.pos, p.nat) : null;
-                const stats = superstar?.attrs || generateAttributes(p.pos);
-
-                let tacPos: string | null = null;
-                if (p.pos === 'GK' && assigned.GK < 1) { tacPos = 'GK'; assigned.GK++; }
-                else if (p.pos === 'DR' && assigned.DR < 1) { tacPos = 'DR'; assigned.DR++; }
-                else if (p.pos === 'DL' && assigned.DL < 1) { tacPos = 'DL'; assigned.DL++; }
-                else if (p.pos === 'DC' && assigned.DC < 2) { tacPos = assigned.DC === 0 ? 'DC_L' : 'DC_R'; assigned.DC++; }
-                else if (p.pos === 'MR' && assigned.MR < 1) { tacPos = 'MR'; assigned.MR++; }
-                else if (p.pos === 'ML' && assigned.ML < 1) { tacPos = 'ML'; assigned.ML++; }
-                else if (p.pos === 'MC' && assigned.MC < 2) { tacPos = assigned.MC === 0 ? 'MC_L' : 'MC_R'; assigned.MC++; }
-                else if (p.pos === 'FW' && assigned.FW < 2) { tacPos = assigned.FW === 0 ? 'FW_L' : 'FW_R'; assigned.FW++; }
-
-                const age = isSuperstar ? randomInt(26, 33) : randomInt(18, 35);
-                const retirementAge = isSuperstar
-                    ? randomInt(Math.max(age + 3, 35), 40)
-                    : randomInt(31, 33);
-                return {
-                    teamId: team.id,
-                    name: buildUniqueName(usedNames),
-                    age,
-                    naturalPosition: p.nat,
-                    retirementAge,
-                    tacticalPosition: tacPos,
-                    morale: 100,
-                    condition: 100,
-                    isRetired: false,
-                    popularity: isSuperstar ? randomInt(10, 30) : randomInt(0, 10),
-                    exp: superstar?.exp || 0,
-                    birthDate: new Date(2026 - age, randomInt(0, 11), randomInt(1, 28)),
-                    ...stats
-                };
-            });
-
-            await prisma.player.createMany({ data: playersData });
+            createdTeams.push({ id: team.id, name: team.name, leagueId: league.id });
         }
+    }
+
+    await restoreLegendCatalog(
+        createdTeams.map((team) => ({ id: team.id, name: team.name })),
+        legendCatalogSnapshot
+    );
+
+    const legendCatalogByTeam = legendCatalogSnapshot.reduce((map, legend) => {
+        const current = map.get(legend.teamName) || [];
+        current.push(legend);
+        map.set(legend.teamName, current);
+        return map;
+    }, new Map<string, LegendCatalogEntry[]>());
+
+    for (const team of createdTeams) {
+        const playersData = mode === 'legend'
+            ? buildLegendModeSquad(usedNames, legendCatalogByTeam.get(team.name) || [])
+            : buildNormalModeSquad(usedNames);
+
+        await prisma.player.createMany({
+            data: playersData.map(({ power, ...player }) => ({
+                teamId: team.id,
+                ...player
+            }))
+        });
     }
 
     const allTeams = await prisma.team.findMany({ select: { id: true, name: true } });

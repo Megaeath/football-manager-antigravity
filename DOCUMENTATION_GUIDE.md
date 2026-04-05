@@ -46,6 +46,7 @@
 - เพิ่มกลวิธีใหม่ → ดู [TACTICAL_GUIDE.md](TACTICAL_GUIDE.md) และ [.github/copilot-instructions.md](.github/copilot-instructions.md)
 - เข้าใจ Player Power calculation → ดู [POWER_CALCULATION_EXPLANATION.md](POWER_CALCULATION_EXPLANATION.md)
 - เพิ่ม/แก้ระบบฝึกซ้อม → ดู [TRAINING.md](TRAINING.md) และ API `/api/training/*`
+- เพิ่ม/แก้ flow `Settings > New Game` หรือ legend mode → ดู `.github/copilot-instructions.md` หัวข้อ `Fix/reset new game initialization` และ `Legend mode new game`
 
 ### เมื่อแก้อะไร ต้องอัปเดตเอกสารไหน
 
