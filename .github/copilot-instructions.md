@@ -258,6 +258,11 @@ const effectiveAttrs = getEffectiveAttributes(playerState.attributes, dbPlayer.e
 - Apply condition/morale penalties twice
 - Double-count experience in financial calculations
 
+**Auto Lineup Rest Rule**:
+- Auto lineup selectors should treat fitness as a hard rotation signal.
+- If a candidate player has `condition < 85`, prefer a fresh replacement (`condition` near 100) even when base power is slightly lower.
+- Keep this behavior consistent in both pre-assignment services and pre-match AI lineup fallback logic.
+
 ### API Route Pattern
 
 **Location**: `src/app/api/[resource]/route.ts`
@@ -440,6 +445,8 @@ Run: `node scripts/test-power.js` (requires node, no build step)
 5. **Time Zone Handling**: Game uses UTC internally (`GlobalGameSettings.currentDate`). All match scheduling respects this for calendar transitions.
 
 6. **Cup Season Year Mapping**: Cup tournament `season` is an index (1,2,3...), not a calendar year. Always map to real year when generating cup dates (season 1 => 2026) to avoid legacy dates like 1901 and perpetual “match due” behavior.
+
+7. **Red Card Minutes**: In match simulation, when a player receives a red card, `PlayerMatchStats.minutes` must be clamped to the dismissal minute (e.g. red at 72' => max 72) so UI stats match match events.
 
 ---
 

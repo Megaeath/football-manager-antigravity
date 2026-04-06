@@ -12,6 +12,7 @@ interface FinancialData {
     balance: number;
     reputation: number;
     stadiumCapacity: number;
+        pendingTransferReserved: number;
     training: {
         facilityLevel: number;
         weeklyFee: number;
@@ -158,6 +159,18 @@ export default function FinancesPage() {
                         {formatCurrency(data.balance)}
                     </div>
                 </Card>
+
+                {data.pendingTransferReserved > 0 && (
+                    <Card style={{ textAlign: 'center', padding: '2rem', borderLeft: '4px solid var(--accent)' }}>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>🔒 Transfer Reserved</div>
+                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--accent)' }}>
+                            {formatCurrency(data.pendingTransferReserved)}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.4rem' }}>
+                            Locked for pending deals
+                        </div>
+                    </Card>
+                )}
 
                 <Card style={{ textAlign: 'center', padding: '2rem' }}>
                     <div style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{FINANCES.WEEKLY_INCOME}</div>

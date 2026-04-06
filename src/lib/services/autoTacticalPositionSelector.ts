@@ -91,6 +91,22 @@ const FORMATIONS: Record<string, { id: string }[]> = {
     ]
 };
 
+const LINEUP_REST_THRESHOLD = 85;
+const LINEUP_FRESH_PREFERRED_THRESHOLD = 95;
+
+function getConditionSelectionBonus(condition: number): number {
+    if (condition >= LINEUP_FRESH_PREFERRED_THRESHOLD) {
+        return 18 + ((condition - LINEUP_FRESH_PREFERRED_THRESHOLD) * 1.2);
+    }
+
+    if (condition >= LINEUP_REST_THRESHOLD) {
+        return (condition - LINEUP_REST_THRESHOLD) * 0.6;
+    }
+
+    // Strongly discourage selecting tired players when alternatives exist.
+    return -40 - ((LINEUP_REST_THRESHOLD - condition) * 2.2);
+}
+
 /**
  * Auto-select best lineup for a team based on player suitability
  * Uses the same logic as match simulator but can be called for pre-season assignment
@@ -114,6 +130,8 @@ function autoSelectLineup(team: any) {
                 availablePlayers = goalkeepers;
             }
         }
+
+        const hasFreshAlternative = availablePlayers.some((p: any) => (p.condition || 0) >= LINEUP_FRESH_PREFERRED_THRESHOLD);
         
         const bestPlayer = availablePlayers
             .map((p: any) => ({
@@ -137,7 +155,14 @@ function autoSelectLineup(team: any) {
                         if (nat === 'DC' || nat === 'DR' || nat === 'DL') return basePower - 15;
                     }
 
-                    return basePower;
+                    let score = basePower + getConditionSelectionBonus(p.condition || 0);
+
+                    // If a fresh player exists for this slot, force stronger rest behavior.
+                    if ((p.condition || 0) < LINEUP_REST_THRESHOLD && hasFreshAlternative) {
+                        score -= 80;
+                    }
+
+                    return score;
                 })()
             }))
             .sort((a: any, b: any) => b.suitability - a.suitability)[0];

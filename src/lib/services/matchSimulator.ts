@@ -329,6 +329,18 @@ function rollInjuryForMatch(player: { stamina: number; strength: number }, stat:
 }
 
 function autoSelectLineup(team: any) {
+    const LINEUP_REST_THRESHOLD = 85;
+    const LINEUP_FRESH_PREFERRED_THRESHOLD = 95;
+    const getConditionSelectionBonus = (condition: number) => {
+        if (condition >= LINEUP_FRESH_PREFERRED_THRESHOLD) {
+            return 18 + ((condition - LINEUP_FRESH_PREFERRED_THRESHOLD) * 1.2);
+        }
+        if (condition >= LINEUP_REST_THRESHOLD) {
+            return (condition - LINEUP_REST_THRESHOLD) * 0.6;
+        }
+        return -40 - ((LINEUP_REST_THRESHOLD - condition) * 2.2);
+    };
+
     const slots = FORMATIONS[team.formation] || FORMATIONS['4-4-2'];
     const usedPlayers = new Set<string>();
     const assignments: { playerId: string; position: string }[] = [];
@@ -347,17 +359,29 @@ function autoSelectLineup(team: any) {
                 availablePlayers = goalkeepers;
             }
         }
+
+        const hasFreshAlternative = availablePlayers.some((p: any) => (p.condition || 0) >= LINEUP_FRESH_PREFERRED_THRESHOLD);
         
         const bestPlayer = availablePlayers
             .map((p: any) => ({
                 playerId: p.id,
                 position: slot.id,
-                suitability: calculatePlayerPower({
-                    attributes: mapAttributes(p),
-                    targetPosition: slotBase,
-                    condition: p.condition,
-                    exp: p.exp || 0
-                }).powerWithExp
+                suitability: (() => {
+                    const basePower = calculatePlayerPower({
+                        attributes: mapAttributes(p),
+                        targetPosition: slotBase,
+                        condition: p.condition,
+                        exp: p.exp || 0
+                    }).powerWithExp;
+
+                    let score = basePower + getConditionSelectionBonus(p.condition || 0);
+
+                    if ((p.condition || 0) < LINEUP_REST_THRESHOLD && hasFreshAlternative) {
+                        score -= 80;
+                    }
+
+                    return score;
+                })()
             }))
             .sort((a: any, b: any) => b.suitability - a.suitability)[0];
 

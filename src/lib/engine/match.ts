@@ -138,6 +138,10 @@ function applyCardFromFoul(
             defender.cards.red = 1;
             defenderStats.redCards += 1;
             teamStats.redCards += 1;
+
+            // Keep played minutes aligned with dismissal timing.
+            // Example: sent off at 72' => minutes should not remain 90.
+            defenderStats.minutes = Math.min(defenderStats.minutes || 90, minute);
         }
 
         matchState.events.push({

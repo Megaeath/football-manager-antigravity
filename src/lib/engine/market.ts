@@ -202,19 +202,47 @@ export async function submitBid(
         return { success: false, message: `Bid of $${amount.toLocaleString()} was rejected.` };
     }
 
-    // Accepted, create pending bid
-    const newBid = await prisma.bid.create({
-        data: {
-            playerId,
-            fromTeamId,
-            toTeamId,
-            amount,
-            signOnBonus,
-            status: 'PENDING',
-            createdAt: currentDate,
-            windowEnds,
-            season: currentSeason
+    // Accepted by club: create pending bid and lock buyer funds immediately
+    const newBid = await prisma.$transaction(async (tx) => {
+        const lockResult = await tx.team.updateMany({
+            where: {
+                id: fromTeamId,
+                balance: { gte: amount }
+            },
+            data: {
+                balance: { decrement: amount }
+            }
+        });
+
+        if (lockResult.count === 0) {
+            throw new Error('Insufficient balance to lock transfer reserve.');
         }
+
+        const createdBid = await tx.bid.create({
+            data: {
+                playerId,
+                fromTeamId,
+                toTeamId,
+                amount,
+                signOnBonus,
+                status: 'PENDING',
+                createdAt: currentDate,
+                windowEnds,
+                season: currentSeason
+            }
+        });
+
+        await tx.financialEvent.create({
+            data: {
+                teamId: fromTeamId,
+                type: 'PLAYER_BOUGHT',
+                amount: -amount,
+                description: `Transfer reserve locked for ${player.name} (bid accepted by club, pending move)`,
+                date: currentDate
+            }
+        });
+
+        return createdBid;
     });
 
     await createNewsEvent(
@@ -259,18 +287,47 @@ async function triggerBiddingWar(player: any, originalTeam: any, currentAmount: 
         if (teamPlayersInPos < 3) {
             // They join the bidding war
             const settings = await getGameTime();
-            await prisma.bid.create({
-                data: {
-                    playerId: player.id,
-                    fromTeamId: aiTeam.id,
-                    toTeamId: player.teamId,
-                    amount: requiredAmount, // counter-bid 20% higher
-                    status: 'PENDING',
-                    createdAt: currentDate,
-                    windowEnds: new Date(windowEnds.getTime() + (30 * 24 * 60 * 60 * 1000)), // delay by 1 month approx
-                    season: settings.currentSeason
-                }
+            const reserveLocked = await prisma.$transaction(async (tx) => {
+                const lockResult = await tx.team.updateMany({
+                    where: {
+                        id: aiTeam.id,
+                        balance: { gte: requiredAmount }
+                    },
+                    data: {
+                        balance: { decrement: requiredAmount }
+                    }
+                });
+
+                if (lockResult.count === 0) return false;
+
+                await tx.bid.create({
+                    data: {
+                        playerId: player.id,
+                        fromTeamId: aiTeam.id,
+                        toTeamId: player.teamId,
+                        amount: requiredAmount, // counter-bid 20% higher
+                        status: 'PENDING',
+                        createdAt: currentDate,
+                        windowEnds: new Date(windowEnds.getTime() + (30 * 24 * 60 * 60 * 1000)), // delay by 1 month approx
+                        season: settings.currentSeason
+                    }
+                });
+
+                await tx.financialEvent.create({
+                    data: {
+                        teamId: aiTeam.id,
+                        type: 'PLAYER_BOUGHT',
+                        amount: -requiredAmount,
+                        description: `Transfer reserve locked for ${player.name} (hijack bid, pending move)`,
+                        date: currentDate
+                    }
+                });
+
+                return true;
             });
+
+            if (!reserveLocked) continue;
+
             hijackCount++;
 
             await createNewsEvent(
@@ -315,11 +372,33 @@ export async function processAcceptedTransfers() {
     for (const bid of readyBids) {
         const player = bid.player;
 
+        const refundReservedAmount = async (bidToRefund: typeof bid, reason: string) => {
+            if (bidToRefund.isFreeAgent || bidToRefund.amount <= 0) return;
+
+            await prisma.$transaction(async (tx) => {
+                await tx.team.update({
+                    where: { id: bidToRefund.fromTeamId },
+                    data: { balance: { increment: bidToRefund.amount } }
+                });
+
+                await tx.financialEvent.create({
+                    data: {
+                        teamId: bidToRefund.fromTeamId,
+                        type: 'OTHER',
+                        amount: bidToRefund.amount,
+                        description: `Transfer reserve released for ${player.name}: ${reason}`,
+                        date: currentDate
+                    }
+                });
+            });
+        };
+
         // If player has already moved in a later season than this bid, this deal is stale.
         if ((player.lastTransferredSeason || 0) > (bid.season || 0)) {
+            await refundReservedAmount(bid, 'deal became stale');
             await prisma.bid.update({
                 where: { id: bid.id },
-                data: { status: 'COMPLETED' }
+                data: { status: 'REJECTED' }
             });
             continue;
         }
@@ -346,12 +425,18 @@ export async function processAcceptedTransfers() {
         // Skip if player already transferred this season
         if (player.lastTransferredSeason >= currentSeason) {
             console.log(`[AcceptedTransfer] Skipping ${player.name} — already transferred this season.`);
+            await refundReservedAmount(bid, 'player already transferred this season');
+            await prisma.bid.update({
+                where: { id: bid.id },
+                data: { status: 'REJECTED' }
+            });
             continue;
         }
 
         // Safety: skip if player's current team no longer matches the selling team
         if (!bid.isFreeAgent && player.teamId !== bid.toTeamId) {
             console.log(`[AcceptedTransfer] Skipping ${player.name} — ownership changed since deal was agreed.`);
+            await refundReservedAmount(bid, 'ownership changed before move');
             await prisma.bid.update({
                 where: { id: bid.id },
                 data: { status: 'REJECTED' }
@@ -376,26 +461,10 @@ export async function processAcceptedTransfers() {
                 });
 
                 if (!bid.isFreeAgent && bid.amount > 0) {
-                    // Deduct fee from buying team
-                    await tx.team.update({
-                        where: { id: bid.fromTeamId },
-                        data: { balance: { decrement: bid.amount } }
-                    });
-
                     // Pay selling team
                     await tx.team.update({
                         where: { id: bid.toTeamId! },
                         data: { balance: { increment: bid.amount } }
-                    });
-
-                    await tx.financialEvent.create({
-                        data: {
-                            teamId: bid.fromTeamId,
-                            type: 'PLAYER_BOUGHT',
-                            amount: -bid.amount,
-                            description: `Bought ${player.name} (transfer completed)`,
-                            date: currentDate
-                        }
                     });
 
                     await tx.financialEvent.create({
@@ -474,6 +543,27 @@ export async function processBiddingRules() {
         include: { player: true, fromTeam: true, toTeam: true }
     });
 
+    const refundBidReserve = async (bid: typeof expiredPendingBids[number], reason: string) => {
+        if (bid.isFreeAgent || bid.amount <= 0) return;
+
+        await prisma.$transaction(async (tx) => {
+            await tx.team.update({
+                where: { id: bid.fromTeamId },
+                data: { balance: { increment: bid.amount } }
+            });
+
+            await tx.financialEvent.create({
+                data: {
+                    teamId: bid.fromTeamId,
+                    type: 'OTHER',
+                    amount: bid.amount,
+                    description: `Transfer reserve released for ${bid.player.name}: ${reason}`,
+                    date: currentDate
+                }
+            });
+        });
+    };
+
     // Group by player
     const bidsByPlayer = expiredPendingBids.reduce((acc, bid) => {
         if (!acc[bid.playerId]) acc[bid.playerId] = [];
@@ -497,6 +587,7 @@ export async function processBiddingRules() {
         // Already transferred this season -> reject all remaining pending bids
         if (latestPlayer.lastTransferredSeason >= currentSeason) {
             for (const b of bids) {
+                await refundBidReserve(b, 'player already transferred this season');
                 await prisma.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
             }
             continue;
@@ -513,6 +604,7 @@ export async function processBiddingRules() {
         // Reject stale bids that no longer match current ownership
         const staleBids = bids.filter((b) => !validBids.some(v => v.id === b.id));
         for (const b of staleBids) {
+            await refundBidReserve(b, 'ownership changed before window close');
             await prisma.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
         }
 
@@ -543,6 +635,23 @@ export async function processBiddingRules() {
                 // Reject all other bids
                 const otherBids = validBids.filter(b => b.id !== winningBid.id);
                 for (const b of otherBids) {
+                    if (!b.isFreeAgent && b.amount > 0) {
+                        await tx.team.update({
+                            where: { id: b.fromTeamId },
+                            data: { balance: { increment: b.amount } }
+                        });
+
+                        await tx.financialEvent.create({
+                            data: {
+                                teamId: b.fromTeamId,
+                                type: 'OTHER',
+                                amount: b.amount,
+                                description: `Transfer reserve released for ${b.player.name}: lost bidding race`,
+                                date: currentDate
+                            }
+                        });
+                    }
+
                     await tx.bid.update({ where: { id: b.id }, data: { status: 'REJECTED' } });
                 }
 
@@ -553,12 +662,46 @@ export async function processBiddingRules() {
                 });
 
                 if (!playerForUpdate || playerForUpdate.lastTransferredSeason >= currentSeason) {
+                    if (!winningBid.isFreeAgent && winningBid.amount > 0) {
+                        await tx.team.update({
+                            where: { id: winningBid.fromTeamId },
+                            data: { balance: { increment: winningBid.amount } }
+                        });
+
+                        await tx.financialEvent.create({
+                            data: {
+                                teamId: winningBid.fromTeamId,
+                                type: 'OTHER',
+                                amount: winningBid.amount,
+                                description: `Transfer reserve released for ${player.name}: transfer invalidated`,
+                                date: currentDate
+                            }
+                        });
+                    }
+
                     await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'REJECTED' } });
                     return;
                 }
 
                 // Ownership changed after bid creation -> reject stale winner and stop
                 if (!winningBid.isFreeAgent && playerForUpdate.teamId !== winningBid.toTeamId) {
+                    if (winningBid.amount > 0) {
+                        await tx.team.update({
+                            where: { id: winningBid.fromTeamId },
+                            data: { balance: { increment: winningBid.amount } }
+                        });
+
+                        await tx.financialEvent.create({
+                            data: {
+                                teamId: winningBid.fromTeamId,
+                                type: 'OTHER',
+                                amount: winningBid.amount,
+                                description: `Transfer reserve released for ${player.name}: ownership changed`,
+                                date: currentDate
+                            }
+                        });
+                    }
+
                     await tx.bid.update({ where: { id: winningBid.id }, data: { status: 'REJECTED' } });
                     return;
                 }
@@ -574,25 +717,11 @@ export async function processBiddingRules() {
                 // Transfer money if not free agent
                 if (!winningBid.isFreeAgent) {
                     await tx.team.update({
-                        where: { id: winningBid.fromTeamId },
-                        data: { balance: { decrement: winningBid.amount } }
-                    });
-
-                    await tx.team.update({
                         where: { id: winningBid.toTeamId },
                         data: { balance: { increment: winningBid.amount } }
                     });
 
                     // Fin events
-                    await tx.financialEvent.create({
-                        data: {
-                            teamId: winningBid.fromTeamId,
-                            type: 'PLAYER_BOUGHT',
-                            amount: -winningBid.amount,
-                            description: `Bought ${player.name}`,
-                            date: currentDate
-                        }
-                    });
                     await tx.financialEvent.create({
                         data: {
                             teamId: winningBid.toTeamId,

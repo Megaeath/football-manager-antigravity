@@ -23,6 +23,7 @@ export default async function Home() {
     const gameInfo = await getGameTime();
     const gameDate = new Date(gameInfo.currentDate);
     let displayedBalance = 0;
+    let pendingTransferReserved = 0;
 
     // Get settings to find user team
     const settings = await prisma.globalGameSettings.findUnique({ where: { id: 1 } });
@@ -74,6 +75,17 @@ export default async function Home() {
         // Always prioritize current team balance (source of truth).
         // clubFinance is historical snapshot and can lag behind.
         displayedBalance = userTeam?.balance ?? teamFinance?.balance ?? 0;
+
+        // Get pending transfer reservations (funds already locked in balance)
+        const pendingBidsAgg = await prisma.bid.aggregate({
+            where: {
+                fromTeamId: userTeamId,
+                status: { in: ['PENDING', 'ACCEPTED', 'HIJACKED'] },
+                windowEnds: { gte: gameDate }
+            },
+            _sum: { amount: true }
+        });
+        pendingTransferReserved = pendingBidsAgg._sum.amount || 0;
 
         // Get league table
         const allTeams = await prisma.team.findMany({
@@ -257,6 +269,11 @@ export default async function Home() {
                             ${displayedBalance.toLocaleString()}
                         </div>
                         <div className="text-sm text-muted">{FINANCES.BALANCE}</div>
+                        {pendingTransferReserved > 0 && (
+                            <div className="text-sm" style={{ marginTop: '0.4rem', color: 'var(--accent)' }}>
+                                🔒 ${pendingTransferReserved.toLocaleString()} reserved for pending transfers
+                            </div>
+                        )}
                         <Link href="/finances" className="btn btn-sm" style={{ marginTop: '1rem', display: 'inline-block', background: 'var(--success)', color: 'white' }}>
                             {FINANCES.VIEW_DETAILS} →
                         </Link>
@@ -326,7 +343,7 @@ export default async function Home() {
                     <CardHeader>
                         <CardTitle>📊 {LEAGUE.CURRENT_STANDINGS}</CardTitle>
                     </CardHeader>
-                    
+
                     {/* Desktop Table */}
                     <div className="hidden md:block overflow-x-auto">
                         <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -346,8 +363,8 @@ export default async function Home() {
                                 {leagueTable.slice(0, 10).map((team, index) => (
                                     <tr key={team.id} style={{
                                         borderBottom: '1px solid var(--border)',
-                                        background: team.isUserTeam ? 'rgba(13, 110, 253, 0.1)' : 
-                                                  index < 3 ? 'rgba(76, 175, 80, 0.05)' : 
+                                        background: team.isUserTeam ? 'rgba(13, 110, 253, 0.1)' :
+                                                  index < 3 ? 'rgba(76, 175, 80, 0.05)' :
                                                   index > leagueTable.length - 4 ? 'rgba(220, 38, 38, 0.05)' : 'transparent'
                                     }}>
                                         <td className="text-center" style={{ padding: '10px', fontWeight: index < 3 ? 'bold' : 'normal', color: index === 0 ? 'var(--success)' : 'inherit' }}>{index + 1}</td>
@@ -488,10 +505,10 @@ export default async function Home() {
                         const homeWon = (match.homeScore ?? 0) > (match.awayScore ?? 0);
                         const awayWon = (match.homeScore ?? 0) < (match.awayScore ?? 0);
                         const isDraw = (match.homeScore ?? 0) === (match.awayScore ?? 0);
-                        
+
                         let resultText = isDraw ? MATCH.DRAW : (isHome ? (homeWon ? MATCH.WON : MATCH.LOST) : (awayWon ? MATCH.WON : MATCH.LOST));
-                        let resultColor = isDraw ? '#ff9800' : (homeWon || awayWon) ? '#4caf50' : '#dc2626';
-                        let resultBg = isDraw ? 'rgba(255, 152, 0, 0.1)' : (homeWon || awayWon) ? 'rgba(76, 175, 80, 0.1)' : 'rgba(220, 38, 38, 0.1)';
+                        let resultColor = isDraw ? '#ff9800' : (isHome ? (homeWon ? '#4caf50' : '#dc2626') : (awayWon ? '#4caf50' : '#dc2626'));
+                        let resultBg = isDraw ? 'rgba(255, 152, 0, 0.1)' : (isHome ? (homeWon ? 'rgba(76, 175, 80, 0.1)' : 'rgba(220, 38, 38, 0.1)') : (awayWon ? 'rgba(76, 175, 80, 0.1)' : 'rgba(220, 38, 38, 0.1)'));
 
                         return (
                             <div key={match.id} style={{
@@ -561,8 +578,8 @@ export default async function Home() {
 // Quick Link Card Component
 function QuickLinkCard({ href, icon, label }: { href: string; icon: string; label: string }) {
     return (
-        <Link 
-            href={href} 
+        <Link
+            href={href}
             className="card flex flex-col items-center justify-center p-xl text-center"
             style={{ padding: '2rem', textDecoration: 'none', color: 'inherit' }}
         >

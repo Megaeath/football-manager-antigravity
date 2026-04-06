@@ -91,6 +91,17 @@ export async function GET(request: NextRequest) {
         });
         const playerPurchases = Math.abs(transferExpenseAgg._sum.amount || 0);
 
+        // Pending transfer reservations (funds already locked in team.balance)
+        const pendingBidsAgg = await prisma.bid.aggregate({
+            where: {
+                fromTeamId: teamId,
+                status: { in: ['PENDING', 'ACCEPTED', 'HIJACKED'] },
+                windowEnds: { gte: currentDate }
+            },
+            _sum: { amount: true }
+        });
+        const pendingTransferReserved = pendingBidsAgg._sum.amount || 0;
+
         // Revenue calculation (balanced model)
         const sponsorship = (50000 + (reputation / 100) * 150000) * divisionMultiplier;
         const ticketSales = 0; // moved to per-match MATCHDAY events
@@ -137,6 +148,7 @@ export async function GET(request: NextRequest) {
             balance: team.balance,
             reputation: team.reputation,
             stadiumCapacity: team.stadiumCapacity,
+            pendingTransferReserved,
             training: {
                 facilityLevel: trainingFacilityLevel,
                 weeklyFee: Math.round(weeklyTrainingFee),

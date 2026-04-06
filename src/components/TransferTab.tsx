@@ -37,6 +37,7 @@ export function TransferTab({
     const [signOnBonus, setSignOnBonus] = useState<number>(0);
     const [userBalance, setUserBalance] = useState<number>(0);
     const [loadingBalance, setLoadingBalance] = useState(true);
+        const [pendingReserved, setPendingReserved] = useState<number>(0);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
@@ -70,6 +71,7 @@ export function TransferTab({
                     const data = await res.json();
                     const balance = data.balance || 0;
                     setUserBalance(balance);
+                                        setPendingReserved(data.pendingTransferReserved || 0);
                     // Cap offer to balance so button is not silently disabled
                     if (!isFreeAgent) {
                         setAmount(prev => (prev > balance && balance > 0) ? balance : prev);
@@ -342,6 +344,15 @@ export function TransferTab({
                     <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Your Available Balance</div>
                     <div style={{ fontWeight: 'bold', color: 'var(--success)' }}>
                         {loadingBalance ? 'Loading...' : `$${userBalance.toLocaleString()}`}
+                                    {pendingReserved > 0 && (
+                                        <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)' }}>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>🔒 Transfer Reserved</div>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--accent)' }}>
+                                                ${pendingReserved.toLocaleString()}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.2rem' }}>Locked for pending deals</div>
+                                        </div>
+                                    )}
                     </div>
                 </div>
             </div>
