@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 type SwissTableRow = {
   teamId: string;
   teamName: string;
@@ -83,7 +85,14 @@ export default function SwissTable({ rows, currentRound, userTeamId }: SwissTabl
                   }}
                 >
                   <td style={{ padding: '10px', textAlign: 'center', fontWeight: 700 }}>{rank}</td>
-                  <td style={{ padding: '10px', fontWeight: 600 }}>{row.teamName}</td>
+                  <td style={{ padding: '10px', fontWeight: 600 }}>
+                    <Link
+                      href={`/team/${row.teamId}`}
+                      style={{ color: 'var(--primary)', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                    >
+                      {row.teamName}
+                    </Link>
+                  </td>
                   <td style={{ padding: '10px', textAlign: 'center' }}>{row.played}</td>
                   <td style={{ padding: '10px', textAlign: 'center' }}>{row.win}</td>
                   <td style={{ padding: '10px', textAlign: 'center' }}>{row.draw}</td>
@@ -116,7 +125,15 @@ export default function SwissTable({ rows, currentRound, userTeamId }: SwissTabl
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                <div style={{ fontWeight: 700 }}>#{rank} {row.teamName}</div>
+                <div style={{ fontWeight: 700 }}>
+                  #{rank}{' '}
+                  <Link
+                    href={`/team/${row.teamId}`}
+                    style={{ color: 'var(--primary)', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                  >
+                    {row.teamName}
+                  </Link>
+                </div>
                 <div style={{ fontWeight: 700 }}>{row.points} pts</div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '0.35rem', fontSize: '0.8rem' }}>

@@ -221,7 +221,7 @@ export async function getGameTime() {
             }
         }
     }
-    
+
     // Cache settings for 60 seconds (safe for info/sidebar requests)
     setCache(CACHE_KEY_GAME_SETTINGS, settings, 60);
     return settings;
@@ -378,21 +378,6 @@ export async function advanceDay() {
         }
 
     }
-
-    // Trigger monthly free-agent youth generation on day 15
-    const isProspectGenerationDay = nextDate.getUTCDate() === 15;
-    if (isProspectGenerationDay) {
-        try {
-            console.log('[GameTime] Generating monthly free-agent youth prospects (3 players) on day 15...');
-            await generateMonthlyFreeAgentProspects(nextDate, 3);
-
-        } catch (error) {
-            console.error('[GameTime] Error generating monthly free-agent prospects:', error);
-        }
-    }
-        if (isWeeklyBatchProcessed) {
-            console.timeEnd('advanceDay: Weekly Tasks');
-        }
 
     // Distributed AI Market Movements - process overdue teams daily
     console.time('advanceDay: AI Market');
@@ -552,6 +537,21 @@ export async function advanceDay() {
         console.error('[GameTime] Error in distributed AI Market processing:', error);
     }
     console.timeEnd('advanceDay: AI Market');
+
+    // Trigger monthly free-agent youth generation on day 15
+    const isProspectGenerationDay = nextDate.getUTCDate() === 15;
+    if (isProspectGenerationDay) {
+        try {
+            console.log('[GameTime] Generating monthly free-agent youth prospects (3 players) on day 15...');
+            await generateMonthlyFreeAgentProspects(nextDate, 3);
+
+        } catch (error) {
+            console.error('[GameTime] Error generating monthly free-agent prospects:', error);
+        }
+    }
+    if (isWeeklyBatchProcessed) {
+        console.timeEnd('advanceDay: Weekly Tasks');
+    }
 
     if (isNewYear) {
         console.log('[GameTime] *** STARTING NEW SEASON ***');

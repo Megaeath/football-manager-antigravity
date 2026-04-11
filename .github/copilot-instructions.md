@@ -262,6 +262,7 @@ const effectiveAttrs = getEffectiveAttributes(playerState.attributes, dbPlayer.e
 - Auto lineup selectors should treat fitness as a hard rotation signal.
 - If a candidate player has `condition < 85`, prefer a fresh replacement (`condition` near 100) even when base power is slightly lower.
 - Keep this behavior consistent in both pre-assignment services and pre-match AI lineup fallback logic.
+- Auto lineup selectors must prefer role-compatible natural positions for each tactical slot before allowing cross-position fallback picks.
 
 ### API Route Pattern
 

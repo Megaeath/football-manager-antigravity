@@ -61,6 +61,33 @@ const FORMATIONS: Record<string, { id: string }[]> = {
     ]
 };
 
+const SLOT_NATURAL_PREFERENCES: Record<string, string[]> = {
+    GK: ['GK'],
+    DR: ['DR', 'DL', 'DC', 'DMC'],
+    DL: ['DL', 'DR', 'DC', 'DMC'],
+    DC: ['DC', 'DMC', 'DR', 'DL'],
+    DMC: ['DMC', 'MC', 'AMC', 'DMR', 'DML', 'DC'],
+    MC: ['MC', 'DMC', 'AMC', 'MR', 'ML', 'DMR', 'DML'],
+    MR: ['MR', 'ML', 'AMR', 'AML', 'AMC', 'MC', 'FWR', 'FWL', 'FWC'],
+    ML: ['ML', 'MR', 'AML', 'AMR', 'AMC', 'MC', 'FWL', 'FWR', 'FWC'],
+    FW: ['FWC', 'FWR', 'FWL', 'AMC', 'MR', 'ML']
+};
+
+function normalizeNaturalPosition(position?: string | null): string | null {
+    if (!position) return null;
+    const upper = position.toUpperCase();
+    if (upper === 'FW' || upper === 'ST' || upper === 'FC') return 'FWC';
+    return upper;
+}
+
+function getSlotPreferenceRank(slotBase: string, naturalPosition?: string | null): number {
+    const normalized = normalizeNaturalPosition(naturalPosition);
+    if (!normalized) return -1;
+    const prefs = SLOT_NATURAL_PREFERENCES[slotBase];
+    if (!prefs) return -1;
+    return prefs.indexOf(normalized);
+}
+
 function mapAttributes(p: any): PlayerAttributes {
     return toPlayerAttributes({
         handling: p.handling,
@@ -360,6 +387,11 @@ function autoSelectLineup(team: any) {
             }
         }
 
+        const preferredPlayers = availablePlayers.filter((p: any) => getSlotPreferenceRank(slotBase, p.naturalPosition) >= 0);
+        if (preferredPlayers.length > 0) {
+            availablePlayers = preferredPlayers;
+        }
+
         const hasFreshAlternative = availablePlayers.some((p: any) => (p.condition || 0) >= LINEUP_FRESH_PREFERRED_THRESHOLD);
         
         const bestPlayer = availablePlayers
@@ -370,11 +402,18 @@ function autoSelectLineup(team: any) {
                     const basePower = calculatePlayerPower({
                         attributes: mapAttributes(p),
                         targetPosition: slotBase,
+                        naturalPosition: p.naturalPosition,
                         condition: p.condition,
                         exp: p.exp || 0
                     }).powerWithExp;
 
                     let score = basePower + getConditionSelectionBonus(p.condition || 0);
+                    const preferenceRank = getSlotPreferenceRank(slotBase, p.naturalPosition);
+
+                    if (preferenceRank === 0) score += 16;
+                    else if (preferenceRank === 1) score += 10;
+                    else if (preferenceRank === 2) score += 6;
+                    else if (preferenceRank === 3) score += 3;
 
                     if ((p.condition || 0) < LINEUP_REST_THRESHOLD && hasFreshAlternative) {
                         score -= 80;

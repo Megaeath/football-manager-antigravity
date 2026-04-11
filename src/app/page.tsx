@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { getGameTime } from '@/lib/services/gameTime';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
 import { formatDateShort } from '@/lib/dateFormat';
+import PlayerModal from '@/components/PlayerModal';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { NAVIGATION, LEAGUE, SQUAD, FINANCES, MATCH, PLAYERS, HOME } from '@/lib/constants/uiLabels';
 
@@ -370,7 +371,9 @@ export default async function Home() {
                                         <td className="text-center" style={{ padding: '10px', fontWeight: index < 3 ? 'bold' : 'normal', color: index === 0 ? 'var(--success)' : 'inherit' }}>{index + 1}</td>
                                         <td style={{ padding: '10px' }}>
                                             <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                {team.name}
+                                                <Link href={`/team/${team.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+                                                    {team.name}
+                                                </Link>
                                                 {team.isUserTeam && <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>👑</span>}
                                             </div>
                                         </td>
@@ -407,7 +410,10 @@ export default async function Home() {
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                     <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>
-                                        #{index + 1} {team.name}
+                                        #{index + 1}{' '}
+                                        <Link href={`/team/${team.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+                                            {team.name}
+                                        </Link>
                                         {team.isUserTeam && <span style={{ marginLeft: '8px', color: 'var(--primary)' }}>👑</span>}
                                     </div>
                                     <div style={{ fontWeight: '800', fontSize: '1.05rem' }}>{team.points} {LEAGUE.POINTS}</div>
@@ -446,7 +452,10 @@ export default async function Home() {
                             }}>
                                 <div>
                                     <div style={{ fontWeight: 'bold' }}>
-                                        {index + 1}. {player.name}
+                                        {index + 1}.{' '}
+                                        <Link href={`/?playerId=${player.id}`} style={{ color: 'var(--primary)', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+                                            {player.name}
+                                        </Link>
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{player.team?.name || 'Unknown'}</div>
                                 </div>
@@ -571,6 +580,8 @@ export default async function Home() {
                 <QuickLinkCard href="/fixtures" icon="📅" label={NAVIGATION.FIXTURES} />
                 <QuickLinkCard href="/players" icon="🔍" label={NAVIGATION.PLAYERS} />
             </div>
+
+            <PlayerModal />
         </div>
     );
 }

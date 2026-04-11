@@ -1257,6 +1257,7 @@ function MatchContent() {
                                 {(() => {
                                     const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
                                     const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
+                                    const trustCurrentTacticalPositions = !matchData.isPlayed;
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
                                     const allPlayers = Object.values(matchData.playerStats || {}) as any[];
@@ -1317,7 +1318,7 @@ function MatchContent() {
                                     // Derive match-played tactical slot per player (helps subs show actual played position)
                                     const playedSlotByPlayerId = new Map<string, string>();
                                     for (const p of resolvedTeamPlayers) {
-                                        if (p.tacticalPosition) {
+                                        if (trustCurrentTacticalPositions && p.tacticalPosition) {
                                             playedSlotByPlayerId.set(p.playerId, p.tacticalPosition);
                                         }
                                     }
@@ -1341,17 +1342,17 @@ function MatchContent() {
                                             .sort((a: any, b: any) => {
                                                 const aScore =
                                                     (playedSlotByPlayerId.has(a.playerId) ? 100 : 0) +
-                                                    (a.tacticalPosition ? 50 : 0) +
+                                                    (trustCurrentTacticalPositions && a.tacticalPosition ? 50 : 0) +
                                                     (Number(a.minutes || 0));
                                                 const bScore =
                                                     (playedSlotByPlayerId.has(b.playerId) ? 100 : 0) +
-                                                    (b.tacticalPosition ? 50 : 0) +
+                                                    (trustCurrentTacticalPositions && b.tacticalPosition ? 50 : 0) +
                                                     (Number(b.minutes || 0));
                                                 return bScore - aScore;
                                             })[0];
                                         const outPlayerId = outPlayer?.playerId;
                                         const outSlot = outPlayerId
-                                            ? (playedSlotByPlayerId.get(outPlayerId) || outPlayer?.tacticalPosition || null)
+                                            ? (playedSlotByPlayerId.get(outPlayerId) || (trustCurrentTacticalPositions ? outPlayer?.tacticalPosition : null) || null)
                                             : null;
 
                                         if (outSlot) {
@@ -1359,7 +1360,7 @@ function MatchContent() {
                                         }
                                     }
 
-                                    const getPlayedPos = (p: any) => playedSlotByPlayerId.get(p.playerId) || p.tacticalPosition || p.position || '-';
+                                    const getPlayedPos = (p: any) => playedSlotByPlayerId.get(p.playerId) || (trustCurrentTacticalPositions ? p.tacticalPosition : null) || p.position || '-';
                                     const getSortPos = (p: any) => {
                                         const pos = getPlayedPos(p);
                                         if (activeTab === 'away') {
@@ -1368,8 +1369,10 @@ function MatchContent() {
                                         return pos;
                                     };
                                     const getPlayerGroup = (p: any) => {
-                                        const isStarter = !!p.tacticalPosition;
                                         const hasPlayedMinutes = Number(p.minutes || 0) > 0;
+                                        const isStarter = trustCurrentTacticalPositions
+                                            ? !!p.tacticalPosition
+                                            : (hasPlayedMinutes && !subInIds.has(p.playerId));
 
                                         // Group 0 = starting XI (initial tactical slot)
                                         // Group 1 = non-starters who played (subs/re-entry edge cases)
