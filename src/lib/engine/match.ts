@@ -497,7 +497,7 @@ function applyPressTrapEffect(
     }
 
     const { commitment, triggerZones } = prepConfig.pressTrap;
-    
+
     // Only apply if we're in an active trap zone
     if (!triggerZones.includes(zone)) {
         return { modifiedRate: baseRate, counterVulnerability: 0 };
@@ -791,10 +791,10 @@ function executePassShort(
     if (success) {
         stats.passesCompleted++;
         teamStats.passesCompleted++;
-        
+
         // 30% chance of backward/sideways pass when under pressure (realistic play)
         isBackwardPass = Math.random() < 0.3;
-        movement = isBackwardPass 
+        movement = isBackwardPass
             ? -(0.5 + Math.random() * 1.5) // -0.5 to -2 (backward)
             : (0.5 + Math.random() * 1.5); // +0.5 to +2 (forward)
 
@@ -889,7 +889,7 @@ function executePassLong(
     // Calculate intended pass distance (before execution)
     const movement = 2 + Math.random() * 3; // +2 to +5 yards
     const passDistance = movement;
-    
+
     // Distance penalty: longer passes are exponentially harder
     // Formula: penalty = 1.0 - (distance / maxDistance)^1.5
     // At 2 yards: penalty = 0.85 (15% harder)
@@ -904,14 +904,14 @@ function executePassLong(
     const pressDefender = getDefensiveActionPlayer(defendingTeam, ['DC', 'DMC', 'MC', 'DR', 'DL', 'MR', 'ML'], ball.position, isHomeAttacking, 'PRESS') || null;
     const defenderPenalty = getDefenderOpponentPenalty(pressDefender, defendingTeam.tactics, 'PASS_LONG');
     const attackingTeamSuccess = getTeamDownSuccessMultiplier(attackingTeam);
-    
+
     // Apply distance penalty to pass score (lower attributes = bigger impact from distance)
     // High skill players (passing+vision > 30) suffer less from distance
     const attributeSum = player.attributes.passing + player.attributes.vision;
     const skillLevel = Math.min(1.0, attributeSum / 40); // 0.0 to 1.0 (max at 40)
     const distanceImpact = 0.5 + (skillLevel * 0.5); // 0.5 to 1.0 (high skill = less distance penalty)
     const effectiveDistancePenalty = distancePenalty + ((1.0 - distancePenalty) * distanceImpact);
-    
+
     const passScore = basePassScore * effectiveDistancePenalty * attackerRoleMod * defenderPenalty;
     const defendingTeamSuccess = getTeamDownSuccessMultiplier(defendingTeam);
     // Bug fix #3: Defense strength scales with number of defenders on field
@@ -937,11 +937,11 @@ function executePassLong(
         result: success ? 'SUCCESS' : 'FAIL',
         isSuccessful: success,
         expectedSuccessRate,
-        metadata: JSON.stringify({ 
-            passScore: passScore.toFixed(2), 
+        metadata: JSON.stringify({
+            passScore: passScore.toFixed(2),
             basePassScore: basePassScore.toFixed(2),
-            defenseScore: defenseScore.toFixed(2), 
-            skillBonus, 
+            defenseScore: defenseScore.toFixed(2),
+            skillBonus,
             attackingTeamSuccess,
             passDistance: passDistance.toFixed(2),
             distancePenalty: distancePenalty.toFixed(2),
@@ -1076,7 +1076,7 @@ function executeDribble(
         });
         ball.possession = ball.possession === 'home' ? 'away' : 'home';
         ball.carrier = defender;
-        
+
         // Push ball backward on interception (realistic defensive action)
         const pushBack = 2 + Math.random() * 3; // -2 to -5 yards
         ball.position = isHomeAttacking
@@ -1237,6 +1237,8 @@ function executeShoot(
             finalShoot = finalSave * 1.6 + 0.01;
         }
     }
+
+    console.log("ballposition: " + distanceToGoal + "->" + player.name + "->finalshoot: " + finalShoot + "," + gk.name + "->finalsave: " + finalSave);
 
     if (finalShoot > finalSave) {
         // GOAL!
@@ -1736,7 +1738,7 @@ function initTeamStats(): TeamMatchStats {
 }
 
 export function simulateMatch(
-    homeTeam: TeamState, 
+    homeTeam: TeamState,
     awayTeam: TeamState,
     matchPrep?: { home: MatchPrepConfig | null; away: MatchPrepConfig | null }
 ): MatchState {
@@ -1827,9 +1829,9 @@ export function simulateMatch(
 
             // AI chooses action based on player attributes, ball position, and match prep
             const weights = calculateActionWeights(
-                ball.carrier, 
-                ball.position, 
-                isHomeAttacking, 
+                ball.carrier,
+                ball.position,
+                isHomeAttacking,
                 attackingTeam.tactics,
                 getTeamDownSuccessMultiplier(attackingTeam),
                 defendingPrepConfig,  // Opponent's prep (for neutralization)
@@ -2159,7 +2161,7 @@ function calculateRatings(matchState: MatchState) {
 
         rating += (stat.goals * 1.2);
         rating += (stat.assists * 0.7);
-        
+
         // Reduce goalkeeper save rating bonus from 0.2 to 0.15 to balance saves
         // Goalkeepers should get credit for good saves but not dominate MOM every match
         if (isGoalkeeper) {
@@ -2167,7 +2169,7 @@ function calculateRatings(matchState: MatchState) {
         } else {
             rating += (stat.saves * 0.2); // Non-GK rarely get saves, keep original
         }
-        
+
         rating += (stat.tacklesWon * 0.3);
         rating += (stat.passesCompleted * 0.01); // Reduced from 0.05 due to 4x more passes from 12 ticks/min
         rating += (stat.dribblesWon * 0.2);

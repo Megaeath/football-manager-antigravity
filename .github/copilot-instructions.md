@@ -416,6 +416,7 @@ npx prisma migrate  # List/create migrations
 | **Services (Long-running)** | `matchSimulator.ts`, `aiMarketService.ts`, `seasonAwards.ts` |
 | **Database** | `schema.prisma`, `prisma.ts` (singleton client) |
 | **UI State & Forms** | `TacticsForm.tsx`, `SquadClient.tsx`, `PlayerModal.tsx` |
+| **Debug Visualization UI** | `src/app/debug/page.tsx` (full match action flow, loop navigator, chain analytics) |
 | **Game Time Management** | `gameTime.ts` (advance day, season transitions) |
 | **API Routes** | See [API_REFERENCE.md](../API_REFERENCE.md) for complete endpoint guide |
 
@@ -430,6 +431,11 @@ Located in `scripts/` and root:
 - `check-player-data.ts` - Inspect player state in DB
 
 Run: `node scripts/test-power.js` (requires node, no build step)
+
+For in-app behavior debugging, use `/debug`:
+- Full action stream (`loop-by-loop`) from raw logs
+- Flow visualization by `ballPosition` across loops
+- Chain/zone/action-type analytics for regression checks after engine changes
 
 ---
 

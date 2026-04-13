@@ -27,6 +27,8 @@
 - เข้าใจการนำทางไปหน้ารายละเอียดการแข่งขัน → ใช้หน้า `/fixtures` หรือการ์ด match ต่าง ๆ ที่ลิงก์ไป `/match?matchId=...`
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)
+- เข้าใจการ debug flow ทั้งเกมแบบ loop-by-loop → หน้า `/debug` (ใช้ raw action logs จาก `/api/match/[id]/actions`)
+- **ทดสอบ action simulation แบบแยกตัว** → หน้า `/test-simulate` (เลือกทีม → นักเตะ → action → จำลองหลายรอบ → ดูผลลัพธ์แบบตาราง)
 
 ---
 
@@ -96,8 +98,11 @@
     ├─ "ต้องแก้ระบบ training/facility?"
     │  └─ YES → ดู TRAINING.md + API_REFERENCE.md หมวด Training APIs
     │
-    └─ "ต้องแก้ contract/financial/EXP?"
-       └─ YES → ตรวจ API_REFERENCE.md ว่า endpoint มีอยู่แล้วหรือยัง
+    ├─ "ต้องแก้ contract/financial/EXP?"
+    │  └─ YES → ตรวจ API_REFERENCE.md ว่า endpoint มีอยู่แล้วหรือยัง
+    │
+    └─ "ต้องทดสอบ action simulation / หาค่าตัวแปรที่เหมาะสม?"
+       └─ YES → ใช้หน้า `/test-simulate` (ไม่ต้องบันทึก, เพียงจำลองและแสดงผล)
 ```
 
 ---
@@ -123,15 +128,18 @@ npx prisma db seed
 4. เมื่อเพิ่ม tactics ให้ update ทั้ง engine และ [TACTICAL_GUIDE.md](TACTICAL_GUIDE.md)
 5. เมื่อเปลี่ยนพฤติกรรม UI, API, หรือ setup ต้องอัปเดตเอกสารในงานเดียวกัน
 6. เมื่อแก้ระบบการเงิน ต้องระวัง trigger รายสัปดาห์และ season end
+7. เมื่อแก้สมดุล match engine ให้ตรวจหน้า `/debug` (Action Stream + Chain + Zone) เพื่อตรวจ regression เชิงพฤติกรรม
 
 ---
 
 ## 📝 Last Updated
 
-- April 4, 2026
+- April 11, 2026
 - Added personal developer skill
 - Added mandatory documentation-first workflow
 - Reinforced API reuse and UX/UI consistency rules
+- Added `/debug` navigation guidance for full-match action flow analysis
+- Added `/test-simulate` page for isolated action simulation testing
 
 ---
 
