@@ -516,6 +516,7 @@ export async function handleContractExpiration(teamId: string): Promise<{
                 where: { id: player.id },
                 data: {
                     teamId: null, // Remove from team
+                    jerseyNumber: null,
                     playerRole: null, // Clear role assignment
                     attackingRolePreset: null,
                     defensiveRolePreset: null,

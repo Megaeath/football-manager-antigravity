@@ -99,6 +99,7 @@ export interface EnginePlayerMatchStats {
     name: string;
     teamId: string;
     position: Position;
+    jerseyNumber?: number | null;
 
     rating: number;
     minutes: number;
@@ -159,6 +160,10 @@ export interface TeamMatchStats {
     crossesCompleted: number;
     freeKicks: number;
     throws: number;
+    tacklesAttempted?: number;
+    tacklesWon?: number;
+    dribblesAttempted?: number;
+    dribblesWon?: number;
 }
 
 
@@ -173,6 +178,7 @@ export interface MatchState {
     actionLogs: PlayerActionLog[];
     isFinished: boolean;
     playerStats: Record<string, EnginePlayerMatchStats>;
+    ballTransitions?: any[]; // BallTransition[] for smooth ball movement animation
 }
 
 export interface MatchEventLog {

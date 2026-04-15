@@ -1,7 +1,9 @@
 import prisma from '@/lib/prisma';
 import { getDivisionFinanceMultiplier } from './divisionSystem';
 import { simulateMatch } from '../engine/match';
-import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes, MatchPrepConfig } from '../engine/types';
+import { simulateMatch2D } from '../engine/v2/match2d';
+import { TeamState, PlayerState, Position, EnginePlayerMatchStats, PlayerAttributes, MatchPrepConfig, MatchEventLog } from '../engine/types';
+import type { V2MatchState } from '../engine/v2/types2d';
 import { updatePlayerPopularity, updateTeamReputation } from '../engine/financial';
 import { applyAgeEfficiency, calculateMatchExp } from '../engine/experience';
 import { calculatePlayerPower, getEffectiveAttributes, toPlayerAttributes } from '../engine/playerPower';
@@ -650,7 +652,23 @@ export async function processMatch(matchId: string) {
         ? JSON.parse(matchDB.awayPrepConfig) 
         : null;
 
-    const result = simulateMatch(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
+    // Check V2 engine feature flag
+    const enableMatch2D = settings?.enableMatch2D ?? false;
+    
+    // Route to appropriate engine
+    let result: any;
+    let v2MatchState: V2MatchState | null = null;
+    
+    if (enableMatch2D) {
+        // Use V2 engine with 2D spatial simulation
+        v2MatchState = simulateMatch2D(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
+        // V2MatchState extends MatchState, so we can use it as result
+        result = v2MatchState;
+    } else {
+        // Use V1 engine (classic 1D simulation)
+        result = simulateMatch(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
+    }
+    
     const isCupKnockout = matchDB.competitionType === 'CUP' && matchDB.competitionPhase === 'KNOCKOUT';
     const tieBreakResult = isCupKnockout && result.homeScore === result.awayScore
         ? resolveKnockoutTie(result.homeScore, result.awayScore)
@@ -688,7 +706,7 @@ export async function processMatch(matchId: string) {
         away: { ...defaultTeamStats }
     };
 
-    Object.values(result.playerStats).forEach((stat: EnginePlayerMatchStats) => {
+    (Object.values(result.playerStats) as EnginePlayerMatchStats[]).forEach((stat) => {
         const bucket = stat.teamId === result.homeTeamId ? derivedTeamStats.home : derivedTeamStats.away;
         bucket.shots += stat.shots || 0;
         bucket.shotsOnTarget += stat.shotsOnTarget || 0;
@@ -740,7 +758,7 @@ export async function processMatch(matchId: string) {
 
         if (result.events.length > 0) {
             await tx.matchEvent.createMany({
-                data: result.events.map(e => ({
+                data: result.events.map((e: MatchEventLog) => ({
                     matchId: matchId,
                     minute: e.minute,
                     text: e.text,

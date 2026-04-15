@@ -384,6 +384,7 @@ async function processAIReleasingLogic(teamId: string, log: (msg: string) => voi
                     where: { id: player.id },
                     data: {
                         teamId: null,
+                        jerseyNumber: null,
                         transferStatus: 'FREE_AGENT',
                         askingPrice: null,
                         tacticalPosition: null,
@@ -518,6 +519,7 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
                     data: {
                         isRetired: true,
                         teamId: null,
+                        jerseyNumber: null,
                         transferStatus: 'NOT_LISTED',
                         askingPrice: null,
                         tacticalPosition: null,
@@ -543,6 +545,7 @@ async function processAISellingLogic(teamId: string, log: (msg: string) => void)
                     where: { id: p.player.id },
                     data: {
                         teamId: null,
+                        jerseyNumber: null,
                         transferStatus: 'FREE_AGENT',
                         askingPrice: null,
                         tacticalPosition: null,

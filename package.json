@@ -13,15 +13,17 @@
     "migrate:turso:schema": "node scripts/migrate-to-turso.js",
     "migrate:turso:data": "node scripts/migrate-devdb-to-turso.js",
     "migrate:turso:all": "npm run migrate:turso:data",
-    "debug":"NODE_OPTIONS='--inspect' npm run dev"
+    "debug": "NODE_OPTIONS='--inspect' npm run dev"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
     "@prisma/adapter-libsql": "^7.6.0",
     "@prisma/client": "^6.19.2",
+    "konva": "^10.2.5",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-konva": "^19.2.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",

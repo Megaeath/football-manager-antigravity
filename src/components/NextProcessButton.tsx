@@ -62,12 +62,12 @@ export default function NextProcessButton({ compact = false }: NextProcessButton
                 disabled={loading}
                 className="btn btn-primary"
                 style={{
-                    padding: compact ? '8px 12px' : '12px 20px',
-                    fontSize: compact ? '0.85rem' : '1rem',
+                    padding: compact ? '4px 8px' : '12px 20px',
+                    fontSize: compact ? '0.72rem' : '1rem',
                     fontWeight: 800,
                     background: 'var(--accent)',
-                    borderRadius: compact ? '8px' : '10px',
-                    boxShadow: '0 6px 16px rgba(0,0,0,0.18)'
+                    borderRadius: compact ? '7px' : '10px',
+                    boxShadow: compact ? '0 3px 8px rgba(0,0,0,0.14)' : '0 6px 16px rgba(0,0,0,0.18)'
                 }}
             >
                 {loading ? 'Processing...' : compact ? '🏁 Next Day' : '🏁 Advance to Next Day'}

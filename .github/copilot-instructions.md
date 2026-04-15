@@ -109,6 +109,101 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Action breakdown: Iterates actions array, calculates `(attempts / totalAttempts) * 100`
 - Visual: Responsive grid, hover effects, border highlights for selected zones
 
+**V2 Replay Integration (Develop Mode)**:
+- `/match` now renders V2 Canvas as the primary/only replay visualization (legacy V1 toggle removed)
+- V2 replay is generated on-demand from `GET /api/match/[id]/v2-sim`
+- สำหรับ persisted match, V2 replay บน `/match` ควร stable ข้าม refresh โดยใช้ deterministic seed จาก `matchId`; การขอ replay ใหม่ควรเกิดจาก action `Regenerate V2 Replay` เท่านั้น
+- V2 frames can include `ballTransitions` so the canvas shows pass/shot arcs instead of teleporting the ball carrier state
+- Saved shots now evaluate goalkeeper reach based on keeper position + reflex attributes; difficult angles can beat the keeper, while reachable shots can be caught or parried
+- Parried saves can produce a second `SAVE` transition (deflection/rebound) so nearby attackers can follow up or defenders can clear
+- Goal events are shown after the shot flight reaches the goal line, and kickoff reset is delayed briefly so users can visually read full goal transition
+- V2 scoreboard overlay follows replay timeline (cumulative GOAL events up to current frame) instead of showing final generated score immediately at kickoff
+- V2 canvas player markers are intentionally small/lightweight so spacing remains readable; oversized markers can visually exaggerate movement speed and crowding
+- Base shape in V2 should remain role-realistic: goalkeeper stays inside usable box depth, back lines hold below midfield, and forwards must stay offside-safe relative to the defensive line when idling/supporting
+- Goal validation in V2 must respect the actual goal mouth; shots that finish outside the post range should remain saved/off-target instead of being counted as goals
+- V2 now applies V1-style incident conditions for `THROW_IN`, `CORNER`, `FOUL`, `CARD_YELLOW`, and `CARD_RED` in dribble/pass/shot resolution, including foul-driven free-kicks and dismissal handling
+- At playback `15x/20x`, canvas overlays switch to highlight-only mode (major events + major transitions) to reduce visual spam
+- Highlight event text now includes shot distance (meters from shooter to target) so long-range shot volume is easy to inspect during replay tuning
+- On `/match`, the V2 panel prioritizes replay viewport height; top telemetry cards are removed so the canvas/highlight area can be taller and easier to read
+- On `/match`, the V2 replay panel hides the old visualization header strip (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) to keep focus on scoreboard/canvas/highlight flow
+- Highlight commentary now promotes major incidents (goal/shot/cards) as large ticker-style text in the commentary area for quick readability
+- Highlight ticker on `/match` should be event-config driven (currently: `SHOT`, `FREE_KICK`/foul context, `YELLOW_CARD`, `RED_CARD`) and persist for ~30 ticks unless a new configured event arrives (then replace/reset window)
+- V2 ball rendering now uses a football-style patterned sprite with spin animation (instead of a static white circle) so ball movement is easier to read
+- Sent-off players should not remain as active on-field markers; `/match` now surfaces them in an off-field `Sent off` strip for clearer dismissal context
+
+- V2 now tracks continuous per-tick movement analytics per player (movement distance, carry distance/time, zone occupancy seconds), which can be used as base data for future heatmap features
+- `/match` includes a **Heat Map** tab that renders dual-team possession density using only V2 frame data (`frame.ball.position` + `frame.ball.possession`), with separate home/away colors
+- Heat Map tab supports dropdown filters:
+  - Event filter: `all`, `SHOT`, `PASS`, `DRIBBLE`
+  - Team filter: `all`, `home`, `away`
+  - Player filter: `all` (default) or specific on-field player (options follow current team filter, sorted by role group `GK -> DF -> MF -> FW`, show `name + position`, and include only players with persisted played minutes)
+  - Goal markers remain visible on the pitch and respect selected team filtering
+- Heat Map density uses spread/smoothing across neighboring cells so single-player traces look like realistic movement zones instead of thin straight bars
+  - For already-persisted matches, Heat Map goal-marker count must follow authoritative persisted `GOAL` events/score, not all regenerated V2 replay goals
+- Heat Map pitch drawing should follow the same field geometry/proportions as V2 canvas FieldLayer (3:2 display ratio, matching penalty/goal box and corner arc layout)
+- On `/match`, authoritative score/event/player-stat/team-stat data must come from persisted match tables (`GET /api/match/[id]`), not from on-demand V2 replay generation; V2 replay is visualization-only and may be regenerated without replacing saved result data
+- Replay scoreboard in `/match` should follow authoritative persisted goal progression and reconcile with final persisted score (so late/missing replay-only events do not drift from saved result)
+- Replay highlight flow should supplement frame-level V2 events with authoritative persisted match events when needed (e.g., late 90' incidents), so commentary/highlight navigation does not miss saved goals/cards
+- Replay timeline bar in `/match` should include a +1 minute display window (showing up to ~91) so 90th-minute incidents remain reachable/visible on slider endpoints
+- For already-played matches, V2 replay should prefer the authoritative match participants (players with persisted minutes) so current squad changes or stale tactical assignments do not introduce players who did not actually appear in that match
+- If an `AI vs AI` match is opened directly before another scheduler step processes it, the match detail route may simulate and persist that AI-only match first so the page still renders saved results rather than ephemeral replay-only values
+- Dribble metrics now count only opponent-beating dribble duels; simple lane carries are treated as possession-space progression, not `dribblesWon`
+
+### 1.3 V2 Spatial Decision Model (Develop Mode)
+
+**Location**: `src/lib/engine/v2/match2d.ts` + `src/lib/engine/v2/spatialEngine.ts`
+
+V2 action selection now uses a **utility-style weighted decision** (not simple fixed thresholds):
+- Builds context from pressure, distance-to-goal, forward space, and game state (leading/trailing + late-minute urgency)
+- Adds pass-lane risk (opponents near pass segment) and receiver-angle quality into pass target evaluation
+- Uses lightweight transition mode (`FAST_BREAK` vs `SETTLED`) to bias direct actions
+- Applies tactical bias from team instructions (`mentality`, `passing`, `creative_freedom`)
+- Scores PASS/SHOOT/DRIBBLE and samples by weighted probability
+
+Loose-ball ownership when no carrier is also upgraded:
+- Evaluate nearest candidate from each side
+- Compare arrival time using running power (`pace`, `acceleration`, `stamina`, `condition`)
+- Resolve close races with a small duel tie-break (`bravery` + randomness)
+
+Dribble duels are no longer fixed chance only:
+- Tackle success now depends on tackler vs dribbler attribute blend
+- Nearby support defenders increase tackle win probability
+
+Phase 4/5 develop-mode upgrades (current implementation):
+- Pass target selection uses `scorePassTargets()` to rank receivers by distance profile, openness, forward progress, urgency, and pass-lane risk, then samples from top options
+- Defensive side uses `assignDefensiveRoles()` each tick (presser/cover/line holders) so pressing shape stays coordinated instead of all players collapsing on ball
+- Movement loop applies defensive assignment overrides before clamped movement/offside checks (`PRESS`, `COVER`, `DEFEND` role-intent labels)
+- Telemetry markers:
+  - `[V2-Phase4]` selected pass utility/risk/success snapshot
+  - `[V2-Phase5]` defensive coordination snapshot (presser/cover/lineX)
+
+Phase 6/7 develop-mode baseline (current implementation):
+- Added role specialist modules (`roleSpecialists/*`) for GK/DEF/MID/ATT/FW and merged specialist intents with base movement intent each tick
+- Added `TUNING_PARAMS` in `config.ts` to centralize movement lerp, specialist blend, pass option count, cover offsets, and telemetry intervals
+- Added telemetry collector (`telemetry.ts`) that aggregates intent-job counts, press/cover counts, and sampled pass selection risk/utility
+- `MatchFrame` can carry optional `debug` overlay payload (intent vectors + defensive assignment lines), and `V2MatchState` can carry aggregated `telemetry`
+
+Phase 6/7 realism hardening (current implementation):
+- Team ownership in V2 no longer relies on player-id string heuristics; side context is explicit (`V2PlayerState.side`) and propagated through movement + telemetry
+- Specialist logic is now state-aware per player (`DEFENDING` / `IN_POSSESSION` / `ON_BALL`) and corridor-clamped via role buckets (GK/DC/FB/DMC/CM/AMC/WM/WINGER/ST)
+- Movement loop applies anti-collapse teammate spacing guard to reduce unrealistic multi-player clustering around the same point
+- Movement execution now uses pace-table top speed (1-20), acceleration ramp (time-to-top-speed), on-ball penalty, and late-game stamina decay rather than fixed lerp-only stepping
+- Defensive coordination now keeps line-holder overrides on defender/DM roles only (not full-team collapse), and mentality drives defensive line/pressure (normal shape holds zones; ultra-defensive stays deeper)
+- Role corridors are treated as **base zones** (not hard cages): in-possession and on-ball players can overflow corridor limits contextually, then naturally recover back toward role shape using pace/acceleration-driven movement
+- In-possession support is now more role-aware: forwards/AMs can drop short into receive pockets when buildup is deeper, while midfielders and defenders step into open passing lanes instead of standing on static role spots
+- Full-backs in possession can now overlap much higher when the ball is already advanced, giving clearer wide support lanes in sustained attacks
+- Out-of-possession first-line pressing is now more realistic: forwards drop below their high line to press passing lanes and support the midfield block instead of only hovering high
+- On-ball decision now includes progressive dribble behavior: wide/on-ball carriers can carry into space until pressure arrives, then resolve via pass/dribble duel with turnover risk under crowding
+- Dribble/pass pressure windows are configurable in `TUNING_PARAMS` (default: immediate dribble pressure radius = 2, receiver open-space radius = 5, contested receiver window = 2..5)
+- Near-byline carriers can attempt early crosses into the box (configurable chance + byline zone), enabling cutback/cross chance creation for forwards
+- Shooting is role-zone gated (`shotMinXHomeByRole`) so low-probability own-half/long-range spam is suppressed by role
+- Passing can now fail without an interception event through contextual pass-error probability (pressure, distance, receiver crowding, passer/receiver quality)
+- On-ball dribble displacement is capped by each player's pace-driven per-tick movement (`movementSpeed * movementTickSeconds`) to prevent unrealistic carrier teleporting and keep chasers relevant
+- After a goal event resolves, V2 now performs a center-circle kickoff reset (ball to midfield with conceding side possession) to avoid post-goal stalled play
+- V2 simulation cadence now runs at `60 ticks/minute` (one-second resolution). Carrier decisions are throttled by `actionDecisionIntervalTicks` so movement stays smooth without producing unrealistic action spam
+
+**Tuning note**: if V2 over-shoots volume, tune coefficients in `selectAction()` first before changing global movement constants.
+
 ### 3. Three-Layer Attribute System
 
 **Player Attributes** (0-20 scale):
@@ -170,6 +265,12 @@ The `/match` page provides deep player performance analysis with interactive vis
   - Center core (`DC`, `MC`, `FWC`) target minimum depth = 4
   - Specific positions (`GK`, `DR`, `DL`, wide/other roles) target minimum depth = 2
 - If depth is above floor, the contract can be marked as non-auto-renew, but release decisions should be left to dedicated market logic.
+
+**Jersey Number Management** (`jerseyNumberService.ts` + transfer/contract flows):
+- Squad numbering rule: starting XI prioritized to `1..11`, remaining squad assigned from `12+`
+- Incoming player assignment rule: always use the **lowest available** squad number first (reuse vacated numbers before new numbers)
+- When a player leaves team context (free agent/retired/contract release), `jerseyNumber` must be cleared (`null`)
+- Applies to both user and AI teams (new game initialization + market transfer completion + release paths)
 
 **Player Value** (`evaluateMarketValue`):
 - Base: (overall * 10,000) + (age factor * 5,000,000)
@@ -313,6 +414,14 @@ The dashboard home page shows user-team-sensitive cards (team name, balance, nex
 - This is especially important after `initializeNewGame()`, day processing, or any balance-changing workflow
 - If home dashboard cards show the wrong team or stale budget, check that `src/app/page.tsx` still calls `noStore()` before Prisma reads
 
+### Sticky App Header
+
+**Location**: `src/components/Header.tsx`
+
+- The global sticky header collapses on downward scroll to return more vertical space to the active screen
+- In compact mode, the `⚽ FOOTBALL MANAGER` brand is intentionally reduced to about half of its normal visual size
+- Compact mode also trims header padding and secondary pill/button sizing; keep future header changes consistent with this space-saving behavior
+
 ### Experience Decay System
 
 Current behavior:
@@ -338,6 +447,14 @@ Current behavior:
 5. Implement the smallest correct change
 6. Update docs in the same task
 7. Verify UX/UI consistency on affected screens
+
+### Requirement Analysis Before Development (PO Mode)
+
+When a request is still at requirement/discovery stage (before implementation), use:
+
+- `.github/football-production-owner-skill.md`
+
+Expected output at this stage is a **Requirement Analysis Pack** (problem, scope, KPI, acceptance criteria, risk, task breakdown, handoff), then proceed to implementation only after scope is agreed.
 
 ### Building & Running
 
@@ -429,8 +546,10 @@ Located in `scripts/` and root:
 - `ANALYZE_PLAYER.js` - Deep dive into player attributes post-match
 - `check-date.js` - Validate UTC game time
 - `check-player-data.ts` - Inspect player state in DB
+- `verify-v2-batch.mjs` - Run repeated V2 simulations and report average goals/shots for balance tuning
 
 Run: `node scripts/test-power.js` (requires node, no build step)
+Run V2 batch check: `node scripts/verify-v2-batch.mjs 50`
 
 For in-app behavior debugging, use `/debug`:
 - Full action stream (`loop-by-loop`) from raw logs

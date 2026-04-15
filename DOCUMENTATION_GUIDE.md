@@ -25,10 +25,25 @@
 - เข้าใจกลวิธี → [TACTICAL_GUIDE.md](TACTICAL_GUIDE.md)
 - เข้าใจสรุปซีซัน / leaderboards แบบคลิกได้ → หน้า `/season-summary` (ชื่อนักเตะเปิด modal, นัดเปิดหน้า `/match`, ทีมเปิดหน้า team)
 - เข้าใจการนำทางไปหน้ารายละเอียดการแข่งขัน → ใช้หน้า `/fixtures` หรือการ์ด match ต่าง ๆ ที่ลิงก์ไป `/match?matchId=...`
+- ทดลอง replay แบบ spatial ในหน้าจริง → หน้า `/match` เลือก Visualization = `V2 Canvas` (โหลดจาก `/api/match/[id]/v2-sim`)
+- หน้า `/match` โหมด V2 replay ซ่อนแถบหัวข้อ visualization เดิม (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) เพื่อโฟกัสเฉพาะ scoreboard/canvas/highlight
+- ช่องคำบรรยายใต้ replay จะแสดงเหตุการณ์สำคัญ (GOAL/SHOT/CARD) แบบตัวใหญ่และ ticker-style เพื่อให้อ่านง่ายขึ้นระหว่างดูไฮไลต์
+- Ticker ใต้ replay จะค้างข้อความเหตุการณ์ตาม config ประมาณ 30 ticks (ปัจจุบันเน้น SHOT/FOUL context/YELLOW/RED) และถ้ามีเหตุการณ์ใหม่ในกลุ่มเดียวกันจะทับข้อความเดิมทันที
+- หน้า `/match` โหมด V2 Canvas ตัดแถวตัวเลข telemetry ด้านบนออกแล้ว เพื่อขยายกรอบ replay/highlight ให้สูงขึ้นและอ่านเหตุการณ์ง่ายกว่าเดิม
+- ใน V2 Canvas ลูกบอลแสดงเป็นลายฟุตบอลพร้อมการหมุนตามการเล่น; ถ้าเห็นลูกบอลเป็นจุดขาวคงที่ แปลว่ามี regression ใน `BallLayer`
+- ถ้า refresh หน้า `/match` แล้ว V2 Canvas telemetry เปลี่ยนเอง ให้ตรวจว่า route ถูกเรียกด้วย seed ปกติของ `matchId` หรือมี `variant` สำหรับ manual regenerate เท่านั้น
+- ถ้า V2 Canvas ของแมตช์ที่เล่นจบแล้วแสดงผู้เล่นผิดคนหรือยังเห็นผู้เล่นที่โดนแดงอยู่ ให้ตรวจว่า replay กำลังอิง persisted participants/minutes และ persisted `CARD_RED` ของแมตช์ ไม่ใช่ roster ปัจจุบัน
+- สำหรับผู้เล่นโดนแดง V2 Canvas ควรไม่วาดเป็นผู้เล่น active บนสนาม แต่แสดงในแถบ `Sent off (Off-field)` ใต้สนามแทน
+- วิเคราะห์ตำแหน่งครองบอล/ตำแหน่งเหตุการณ์บนสนาม → หน้า `/match` แท็บ `Heat Map` (รองรับ filter event: all/SHOT/PASS/DRIBBLE, team: all/home/away, และ player: all/ผู้เล่นรายคน โดยแสดงชื่อ+ตำแหน่ง, เรียงตำแหน่ง `GK -> DF -> MF -> FW`, จำกัดเฉพาะผู้เล่นที่ลงสนามจริง, และใช้การแรเงาแบบกระจายพื้นที่เพื่ออ่าน movement zone รายคนได้สมจริงขึ้น)
+- เมื่อ debug Heat Map ให้ยึด score/event ที่ persisted แล้วเป็นหลัก: จำนวน goal markers ต้องตรงกับ persisted `GOAL` events/score ของแมตช์ ไม่ใช่ทุกประตูจาก replay V2 ที่ generate ใหม่
+- เมื่อ debug replay scoreboard บน `/match` ให้ยึด goal progression จาก persisted match events และ final persisted score เป็นหลัก (ไม่ควรแกว่งตาม replay-generated goals เพียงอย่างเดียว)
+- เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events ด้วย: ถ้า V2 frame บางช่วงไม่มี incident แต่ persisted มี (เช่นประตูนาที 90) ระบบควรยังแสดงเหตุการณ์ใน replay flow
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
+- Header หลักด้านบนจะย่อแรงขึ้นเมื่อ scroll ลง โดยโลโก้ `⚽ FOOTBALL MANAGER` จะเหลือประมาณครึ่งหนึ่งของขนาดปกติเพื่อคืนพื้นที่ให้ content
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)
 - เข้าใจการ debug flow ทั้งเกมแบบ loop-by-loop → หน้า `/debug` (ใช้ raw action logs จาก `/api/match/[id]/actions`)
 - **ทดสอบ action simulation แบบแยกตัว** → หน้า `/test-simulate` (เลือกทีม → นักเตะ → action → จำลองหลายรอบ → ดูผลลัพธ์แบบตาราง)
+- ปรับความสมจริงของ V2 spatial decision (มีบอล/ไม่มีบอล) → `src/lib/engine/v2/match2d.ts` + `src/lib/engine/v2/spatialEngine.ts`
 
 ---
 
@@ -47,10 +62,12 @@
 - เข้าใจ code patterns → ดู [.github/copilot-instructions.md](.github/copilot-instructions.md) หัวข้อ `Critical Conventions & Patterns`
 - เพิ่ม API endpoint ใหม่ → ดู [API_REFERENCE.md](API_REFERENCE.md) หัวข้อ `Before Adding New API Endpoint`
 - ดัดแปลง match engine → ดู `.github/copilot-instructions.md` หัวข้อ `Common Tasks: Fix match simulation bug`
+- ปรับ logic ตัดสินใจ V2 (PASS/SHOOT/DRIBBLE + loose-ball race) → ดู `.github/copilot-instructions.md` หัวข้อ `1.3 V2 Spatial Decision Model`
 - เพิ่มกลวิธีใหม่ → ดู [TACTICAL_GUIDE.md](TACTICAL_GUIDE.md) และ [.github/copilot-instructions.md](.github/copilot-instructions.md)
 - เข้าใจ Player Power calculation → ดู [POWER_CALCULATION_EXPLANATION.md](POWER_CALCULATION_EXPLANATION.md)
 - เพิ่ม/แก้ระบบฝึกซ้อม → ดู [TRAINING.md](TRAINING.md) และ API `/api/training/*`
 - เพิ่ม/แก้ flow `Settings > New Game` หรือ legend mode → ดู `.github/copilot-instructions.md` หัวข้อ `Fix/reset new game initialization` และ `Legend mode new game`
+- เพิ่ม/แก้ระบบหมายเลขเสื้อ → ดู `src/lib/services/jerseyNumberService.ts` + จุดย้ายทีมใน `src/lib/engine/market.ts`
 
 ### เมื่อแก้อะไร ต้องอัปเดตเอกสารไหน
 
@@ -68,6 +85,7 @@
 | Document | Purpose |
 | --- | --- |
 | **.github/personal-game-dev-skill.md** | อ่านเป็นอันดับแรก - Personal developer contract, mandatory workflow, documentation-first rules, API reuse rules, UX/UI consistency rules |
+| **.github/football-production-owner-skill.md** | โหมดวิเคราะห์ requirement ก่อนลงมือ dev - สร้าง Requirement Analysis Pack, acceptance criteria, risk, และ handoff ให้ developer |
 | **.github/copilot-instructions.md** | คู่มือสถาปัตยกรรมหลัก - Essential knowledge about architecture, conventions, and patterns |
 | **API_REFERENCE.md** | ก่อนสร้าง API ใหม่ - Complete list of all endpoints with input/output and support functions |
 | **TRAINING.md** | ระบบฝึกซ้อม - Facility levels, weekly fee, slot rules, decimal behavior |
@@ -82,6 +100,10 @@
 
 ```text
 "ฉันต้องเพิ่ม feature ใหม่"
+    ├─ "ต้องการวิเคราะห์ requirement ก่อนส่ง dev?"
+    │  └─ YES → ใช้ `.github/football-production-owner-skill.md`
+    │          เพื่อสร้าง Requirement Analysis Pack ให้ครบก่อน
+    │
     ├─ "ต้องการ API endpoint ใหม่?"
     │  └─ YES → ตรวจ API_REFERENCE.md ว่ามีซ้ำหรือยัง
     │          ↓
@@ -140,6 +162,7 @@ npx prisma db seed
 - Reinforced API reuse and UX/UI consistency rules
 - Added `/debug` navigation guidance for full-match action flow analysis
 - Added `/test-simulate` page for isolated action simulation testing
+- Added `football-production-owner-skill.md` for requirement analysis and developer handoff workflow
 
 ---
 

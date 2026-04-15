@@ -31,6 +31,7 @@
     {
       "playerId": "...",
       "name": "...",
+      "jerseyNumber": 9,
       "rating": 7.5,
       "goals": 1,
       "assists": 0,
@@ -51,6 +52,11 @@
 **Calls**:
 
 - `prisma.match.findUnique()` - ดึงข้อมูลแข่งขันพร้อม statistics
+
+**Notes**:
+
+- Route นี้เป็น source of truth สำหรับ score, events, player stats, และ team stats บนหน้า `/match`
+- ถ้าเป็นแมตช์ `AI vs AI` ที่ยังไม่ถูกเล่น แต่ถูกเปิดเข้ามาดูตรง ๆ route นี้จะ process แมตช์นั้นก่อน แล้วค่อยคืน persisted result/stats กลับไป
 
 ---
 
@@ -82,10 +88,22 @@
     }
   },
   "rawLogs": [
-    {
+          "events": [],
+          "ballTransitions": [
+            {
+              "type": "PASS",
+              "fromPosition": { "x": 48, "y": 41 },
+              "toPosition": { "x": 58, "y": 45 },
+              "trajectory": [{ "x": 48, "y": 41 }, { "x": 52, "y": 43 }, { "x": 58, "y": 45 }],
+              "duration": 8,
+              "ballHeight": "low",
+              "success": true
+            }
+          ]
       "minute": 37,
       "ballPosition": 64,
-      "zone": "MIDDLE",
+      "visualEvents": [],
+      "ballTransitions": []
       "actionType": "PASS_SHORT",
       "result": "SUCCESS",
       "isSuccessful": true,
@@ -132,6 +150,113 @@
 **Calls**:
 
 - `playerActionLog.findMany()`
+
+---
+
+### 25. `GET /api/match/[id]/v2-sim`
+
+**ตัวอักษร**: V2 Spatial Replay (On-demand)
+
+**สิ่งที่ทำ**: สร้าง replay ของแมตช์แบบ V2 spatial simulation แบบ on-demand สำหรับหน้า `/match` (โหมด develop/analysis)
+
+**Input**:
+
+- `matchId` - Match ID
+- `variant` (optional query) - alternate replay seed for manual regeneration; omitted by default so persisted matches return the same replay/telemetry on normal refresh
+
+**Output**:
+
+```json
+{
+  "success": true,
+  "matchId": "...",
+  "replay": {
+    "homeScore": 1,
+    "awayScore": 1,
+    "frames": [
+      {
+        "minute": 12,
+        "tick": 4,
+        "ball": { "position": { "x": 52, "y": 44 }, "possession": "home" },
+        "playerPositions": { "player_1": { "x": 49, "y": 40 } },
+        "events": [],
+        "debug": {
+          "intents": [
+            {
+              "playerId": "player_1",
+              "team": "home",
+              "job": "SUPPORT",
+              "from": { "x": 49, "y": 40 },
+              "to": { "x": 54, "y": 43 },
+              "priority": 74,
+              "utilityScore": 77,
+              "context": "spec:Mid circulation"
+            }
+          ],
+          "defensive": {
+            "home": { "presserId": "home_4", "coverId": "home_6", "lineX": 31.5 },
+            "away": { "presserId": "away_5", "coverId": "away_8", "lineX": 68.2 }
+          }
+        }
+      }
+    ],
+    "visualEvents": [],
+    "telemetry": {
+      "frameCount": 1080,
+      "intentJobCounts": { "SUPPORT": 1200, "DEFEND": 980 },
+      "pressEvents": 340,
+      "coverEvents": 295,
+      "passSelection": {
+        "sampleCount": 160,
+        "avgRisk": 0.22,
+        "avgUtility": 61.4,
+        "samples": []
+      }
+    },
+    "playerMovementAnalytics": {
+      "player_1": {
+        "movementDistance": 932.4,
+        "carryDistance": 84.1,
+        "carrySeconds": 76,
+        "zoneSeconds": { "defensive": 1120, "middle": 3180, "attacking": 1100 },
+        "samples": 5400
+      }
+    }
+  },
+  "telemetry": {
+    "durationMs": 198,
+    "frameCount": 1080,
+    "visualEventCount": 410,
+    "visualEventCountByType": { "PASS": 220, "DRIBBLE": 80, "SHOT": 42 },
+    "score": "1-1",
+    "engineSummary": {
+      "frameCount": 1080,
+      "intentJobCounts": { "SUPPORT": 1200, "DEFEND": 980 },
+      "pressEvents": 340,
+      "coverEvents": 295
+    }
+  }
+}
+```
+
+**Calls**:
+
+- `simulateMatch2D()`
+- `prisma.match.findUnique()` + team/player projection
+
+**Notes**:
+
+- Replay frames may include `ballTransitions` for smooth pass/shot travel on the canvas
+- Saved shots stay visible by ending the trajectory at the goalkeeper instead of instantly snapping possession
+- Replay frames may include `debug` overlay payload (intent vectors + defensive assignment) for V2 tuning mode
+- Top-level `telemetry.engineSummary` mirrors replay telemetry summary for quick API-side diagnostics
+- `replay.playerMovementAnalytics` summarizes per-player continuous movement/carry data sampled every tick (ready for future heatmap)
+- V2 dribble counting distinguishes **carry** vs **dribble duel**: simple lane-carry is not counted as `dribblesWon`; only opponent-beating dribbles are counted
+- V2 replay now emits set-piece/discipline incidents with V1-like conditions (`THROW_IN`, `CORNER`, `FOUL`, `CARD_YELLOW`, `CARD_RED`) so match event/state tabs can show non-shot incidents from simulation output
+- สำหรับแมตช์ที่ถูกเล่นและ persisted แล้ว ค่า score ใน replay response จะถูกล็อกให้ตรงกับผลที่บันทึกใน `Match.homeScore` / `Match.awayScore` และ team stats ที่บันทึกไว้ เพื่อไม่ให้หน้า `/match` แสดงผลแข่งแกว่งตาม replay ที่ generate ใหม่
+- สำหรับ persisted match การเรียก route แบบปกติจะใช้ deterministic seed จาก `matchId` ทำให้ refresh หน้าแล้ว replay / telemetry เดิมไม่เปลี่ยนเอง; ถ้ากด regenerate จึงค่อยส่ง `variant` เพื่อขอ replay seed ใหม่โดยตั้งใจ
+- สำหรับ already-played match route จะ prefer ผู้เล่นที่มี persisted minutes เป็น participants ของ replay และจะถอดผู้เล่นที่มี persisted `CARD_RED` ออกจาก active replay หลังนาทีที่โดนไล่ออก
+- หน้า `/match` ต้องใช้ `/api/match/[id]` เป็น authoritative score/stats เสมอ ส่วน `/api/match/[id]/v2-sim` ใช้สำหรับ visualization layer
 
 ---
 
@@ -407,6 +532,7 @@
   {
     "id": "player_1",
     "name": "John Smith",
+    "jerseyNumber": 11,
     "age": 28,
     "position": "FWR",
     "power": 78.5,

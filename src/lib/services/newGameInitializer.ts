@@ -4,6 +4,7 @@ import { AI_PLAYSTYLE_PROFILES } from './aiPlaystyleProfiles';
 import { generateSeasonFixtures } from './fixtureGenerator';
 import { initializeCupTournamentForSeason } from './SwissTournament';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { assignInitialJerseyNumbersForTeam } from './jerseyNumberService';
 
 export type NewGameMode = 'normal' | 'legend';
 
@@ -837,6 +838,8 @@ export async function initializeNewGame(userTeamName: string, mode: NewGameMode 
                 ...player
             }))
         });
+
+        await assignInitialJerseyNumbersForTeam(team.id);
     }
 
     const allTeams = await prisma.team.findMany({ select: { id: true, name: true } });

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateMatchExp, applyAgeEfficiency } from '@/lib/engine/experience';
+import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
 
 function calculateAdjustedDisplayRating(ps: any, match: any, foulCountOverride?: number): number {
     // Players who did not play should not be performance-rated
@@ -53,7 +54,7 @@ export async function GET(
     try {
         const { id } = await params;
 
-        const match = await prisma.match.findUnique({
+        const fetchMatch = () => prisma.match.findUnique({
             where: { id },
             include: {
                 homeTeam: { select: { id: true, name: true } },
@@ -63,11 +64,35 @@ export async function GET(
                 },
                 playerStats: {
                     include: {
-                        player: { select: { name: true, naturalPosition: true, tacticalPosition: true } }
+                        player: { select: { name: true, naturalPosition: true, tacticalPosition: true, jerseyNumber: true } }
                     }
                 }
             }
         });
+
+        let match = await fetchMatch();
+
+        if (match && !match.isPlayed) {
+            const settings = await prisma.globalGameSettings.findUnique({
+                where: { id: 1 },
+                select: { userTeamId: true }
+            });
+
+            const isAiOnlyMatch = !settings?.userTeamId
+                || (match.homeTeamId !== settings.userTeamId && match.awayTeamId !== settings.userTeamId);
+
+            if (isAiOnlyMatch) {
+                const processed = await processMatch(id);
+                if (processed) {
+                    try {
+                        await processMatchFinancials(id);
+                    } catch (error) {
+                        console.error('[Match API] Failed to process financials for AI-only match:', error);
+                    }
+                    match = await fetchMatch();
+                }
+            }
+        }
 
         const foulActionLogs = await (prisma.playerActionLog as any).findMany({
             where: {
@@ -176,6 +201,7 @@ export async function GET(
                 teamId: ps.teamId,
                 position: ps.player.naturalPosition,
                                tacticalPosition: ps.player.tacticalPosition ?? null,
+                jerseyNumber: ps.player.jerseyNumber ?? null,
                 rating: adjustedRating,
                 minutes: ps.minutes,
                 goals: ps.goals,

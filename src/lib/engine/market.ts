@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { getGameTime } from '../services/gameTime';
+import { assignIncomingPlayerJerseyNumber } from '../services/jerseyNumberService';
 
 const getGlobalDate = async () => (await getGameTime()).currentDate;
 
@@ -113,11 +114,14 @@ export async function submitBid(
                 where: { id: playerId },
                 data: {
                     teamId: fromTeamId,
+                    jerseyNumber: null,
                     lastTransferredSeason: currentSeason,
                     transferStatus: 'NOT_LISTED',
                     contractEndWeek: 104 // 2 years contract for free agents
                 }
             });
+
+            await assignIncomingPlayerJerseyNumber(playerId, fromTeamId, tx);
 
             // Deduct sign-on bonus from team balance
             if (signOnBonus > 0) {
@@ -453,12 +457,15 @@ export async function processAcceptedTransfers() {
                     where: { id: player.id },
                     data: {
                         teamId: bid.fromTeamId,
+                        jerseyNumber: null,
                         transferStatus: 'NOT_LISTED',
                         askingPrice: null,
                         lastTransferredSeason: currentSeason,
                         contractEndWeek: 104 // 2 years contract for new signings
                     }
                 });
+
+                await assignIncomingPlayerJerseyNumber(player.id, bid.fromTeamId, tx);
 
                 if (!bid.isFreeAgent && bid.amount > 0) {
                     // Pay selling team
@@ -753,11 +760,14 @@ export async function processBiddingRules() {
                     where: { id: playerId },
                     data: {
                         teamId: winningBid.fromTeamId,
+                        jerseyNumber: null,
                         transferStatus: 'NOT_LISTED',
                         askingPrice: null,
                         lastTransferredSeason: currentSeason
                     }
                 });
+
+                await assignIncomingPlayerJerseyNumber(playerId, winningBid.fromTeamId, tx);
 
                 // Record History
                 await tx.transferHistory.create({

@@ -1,9 +1,25 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, Suspense, useCallback, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { PlaybackControls } from './components/PlaybackControls';
+import type { V2MatchState } from '@/lib/engine/v2/types2d';
+import type { MatchCanvasControls } from './components/MatchCanvas';
+
+const MatchCanvas = dynamic(
+    () => import('./components/MatchCanvas').then((m) => m.MatchCanvas),
+    {
+        ssr: false,
+        loading: () => (
+            <div className="flex items-center justify-center h-[500px] bg-slate-900 rounded-lg text-slate-300">
+                Loading V2 replay canvas...
+            </div>
+        )
+    }
+);
 
 // Types
 type TeamMatchStats = {
@@ -61,6 +77,13 @@ type MatchActionAnalytics = {
     rawLogs: any[];
 };
 
+const HIGHLIGHT_TICKER_CONFIG = {
+    holdTicks: 30,
+    eventTypes: ['SHOT', 'FOUL', 'FREE_KICK', 'YELLOW_CARD', 'RED_CARD'] as const,
+};
+
+const HIGHLIGHT_TICKER_EVENT_SET = new Set<string>(HIGHLIGHT_TICKER_CONFIG.eventTypes);
+
 export default function MatchPage() {
     return (
         <Suspense fallback={<div className="card">Loading match...</div>}>
@@ -78,11 +101,34 @@ function MatchContent() {
     const [todaysMatches, setTodaysMatches] = useState<MatchData[]>([]);
     const [matchData, setMatchData] = useState<any | null>(null); // For the current simulation display
     const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState<'stats' | 'events' | 'home' | 'away'>('stats');
+    const [activeTab, setActiveTab] = useState<'stats' | 'events' | 'home' | 'away' | 'heatmap'>('stats');
+    const [heatmapEventFilter, setHeatmapEventFilter] = useState<'all' | 'SHOT' | 'PASS' | 'DRIBBLE'>('all');
+    const [heatmapTeamFilter, setHeatmapTeamFilter] = useState<'all' | 'home' | 'away'>('all');
+    const [heatmapPlayerFilter, setHeatmapPlayerFilter] = useState<string>('all');
     const [teamStandings, setTeamStandings] = useState<Record<string, { position: number; power: number }>>({});
     const [matchActionAnalytics, setMatchActionAnalytics] = useState<MatchActionAnalytics | null>(null);
     const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
     const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(null);
+    const [v2Replay, setV2Replay] = useState<V2MatchState | null>(null);
+    const [v2Telemetry, setV2Telemetry] = useState<any | null>(null);
+    const [v2Loading, setV2Loading] = useState(false);
+    const [v2Error, setV2Error] = useState<string | null>(null);
+    const [v2LiveFrame, setV2LiveFrame] = useState<{
+        frameIndex: number;
+        minute: number;
+        tick: number;
+        carrierName: string;
+        homeScore: number;
+        awayScore: number;
+        eventTypes: string[];
+        eventTexts: string[];
+    } | null>(null);
+    const [v2LiveCommentary, setV2LiveCommentary] = useState<string>('Kick-off');
+    const [v2HighlightTicker, setV2HighlightTicker] = useState<{ text: string; untilFrameIndex: number } | null>(null);
+    const [v2CurrentFrameIndex, setV2CurrentFrameIndex] = useState(0);
+    const [v2IsPlaying, setV2IsPlaying] = useState(false);
+    const [v2PlaybackSpeed, setV2PlaybackSpeed] = useState(1.0);
+    const v2CanvasRef = useRef<MatchCanvasControls | null>(null);
 
     const fetchData = async () => {
         setLoading(true);
@@ -285,6 +331,343 @@ function MatchContent() {
             setLoading(false);
         }
     };
+
+    const loadV2Replay = useCallback(async (matchId: string, forceRegenerate = false) => {
+        if (!matchId) return;
+        setV2Loading(true);
+        setV2Error(null);
+        try {
+            const replayUrl = forceRegenerate
+                ? `/api/match/${matchId}/v2-sim?variant=${Date.now()}`
+                : `/api/match/${matchId}/v2-sim`;
+            const res = await fetch(replayUrl);
+            const data = await res.json();
+            if (!res.ok || !data?.replay) {
+                throw new Error(data?.error || 'Failed to generate V2 replay');
+            }
+            setV2Replay(data.replay as V2MatchState);
+            setV2Telemetry(data.telemetry || null);
+        } catch (error) {
+            setV2Replay(null);
+            setV2Telemetry(null);
+            setV2Error(error instanceof Error ? error.message : 'Failed to load V2 replay');
+        } finally {
+            setV2Loading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        setV2Replay(null);
+        setV2Telemetry(null);
+        setV2Error(null);
+        setV2LiveFrame(null);
+        setV2LiveCommentary('Kick-off');
+        setV2HighlightTicker(null);
+    }, [matchData?.id]);
+
+    useEffect(() => {
+        if (!matchData?.id) return;
+        loadV2Replay(matchData.id);
+    }, [matchData?.id, loadV2Replay]);
+
+    useEffect(() => {
+        if (!v2LiveFrame) return;
+        if (v2LiveFrame.eventTexts.length > 0) {
+            setV2LiveCommentary(v2LiveFrame.eventTexts.join(' • '));
+            return;
+        }
+
+        const displayMinute = Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1);
+        const timeLabel = `${displayMinute}'${v2LiveFrame.tick > 0 ? ` (+${v2LiveFrame.tick})` : ''}`;
+        setV2LiveCommentary(`⏱️ ${timeLabel} • Possession: ${v2LiveFrame.carrierName}`);
+    }, [v2LiveFrame]);
+
+    useEffect(() => {
+        if (!v2LiveFrame) return;
+
+        const eventTypes = v2LiveFrame.eventTypes || [];
+        const eventTexts = v2LiveFrame.eventTexts || [];
+        let nextTickerText: string | null = null;
+
+        for (let i = 0; i < eventTypes.length; i++) {
+            const eventType = String(eventTypes[i] || '').toUpperCase();
+            if (!HIGHLIGHT_TICKER_EVENT_SET.has(eventType)) continue;
+            nextTickerText = eventTexts[i] || eventTypes[i] || null;
+            if (nextTickerText) break;
+        }
+
+        if (nextTickerText) {
+            setV2HighlightTicker({
+                text: nextTickerText,
+                untilFrameIndex: v2LiveFrame.frameIndex + HIGHLIGHT_TICKER_CONFIG.holdTicks,
+            });
+            return;
+        }
+
+        setV2HighlightTicker((prev) => {
+            if (!prev) return null;
+            if (v2LiveFrame.frameIndex <= prev.untilFrameIndex) return prev;
+            return null;
+        });
+    }, [v2LiveFrame]);
+
+    const v2QuickStats = useMemo(() => {
+        if (!v2Replay) return null;
+        const eventsByType = v2Replay.visualEvents.reduce((acc: Record<string, number>, ev) => {
+            acc[ev.type] = (acc[ev.type] || 0) + 1;
+            return acc;
+        }, {});
+        return {
+            frames: v2Replay.frames.length,
+            events: v2Replay.visualEvents.length,
+            passes: eventsByType.PASS || 0,
+            shots: eventsByType.SHOT || 0,
+            dribbles: eventsByType.DRIBBLE || 0,
+            tackles: eventsByType.TACKLE || 0,
+        };
+    }, [v2Replay]);
+
+    const syncedEvents = useMemo(() => {
+        return ((matchData?.events as any[]) || []);
+    }, [matchData]);
+
+    const syncedPlayerStats = useMemo(() => {
+        return ((matchData?.playerStats as Record<string, any>) || {});
+    }, [matchData]);
+
+    const homeStats = useMemo(() => {
+        return ((matchData?.teamStats as any)?.home || {});
+    }, [matchData]);
+
+    const awayStats = useMemo(() => {
+        return ((matchData?.teamStats as any)?.away || {});
+    }, [matchData]);
+
+    const heatmapPlayerOptions = useMemo(() => {
+        const normalizePos = (pos?: string | null) => {
+            if (!pos) return '-';
+            if (pos === 'FWC' || pos === 'FWR' || pos === 'FWL') return 'FW';
+            if (pos.startsWith('FW_')) return 'FW';
+            if (pos.startsWith('DC_')) return 'DC';
+            if (pos.startsWith('MC_')) return 'MC';
+            return pos;
+        };
+
+        const getPosGroup = (pos: string) => {
+            if (pos === 'GK') return 0;
+            if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 1;
+            if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 2;
+            if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 3;
+            return 9;
+        };
+
+        const playerMap = new Map<string, { id: string; name: string; teamId: string; position: string; minutes: number }>();
+
+        const fromSyncedStats = Object.values((syncedPlayerStats as Record<string, any>) || {});
+        fromSyncedStats.forEach((p: any) => {
+            const id = String(p?.playerId || '');
+            const name = String(p?.name || '').trim();
+            const teamId = String(p?.teamId || '');
+            const minutes = Number(p?.minutes || 0);
+            if (!id || !teamId) return;
+            if (minutes <= 0) return; // only players who actually played (starter + sub)
+
+            const position = normalizePos(String(p?.tacticalPosition || p?.position || '').trim());
+            playerMap.set(id, {
+                id,
+                name: name || id,
+                teamId,
+                position,
+                minutes,
+            });
+        });
+
+        const players = Array.from(playerMap.values()).filter((p) => {
+            if (heatmapTeamFilter === 'home') return p.teamId === matchData?.homeTeamId;
+            if (heatmapTeamFilter === 'away') return p.teamId === matchData?.awayTeamId;
+            return true;
+        });
+
+        players.sort((a, b) => {
+            const aGroup = getPosGroup(a.position);
+            const bGroup = getPosGroup(b.position);
+            if (aGroup !== bGroup) return aGroup - bGroup;
+
+            const byPos = a.position.localeCompare(b.position);
+            if (byPos !== 0) return byPos;
+
+            const byName = a.name.localeCompare(b.name);
+            if (byName !== 0) return byName;
+            return b.minutes - a.minutes;
+        });
+        return players;
+    }, [syncedPlayerStats, heatmapTeamFilter, matchData?.homeTeamId, matchData?.awayTeamId]);
+
+    useEffect(() => {
+        if (heatmapPlayerFilter === 'all') return;
+        const stillExists = heatmapPlayerOptions.some((p) => p.id === heatmapPlayerFilter);
+        if (!stillExists) {
+            setHeatmapPlayerFilter('all');
+        }
+    }, [heatmapPlayerFilter, heatmapPlayerOptions]);
+
+    const v2DisplayReplay = useMemo(() => {
+        if (!v2Replay || !matchData) return v2Replay;
+        return {
+            ...v2Replay,
+            homeScore: matchData.homeScore ?? v2Replay.homeScore,
+            awayScore: matchData.awayScore ?? v2Replay.awayScore,
+            teamStats: matchData.teamStats ?? v2Replay.teamStats,
+            playerStats: matchData.playerStats ?? v2Replay.playerStats,
+            events: matchData.events ?? v2Replay.events,
+            homeTeamId: matchData.homeTeamId ?? v2Replay.homeTeamId,
+            awayTeamId: matchData.awayTeamId ?? v2Replay.awayTeamId,
+        } as V2MatchState;
+    }, [v2Replay, matchData]);
+
+    const sentOffTimeline = useMemo(() => {
+        const events = ((matchData?.events as any[]) || [])
+            .filter((event) => event.type === 'CARD_RED' && event.playerId)
+            .sort((a, b) => (a.minute || 0) - (b.minute || 0));
+
+        const earliestByPlayer = new Map<string, any>();
+        events.forEach((event) => {
+            const existing = earliestByPlayer.get(event.playerId);
+            if (!existing || (event.minute || 0) < (existing.minute || 0)) {
+                earliestByPlayer.set(event.playerId, event);
+            }
+        });
+
+        return Array.from(earliestByPlayer.values()).sort((a, b) => (a.minute || 0) - (b.minute || 0));
+    }, [matchData?.events]);
+
+    const currentSentOffPlayers = useMemo(() => {
+        const replayMinute = v2LiveFrame
+            ? Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1)
+            : 1;
+        return sentOffTimeline.filter((event) => (event.minute || 0) <= replayMinute);
+    }, [sentOffTimeline, v2LiveFrame?.frameIndex]);
+
+    const heatmapData = useMemo(() => {
+        if (!v2Replay?.frames?.length) return null;
+
+        const gridSize = 12;
+        const clampGrid = (n: number) => Math.max(0, Math.min(gridSize - 1, n));
+        const homeGrid: Record<string, number> = {};
+        const awayGrid: Record<string, number> = {};
+        const addSpread = (grid: Record<string, number>, gx: number, gy: number, baseWeight = 1) => {
+            const radius = 2;
+            const sigma = 1.25;
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -radius; dy <= radius; dy++) {
+                    const nx = gx + dx;
+                    const ny = gy + dy;
+                    if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize) continue;
+                    const distSq = dx * dx + dy * dy;
+                    const weight = Math.exp(-distSq / (2 * sigma * sigma));
+                    const key = `${nx},${ny}`;
+                    grid[key] = (grid[key] || 0) + (baseWeight * weight);
+                }
+            }
+        };
+        const baseEvents = v2Replay.visualEvents || [];
+        const replayGoalEventsByTeam = baseEvents
+            .filter((event) => event.type === 'GOAL')
+            .reduce((acc, event) => {
+                const teamId = event.teamId || 'unknown';
+                if (!acc[teamId]) {
+                    acc[teamId] = [];
+                }
+                acc[teamId].push(event);
+                return acc;
+            }, {} as Record<string, typeof baseEvents>);
+
+        const persistedGoalEvents = (((matchData?.events as any[]) || []).filter((event) => event.type === 'GOAL'));
+        const persistedGoalEventsByTeam = persistedGoalEvents.reduce((acc, event) => {
+            const teamId = event.teamId || 'unknown';
+            if (!acc[teamId]) {
+                acc[teamId] = [];
+            }
+            acc[teamId].push(event);
+            return acc;
+        }, {} as Record<string, any[]>);
+
+        const createFallbackGoalMarker = (teamId: string, index: number) => {
+            const isHomeTeam = teamId === matchData?.homeTeamId;
+            const rowOffset = ((index % 3) - 1) * 6;
+            const persistedEvent = persistedGoalEventsByTeam[teamId]?.[index];
+
+            return {
+                type: 'GOAL',
+                teamId,
+                minute: persistedEvent?.minute,
+                playerId: persistedEvent?.playerId,
+                playerName: persistedEvent?.playerName,
+                position: {
+                    x: isHomeTeam ? 92 : 8,
+                    y: 50 + rowOffset,
+                },
+            };
+        };
+
+        const selectedPlayerId = heatmapPlayerFilter !== 'all' ? heatmapPlayerFilter : null;
+
+        const authoritativeGoalMarkers = (Object.entries(persistedGoalEventsByTeam) as Array<[string, any[]]>).flatMap(([teamId, events]) => {
+            const replayGoals = replayGoalEventsByTeam[teamId] || [];
+            return events.map((_, index: number) => replayGoals[index] || createFallbackGoalMarker(teamId, index));
+        });
+
+        v2Replay.frames.forEach((frame) => {
+            const pos = frame.ball?.position;
+            if (!pos) return;
+            const side = frame.ball?.possession;
+            if (heatmapTeamFilter === 'home' && side !== 'home') return;
+            if (heatmapTeamFilter === 'away' && side !== 'away') return;
+
+            const carrierId = frame.ball?.carrier?.id || null;
+            if (selectedPlayerId && carrierId !== selectedPlayerId) return;
+
+            const gx = clampGrid(Math.floor((pos.x / 100) * gridSize));
+            const gy = clampGrid(Math.floor((pos.y / 100) * gridSize));
+            if (side === 'home') {
+                addSpread(homeGrid, gx, gy, 1);
+            } else if (side === 'away') {
+                addSpread(awayGrid, gx, gy, 1);
+            }
+        });
+
+        const filteredNonGoalEvents = baseEvents.filter((e) => {
+            if (heatmapTeamFilter === 'home' && e.teamId !== matchData?.homeTeamId) return false;
+            if (heatmapTeamFilter === 'away' && e.teamId !== matchData?.awayTeamId) return false;
+            if (selectedPlayerId && e.playerId !== selectedPlayerId) return false;
+
+            if (e.type === 'GOAL') return false;
+            if (heatmapEventFilter === 'all') return e.type === 'SHOT' || e.type === 'PASS' || e.type === 'DRIBBLE';
+            return e.type === heatmapEventFilter;
+        });
+
+        const filteredGoalMarkers = authoritativeGoalMarkers.filter((event) => {
+            if (heatmapTeamFilter === 'home' && event.teamId !== matchData?.homeTeamId) return false;
+            if (heatmapTeamFilter === 'away' && event.teamId !== matchData?.awayTeamId) return false;
+            if (selectedPlayerId && event.playerId !== selectedPlayerId) return false;
+            return true;
+        });
+
+        const maxHome = Math.max(1, ...Object.values(homeGrid));
+        const maxAway = Math.max(1, ...Object.values(awayGrid));
+
+        return {
+            gridSize,
+            homeGrid,
+            awayGrid,
+            maxHome,
+            maxAway,
+            filteredEvents: [...filteredNonGoalEvents, ...filteredGoalMarkers],
+        };
+    }, [v2Replay, heatmapEventFilter, heatmapTeamFilter, heatmapPlayerFilter, matchData]);
+
+    const syncedHomeScore = matchData?.homeScore ?? 0;
+    const syncedAwayScore = matchData?.awayScore ?? 0;
 
     const StatRow = ({ label, homeVal, awayVal, isPercentage = false, inverse = false }: { label: string, homeVal: number, awayVal: number, isPercentage?: boolean, inverse?: boolean }) => {
         const homeWin = inverse ? homeVal < awayVal : homeVal > awayVal;
@@ -884,7 +1267,7 @@ function MatchContent() {
                             })()}
                             {/* Home Team Goals */}
                             <div style={{ fontSize: '0.85rem', opacity: 0.9, lineHeight: '1.8' }}>
-                                {(matchData.events || [])
+                                {(syncedEvents || [])
                                     .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.homeTeam?.id)
                                     .map((e: any, idx: number) => {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
@@ -910,7 +1293,7 @@ function MatchContent() {
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '2.5rem', fontWeight: 'bold', letterSpacing: '4px', position: 'relative', display: 'inline-block' }} className="md:text-6xl md:letter-spacing-2">
-                                {matchData.homeScore} - {matchData.awayScore}
+                                {syncedHomeScore} - {syncedAwayScore}
                                 {matchData.motmPlayerId && (
                                     <span title="Man of the Match awarding" style={{ position: 'absolute', top: '-10px', right: '-40px', fontSize: '1.5rem' }} className="md:text-4xl">🌟</span>
                                 )}
@@ -940,7 +1323,7 @@ function MatchContent() {
                                 );
                             })()}
                             {/* Away Team Goals */}
-                            <div style={{ fontSize: '0.75rem', opacity: 0.9, lineHeight: '1.6' }} className="md:text-sm">{(matchData.events || [])
+                            <div style={{ fontSize: '0.75rem', opacity: 0.9, lineHeight: '1.6' }} className="md:text-sm">{(syncedEvents || [])
                                     .filter((e: any) => e.type === 'GOAL' && e.teamId === matchData.awayTeam?.id)
                                     .map((e: any, idx: number) => {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
@@ -966,8 +1349,191 @@ function MatchContent() {
                         </div>
                     </div>
 
+                    <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', background: '#f8fafc' }}>
+                        <style>{`
+                            @keyframes matchHighlightTicker {
+                                0% { transform: translateX(100%); }
+                                100% { transform: translateX(-100%); }
+                            }
+                        `}</style>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                                {v2Error && (
+                                    <div style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.65rem 0.85rem', fontSize: '0.85rem' }}>
+                                        ⚠️ {v2Error}
+                                    </div>
+                                )}
+
+                                {v2Loading && !v2Replay && (
+                                    <div style={{ background: '#e2e8f0', color: '#334155', borderRadius: '8px', padding: '0.8rem 0.9rem', fontWeight: 600 }}>
+                                        Generating V2 simulation replay...
+                                    </div>
+                                )}
+
+                                {v2Replay && (
+                                    <>
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.7rem',
+                                                background: '#0f172a',
+                                                borderRadius: '10px',
+                                                padding: '0.6rem',
+                                                color: '#f8fafc'
+                                            }}
+                                        >
+                                            {/* TOP: Scoreboard */}
+                                            <div
+                                                style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1fr auto 1fr',
+                                                    alignItems: 'center',
+                                                    gap: '0.5rem',
+                                                    padding: '0.35rem 0.55rem',
+                                                    background: 'rgba(15,23,42,0.9)',
+                                                    border: '1px solid rgba(148,163,184,0.25)',
+                                                    borderRadius: '8px'
+                                                }}
+                                            >
+                                                <div style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem' }}>
+                                                    {matchData.homeTeamName}
+                                                </div>
+                                                <div style={{ fontSize: '1.3rem', fontWeight: 800, letterSpacing: '1px' }}>
+                                                    {(v2LiveFrame?.homeScore ?? syncedHomeScore)} - {(v2LiveFrame?.awayScore ?? syncedAwayScore)}
+                                                </div>
+                                                <div style={{ textAlign: 'left', fontWeight: 700, fontSize: '0.95rem' }}>
+                                                    {matchData.awayTeamName}
+                                                </div>
+                                            </div>
+
+                                            {/* MIDDLE: Match Engine - hideControls=true to render below */}
+                                            <div style={{ position: 'relative', zIndex: 2, minHeight: '360px' }}>
+                                                <MatchCanvas
+                                                    matchData={v2DisplayReplay || v2Replay}
+                                                    authoritativeEvents={matchData?.events || []}
+                                                    width={900}
+                                                    height={360}
+                                                    hideOverlays
+                                                    hideControls={true}
+                                                    controlsRef={v2CanvasRef}
+                                                    onFrameChange={setV2LiveFrame}
+                                                />
+                                            </div>
+
+                                            {currentSentOffPlayers.length > 0 && (
+                                                <div
+                                                    style={{
+                                                        borderRadius: '8px',
+                                                        border: '1px solid rgba(248,113,113,0.45)',
+                                                        background: 'rgba(127,29,29,0.25)',
+                                                        padding: '0.5rem 0.7rem'
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, marginBottom: '0.35rem', color: '#fecaca' }}>
+                                                        🟥 Sent off (Off-field)
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                        {currentSentOffPlayers.map((event: any) => {
+                                                            const player = syncedPlayerStats?.[event.playerId];
+                                                            const isHome = event.teamId === matchData.homeTeamId;
+                                                            const pillBg = isHome ? 'rgba(37,99,235,0.22)' : 'rgba(244,63,94,0.22)';
+                                                            const pillBorder = isHome ? 'rgba(147,197,253,0.6)' : 'rgba(251,113,133,0.6)';
+
+                                                            return (
+                                                                <span
+                                                                    key={`sentoff_${event.playerId}`}
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '0.35rem',
+                                                                        borderRadius: '999px',
+                                                                        border: `1px solid ${pillBorder}`,
+                                                                        background: pillBg,
+                                                                        padding: '0.2rem 0.55rem',
+                                                                        fontSize: '0.74rem',
+                                                                        fontWeight: 600,
+                                                                        color: '#f8fafc'
+                                                                    }}
+                                                                    title={event.text || event.playerName || 'Sent off'}
+                                                                >
+                                                                    <span>#{player?.jerseyNumber ?? '-'}</span>
+                                                                    <span>{event.playerName || player?.name || event.playerId}</span>
+                                                                    <span style={{ color: '#fecaca' }}>({event.minute}&apos;)</span>
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* BELOW FIELD: Live Commentary */}
+                                            <div
+                                                style={{
+                                                    minHeight: '56px',
+                                                    maxHeight: '120px',
+                                                    overflowY: 'auto',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(148,163,184,0.25)',
+                                                    background: 'rgba(15,23,42,0.88)',
+                                                    padding: '0.55rem 0.7rem',
+                                                    fontSize: '0.84rem',
+                                                    lineHeight: 1.45
+                                                }}
+                                            >
+                                                {v2HighlightTicker?.text && (
+                                                    <div
+                                                        style={{
+                                                            marginBottom: '0.45rem',
+                                                            borderRadius: '6px',
+                                                            border: '1px solid rgba(251,191,36,0.7)',
+                                                            background: 'rgba(251,191,36,0.13)',
+                                                            padding: '0.35rem 0.5rem',
+                                                            overflow: 'hidden',
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                whiteSpace: 'nowrap',
+                                                                fontSize: '1.02rem',
+                                                                fontWeight: 800,
+                                                                color: '#fde68a',
+                                                                animation: 'matchHighlightTicker 10s linear infinite',
+                                                            }}
+                                                        >
+                                                            {v2HighlightTicker.text}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: '3px' }}>
+                                                    {v2LiveFrame ? `Minute ${Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1)}${v2LiveFrame.tick > 0 ? ` (+${v2LiveFrame.tick})` : ''}` : 'Minute 1'}
+                                                </div>
+                                                <div style={{ fontWeight: 600 }}>{v2LiveCommentary}</div>
+                                            </div>
+
+                                            {/* BOTTOM: Playback Controls */}
+                                            {v2CanvasRef.current && (
+                                                <PlaybackControls
+                                                    isPlaying={v2CanvasRef.current.isPlaying}
+                                                    currentFrame={v2CanvasRef.current.currentFrame}
+                                                    totalFrames={v2CanvasRef.current.totalFrames}
+                                                    playbackSpeed={v2CanvasRef.current.playbackSpeed}
+                                                    currentMinute={v2CanvasRef.current.currentMinute}
+                                                    onPlayPause={v2CanvasRef.current.onPlayPause}
+                                                    onSeek={v2CanvasRef.current.onSeek}
+                                                    onSpeedChange={v2CanvasRef.current.onSpeedChange}
+                                                    onReset={v2CanvasRef.current.onReset}
+                                                />
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                        </div>
+                    </div>
+
                     <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border)', overflowX: 'auto' }} className="md:overflow-visible">
-                        {['stats', 'events', 'home', 'away'].map((tab) => {
+                        {['stats', 'events', 'home', 'away', 'heatmap'].map((tab) => {
                             let tabIcon = '';
                             let tabLabel = tab.toUpperCase();
                             if (tab === 'home') {
@@ -980,6 +1546,9 @@ function MatchContent() {
                                 tabIcon = '📊';
                             } else if (tab === 'events') {
                                 tabIcon = '📅';
+                            } else if (tab === 'heatmap') {
+                                tabIcon = '🔥';
+                                tabLabel = 'Heat Map';
                             }
                             return (
                                 <button
@@ -1006,44 +1575,44 @@ function MatchContent() {
                     <div style={{ padding: '1rem' }} className="md:py-8 md:px-8">
                         {activeTab === 'stats' && (
                             <div style={{ width: '100%', maxWidth: '980px', margin: '0 auto' }}>
-                                <StatRowWithChart label="Possession" homeVal={matchData.teamStats.home.possession} awayVal={matchData.teamStats.away.possession} isPercentage />
-                                <StatRowWithChart label="Shots (On Target)" homeVal={matchData.teamStats.home.shotsOnTarget} awayVal={matchData.teamStats.away.shotsOnTarget} />
+                                <StatRowWithChart label="Possession" homeVal={homeStats.possession || 0} awayVal={awayStats.possession || 0} isPercentage />
+                                <StatRowWithChart label="Shots (On Target)" homeVal={homeStats.shotsOnTarget || 0} awayVal={awayStats.shotsOnTarget || 0} />
                                 <StatRowWithChart label="Pass Accuracy"
-                                    homeVal={Math.round((matchData.teamStats.home.passesCompleted / (matchData.teamStats.home.passesAttempted || 1)) * 100)}
-                                    awayVal={Math.round((matchData.teamStats.away.passesCompleted / (matchData.teamStats.away.passesAttempted || 1)) * 100)}
+                                    homeVal={Math.round(((homeStats.passesCompleted || 0) / (homeStats.passesAttempted || 1)) * 100)}
+                                    awayVal={Math.round(((awayStats.passesCompleted || 0) / (awayStats.passesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
                                 <StatRowWithChart label="Cross Accuracy"
-                                    homeVal={Math.round((matchData.teamStats.home.crossesCompleted / (matchData.teamStats.home.crossesAttempted || 1)) * 100)}
-                                    awayVal={Math.round((matchData.teamStats.away.crossesCompleted / (matchData.teamStats.away.crossesAttempted || 1)) * 100)}
+                                    homeVal={Math.round(((homeStats.crossesCompleted || 0) / (homeStats.crossesAttempted || 1)) * 100)}
+                                    awayVal={Math.round(((awayStats.crossesCompleted || 0) / (awayStats.crossesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
                                 <StatRowWithChart label="Tackling %"
-                                    homeVal={Math.round((matchData.teamStats.home.tacklesWon / (matchData.teamStats.home.tacklesAttempted || 1)) * 100)}
-                                    awayVal={Math.round((matchData.teamStats.away.tacklesWon / (matchData.teamStats.away.tacklesAttempted || 1)) * 100)}
+                                    homeVal={Math.round(((homeStats.tacklesWon || 0) / (homeStats.tacklesAttempted || 1)) * 100)}
+                                    awayVal={Math.round(((awayStats.tacklesWon || 0) / (awayStats.tacklesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
                                 <StatRowWithChart label="Dribbling %"
-                                    homeVal={Math.round((matchData.teamStats.home.dribblesWon / (matchData.teamStats.home.dribblesAttempted || 1)) * 100)}
-                                    awayVal={Math.round((matchData.teamStats.away.dribblesWon / (matchData.teamStats.away.dribblesAttempted || 1)) * 100)}
+                                    homeVal={Math.round(((homeStats.dribblesWon || 0) / (homeStats.dribblesAttempted || 1)) * 100)}
+                                    awayVal={Math.round(((awayStats.dribblesWon || 0) / (awayStats.dribblesAttempted || 1)) * 100)}
                                     isPercentage
                                 />
-                                <StatRowWithChart label="Fouls" homeVal={matchData.teamStats.home.fouls} awayVal={matchData.teamStats.away.fouls} inverse />
-                                <StatRowWithChart label="Yellow Cards" homeVal={matchData.teamStats.home.yellowCards} awayVal={matchData.teamStats.away.yellowCards} inverse />
-                                <StatRowWithChart label="Red Cards" homeVal={matchData.teamStats.home.redCards} awayVal={matchData.teamStats.away.redCards} inverse />
-                                <StatRowWithChart label="Corners" homeVal={matchData.teamStats.home.corners} awayVal={matchData.teamStats.away.corners} />
-                                <StatRowWithChart label="Free Kicks" homeVal={matchData.teamStats.home.freeKicks || 0} awayVal={matchData.teamStats.away.freeKicks || 0} />
-                                <StatRowWithChart label="Throw-Ins" homeVal={matchData.teamStats.home.throws || 0} awayVal={matchData.teamStats.away.throws || 0} />
+                                <StatRowWithChart label="Fouls" homeVal={homeStats.fouls || 0} awayVal={awayStats.fouls || 0} inverse />
+                                <StatRowWithChart label="Yellow Cards" homeVal={homeStats.yellowCards || 0} awayVal={awayStats.yellowCards || 0} inverse />
+                                <StatRowWithChart label="Red Cards" homeVal={homeStats.redCards || 0} awayVal={awayStats.redCards || 0} inverse />
+                                <StatRowWithChart label="Corners" homeVal={homeStats.corners || 0} awayVal={awayStats.corners || 0} />
+                                <StatRowWithChart label="Free Kicks" homeVal={homeStats.freeKicks || 0} awayVal={awayStats.freeKicks || 0} />
+                                <StatRowWithChart label="Throw-Ins" homeVal={homeStats.throws || 0} awayVal={awayStats.throws || 0} />
                                 {/* Field Zone Usage */}
                                 <div style={{ alignItems: 'center', padding: '0.8rem 0', borderBottom: '1px solid var(--border)' }} className="hidden md:flex">
                                     <div style={{ flex: 1 }}>
-                                        <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" possessionPct={matchData.teamStats.home.possession} />
+                                        <FieldZoneStackedBar teamId={matchData.homeTeamId} side="home" possessionPct={homeStats.possession || 0} />
                                     </div>
                                     <div style={{ width: '160px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>
                                         Field Zone
                                     </div>
                                     <div style={{ flex: 1 }}>
-                                        <FieldZoneStackedBar teamId={matchData.awayTeamId} side="away" possessionPct={matchData.teamStats.away.possession} />
+                                        <FieldZoneStackedBar teamId={matchData.awayTeamId} side="away" possessionPct={awayStats.possession || 0} />
                                     </div>
                                 </div>
                             </div>
@@ -1051,7 +1620,7 @@ function MatchContent() {
 
                         {activeTab === 'events' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} className="md:gap-3">
-                                {matchData.events.map((e: any, i: number) => {
+                                {syncedEvents.map((e: any, i: number) => {
                                     const getEventIcon = (type: string) => {
                                         switch (type) {
                                             case 'GOAL': return '⚽';
@@ -1075,8 +1644,8 @@ function MatchContent() {
                                         let awayScore = 0;
                                         // Count all goals before and including this one
                                         for (let j = 0; j <= i; j++) {
-                                            if (matchData.events[j].type === 'GOAL') {
-                                                if (matchData.events[j].teamId === matchData.homeTeamId) {
+                                            if (syncedEvents[j].type === 'GOAL') {
+                                                if (syncedEvents[j].teamId === matchData.homeTeamId) {
                                                     homeScore++;
                                                 } else {
                                                     awayScore++;
@@ -1117,7 +1686,7 @@ function MatchContent() {
                                                 alignItems: 'center',
                                                 gap: '8px',
                                                 padding: '6px 0',
-                                                borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                borderBottom: i < syncedEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
                                                 fontSize: '0.8rem'
                                             }} className="flex md:hidden">
                                                 <div style={{
@@ -1156,7 +1725,7 @@ function MatchContent() {
                                                 alignItems: 'center',
                                                 gap: '6px',
                                                 padding: '4px 0',
-                                                borderBottom: i < matchData.events.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                borderBottom: i < syncedEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
                                                 fontSize: '0.8rem'
                                             }} className="hidden md:flex md:gap-4 md:py-2 md:text-base">
                                                 {/* Left side - Home team events */}
@@ -1224,6 +1793,206 @@ function MatchContent() {
                             </div>
                         )}
 
+                        {activeTab === 'heatmap' && (
+                            <div style={{ width: '100%', maxWidth: '980px', margin: '0 auto' }}>
+                                {v2Replay ? (
+                                    <div>
+                                        <h3 style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                            Ball Possession Heatmap + Event Markers
+                                        </h3>
+
+                                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                                            <select
+                                                value={heatmapEventFilter}
+                                                onChange={(e) => setHeatmapEventFilter(e.target.value as 'all' | 'SHOT' | 'PASS' | 'DRIBBLE')}
+                                                style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.65rem', background: 'white' }}
+                                            >
+                                                <option value="all">Event: All</option>
+                                                <option value="SHOT">Event: Shoot</option>
+                                                <option value="PASS">Event: Pass</option>
+                                                <option value="DRIBBLE">Event: Dribble</option>
+                                            </select>
+
+                                            <select
+                                                value={heatmapTeamFilter}
+                                                onChange={(e) => setHeatmapTeamFilter(e.target.value as 'all' | 'home' | 'away')}
+                                                style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.65rem', background: 'white' }}
+                                            >
+                                                <option value="all">Team: All</option>
+                                                <option value="home">Team: {matchData.homeTeamName}</option>
+                                                <option value="away">Team: {matchData.awayTeamName}</option>
+                                            </select>
+
+                                            <select
+                                                value={heatmapPlayerFilter}
+                                                onChange={(e) => setHeatmapPlayerFilter(e.target.value)}
+                                                style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.65rem', background: 'white', minWidth: '220px' }}
+                                            >
+                                                <option value="all">Player: All</option>
+                                                {heatmapPlayerOptions.map((player) => (
+                                                    <option key={player.id} value={player.id}>
+                                                        {player.name} ({player.position})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        
+                                        {/* SVG Pitch with Heatmap (matches MatchCanvas FieldLayer geometry) */}
+                                        <svg viewBox="0 0 150 100" style={{ 
+                                            width: '100%', 
+                                            maxWidth: '900px', 
+                                            aspectRatio: '3 / 2',
+                                            margin: '0 auto', 
+                                            display: 'block',
+                                            backgroundColor: '#ffffff',
+                                            border: '2px solid #333'
+                                        }}>
+                                            {/* Field markings - same proportions as FieldLayer.tsx */}
+                                            <rect x="0" y="0" width="150" height="100" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <line x1="75" y1="0" x2="75" y2="100" stroke="#222" strokeWidth="0.35" />
+                                            <circle cx="75" cy="50" r="10" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <circle cx="75" cy="50" r="0.7" fill="#222" />
+
+                                            {/* Home penalty + goal area */}
+                                            <rect x="0" y="20" width="27" height="60" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <rect x="0" y="35" width="9" height="30" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <circle cx="18" cy="50" r="0.7" fill="#222" />
+
+                                            {/* Away penalty + goal area */}
+                                            <rect x="123" y="20" width="27" height="60" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <rect x="141" y="35" width="9" height="30" fill="none" stroke="#222" strokeWidth="0.35" />
+                                            <circle cx="132" cy="50" r="0.7" fill="#222" />
+
+                                            {/* Corner arcs */}
+                                            <circle cx="0" cy="0" r="2" fill="none" stroke="#222" strokeWidth="0.25" />
+                                            <circle cx="0" cy="100" r="2" fill="none" stroke="#222" strokeWidth="0.25" />
+                                            <circle cx="150" cy="0" r="2" fill="none" stroke="#222" strokeWidth="0.25" />
+                                            <circle cx="150" cy="100" r="2" fill="none" stroke="#222" strokeWidth="0.25" />
+                                            
+                                            {/* Heatmap cells by side (home=blue, away=red) */}
+                                            {heatmapData ? (
+                                                <>
+                                                    {Array.from({ length: heatmapData.gridSize * heatmapData.gridSize }).map((_, idx) => {
+                                                        const gx = idx % heatmapData.gridSize;
+                                                        const gy = Math.floor(idx / heatmapData.gridSize);
+                                                        const key = `${gx},${gy}`;
+                                                        const cellW = 100 / heatmapData.gridSize;
+                                                        const cellH = 100 / heatmapData.gridSize;
+                                                        const x = gx * cellW;
+                                                        const y = gy * cellH;
+                                                        const sx = x * 1.5;
+                                                        const sw = cellW * 1.5;
+
+                                                        const homeCount = heatmapData.homeGrid[key] || 0;
+                                                        const awayCount = heatmapData.awayGrid[key] || 0;
+                                                        const homeOpacity = Math.min(0.65, (homeCount / heatmapData.maxHome) * 0.65);
+                                                        const awayOpacity = Math.min(0.65, (awayCount / heatmapData.maxAway) * 0.65);
+
+                                                        const showHome = heatmapTeamFilter === 'all' || heatmapTeamFilter === 'home';
+                                                        const showAway = heatmapTeamFilter === 'all' || heatmapTeamFilter === 'away';
+                                                        const singleSideDensityMode = heatmapTeamFilter !== 'all' || heatmapPlayerFilter !== 'all';
+
+                                                        return (
+                                                            <g key={key}>
+                                                                {singleSideDensityMode && showHome && homeOpacity > 0 && (
+                                                                    <rect
+                                                                        x={sx}
+                                                                        y={y}
+                                                                        width={sw}
+                                                                        height={cellH}
+                                                                        fill={`rgba(59, 130, 246, ${Math.min(0.75, homeOpacity + 0.08)})`}
+                                                                    />
+                                                                )}
+                                                                {singleSideDensityMode && showAway && awayOpacity > 0 && (
+                                                                    <rect
+                                                                        x={sx}
+                                                                        y={y}
+                                                                        width={sw}
+                                                                        height={cellH}
+                                                                        fill={`rgba(239, 68, 68, ${Math.min(0.75, awayOpacity + 0.08)})`}
+                                                                    />
+                                                                )}
+                                                                {!singleSideDensityMode && showHome && homeOpacity > 0 && (
+                                                                    <rect
+                                                                        x={sx}
+                                                                        y={y}
+                                                                        width={sw}
+                                                                        height={cellH / 2}
+                                                                        fill={`rgba(59, 130, 246, ${homeOpacity})`}
+                                                                    />
+                                                                )}
+                                                                {!singleSideDensityMode && showAway && awayOpacity > 0 && (
+                                                                    <rect
+                                                                        x={sx}
+                                                                        y={y + cellH / 2}
+                                                                        width={sw}
+                                                                        height={cellH / 2}
+                                                                        fill={`rgba(239, 68, 68, ${awayOpacity})`}
+                                                                    />
+                                                                )}
+                                                            </g>
+                                                        );
+                                                    })}
+
+                                                    {/* Event markers */}
+                                                    {heatmapData.filteredEvents.map((ev, i) => {
+                                                        const xPos = (ev.position?.x ?? 50) * 1.5;
+                                                        const yPos = ev.position?.y ?? 50;
+                                                        const markerColor = ev.teamId === matchData.homeTeamId ? '#3b82f6' : '#ef4444';
+
+                                                        if (ev.type === 'GOAL') {
+                                                            return (
+                                                                <g key={`goal_${i}`}>
+                                                                    <circle cx={xPos} cy={yPos} r="1.8" fill="#fbbf24" stroke="#7c2d12" strokeWidth="0.45" />
+                                                                    <circle cx={xPos} cy={yPos} r="0.55" fill="#fff7d6" />
+                                                                </g>
+                                                            );
+                                                        }
+
+                                                        const glyph = ev.type === 'SHOT' ? 'S' : ev.type === 'PASS' ? 'P' : 'D';
+                                                        return (
+                                                            <g key={`ev_${i}`}>
+                                                                <circle cx={xPos} cy={yPos} r="1.2" fill={markerColor} stroke="#333" strokeWidth="0.35" />
+                                                                <text x={xPos} y={yPos + 0.45} textAnchor="middle" fill="white" fontSize="0.9" fontWeight="700">{glyph}</text>
+                                                            </g>
+                                                        );
+                                                    })}
+                                                </>
+                                            ) : (
+                                                <text x="50" y="50" textAnchor="middle" fill="white" fontSize="4">
+                                                    No data
+                                                </text>
+                                            )}
+                                        </svg>
+                                        
+                                        {/* Legend */}
+                                        <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center', marginTop: '1.5rem', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: '16px', height: '8px', backgroundColor: 'rgba(59, 130, 246, 0.6)', borderRadius: '2px' }} />
+                                                <span>{matchData.homeTeamName} Possession</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: '16px', height: '8px', backgroundColor: 'rgba(239, 68, 68, 0.6)', borderRadius: '2px' }} />
+                                                <span>{matchData.awayTeamName} Possession</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: '16px', height: '16px', backgroundColor: '#fbbf24', borderRadius: '50%', border: '1px solid #7c2d12' }} />
+                                                <span>Goal Marker (Gold)</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: '16px', height: '16px', backgroundColor: '#111827', borderRadius: '50%', border: '1px solid #fff' }} />
+                                                <span>Event Markers: S / P / D</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)' }}>
+                                        Loading heatmap...
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {(activeTab === 'home' || activeTab === 'away') && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {/* Desktop header */}
@@ -1260,7 +2029,7 @@ function MatchContent() {
                                     const trustCurrentTacticalPositions = !matchData.isPlayed;
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
-                                    const allPlayers = Object.values(matchData.playerStats || {}) as any[];
+                                    const allPlayers = Object.values(syncedPlayerStats || {}) as any[];
                                     const teamPlayers = allPlayers.filter((p: any) => String(p.teamId || '') === String(teamId || '')) as any[];
 
                                     // Backward-compat fallback: some legacy rows may miss teamId.
@@ -1323,7 +2092,7 @@ function MatchContent() {
                                         }
                                     }
 
-                                    const subEvents = (matchData.events || [])
+                                    const subEvents = (syncedEvents || [])
                                         .filter((e: any) => e.teamId === teamId && e.type === 'SUB')
                                         .sort((a: any, b: any) => (a.minute || 0) - (b.minute || 0));
 

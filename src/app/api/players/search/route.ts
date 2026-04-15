@@ -91,6 +91,7 @@ export async function GET() {
                 popularity: player.popularity,
                 contractEndWeek: player.contractEndWeek,
                 teamId: player.teamId,
+                jerseyNumber: player.jerseyNumber ?? null,
                 teamName: player.team?.name || 'Unknown',
                 teamReputation: player.team?.reputation || 50,
                 transferStatus: player.transferStatus || 'NOT_LISTED', // Ensure it's always set

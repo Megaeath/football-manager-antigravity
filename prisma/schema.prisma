@@ -27,6 +27,7 @@ model GlobalGameSettings {
   userTeamId        String?
   lastExpDecayMonth Int      @default(0)
   yellowSuspensionThreshold Int @default(4)
+  enableMatch2D     Boolean  @default(false) // V2 engine with 2D spatial simulation
 }
 
 model SeasonHistory {
@@ -156,6 +157,7 @@ model Player {
   injuryWeeksRemaining Int @default(0)
   injurySeverity   String?
   tacticalPosition String? // E.g. "GK", "DR", "DC_L", "DC_R", "FW_L", "FW_R" - if null, not starting
+  jerseyNumber     Int?    // Squad number within team (unique per team)
 
   // Player Role System
   playerRole          String? // NULL = no role assigned | Values: "PLAYMAKER", "TARGET_MAN", etc.
@@ -220,6 +222,7 @@ model Player {
   @@index([teamId, attackingRolePreset, isRetired])
   @@index([teamId, defensiveRolePreset, isRetired])
   @@index([teamId, suspensionMatchesRemaining, injuryWeeksRemaining])
+  @@unique([teamId, jerseyNumber])
 }
 
 model TrainingAssignment {
