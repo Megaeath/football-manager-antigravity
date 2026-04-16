@@ -3,6 +3,18 @@ import prisma from '@/lib/prisma';
 import { calculateMatchExp, applyAgeEfficiency } from '@/lib/engine/experience';
 import { processMatch, processMatchFinancials } from '@/lib/services/matchSimulator';
 
+const LEGACY_SIMULATION_EVENT_TYPES = new Set([
+    'GOAL',
+    'SHOT',
+    'FOUL',
+    'FREE_KICK',
+    'CARD_YELLOW',
+    'CARD_RED',
+    'THROW_IN',
+    'CORNER',
+    'SUB'
+]);
+
 function calculateAdjustedDisplayRating(ps: any, match: any, foulCountOverride?: number): number {
     // Players who did not play should not be performance-rated
     if ((ps.minutes || 0) <= 0) return 6.0;
@@ -112,17 +124,28 @@ export async function GET(
             foulCountByTeamId.set(log.teamId, (foulCountByTeamId.get(log.teamId) || 0) + 1);
         }
 
+        const hasLegacyZeroBasedSimulationMinute = (match?.events || []).some((event: any) => {
+            const minute = Number(event?.minute);
+            const type = String(event?.type || '').toUpperCase();
+            return minute === 0 && LEGACY_SIMULATION_EVENT_TYPES.has(type);
+        });
+
         // Fetch player names for events
         const eventsWithPlayers = await Promise.all(
             (match?.events || []).map(async (event: any) => {
+                const eventType = String(event?.type || '').toUpperCase();
+                const normalizedMinute = hasLegacyZeroBasedSimulationMinute && LEGACY_SIMULATION_EVENT_TYPES.has(eventType)
+                    ? Math.min(90, Math.max(1, Number(event?.minute ?? 0) + 1))
+                    : event?.minute;
+
                 if (event.playerId) {
                     const player = await prisma.player.findUnique({
                         where: { id: event.playerId },
                         select: { name: true }
                     });
-                    return { ...event, playerName: player?.name || 'Unknown' };
+                    return { ...event, minute: normalizedMinute, playerName: player?.name || 'Unknown' };
                 }
-                return event;
+                return { ...event, minute: normalizedMinute };
             })
         );
 

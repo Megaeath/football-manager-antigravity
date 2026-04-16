@@ -6,7 +6,7 @@
  * with the classic engine.
  */
 
-import type { TeamMatchStats, TeamState } from '../types';
+import type { TeamMatchStats, TeamState, PlayerActionLog } from '../types';
 import type {
     BallTransition,
     MatchFrame,
@@ -38,7 +38,7 @@ import { V2TelemetryCollector, buildFrameDebug } from './telemetry';
 import { BASE_DIRECT_RED_CHANCE, BASE_YELLOW_CARD_CHANCE, clamp } from '../../constants/disciplineInjury';
 import { createSeededRandom, runWithV2Random, v2Random } from './random';
 
-const TICKS_PER_MINUTE = 60;
+const TICKS_PER_MINUTE = TUNING_PARAMS.simulationTicksPerMinute;
 const TOTAL_MINUTES = 90;
 const TOTAL_TICKS = TOTAL_MINUTES * TICKS_PER_MINUTE;
 
@@ -108,6 +108,38 @@ function createEmptyTeamStats(): TeamMatchStats {
         dribblesAttempted: 0,
         dribblesWon: 0,
     };
+}
+
+function getZoneFromBallPosition(ballPosition: number): 'DEFENSIVE' | 'MIDDLE' | 'ATTACKING' {
+    if (ballPosition <= 30) return 'DEFENSIVE';
+    if (ballPosition <= 70) return 'MIDDLE';
+    return 'ATTACKING';
+}
+
+function resolveEventResult(event: VisualEvent): string {
+    if (event.type === 'GOAL') return 'GOAL';
+    if (event.type === 'SHOT') {
+        const reason = String(event.metadata?.reason || '').toUpperCase();
+        if (reason.startsWith('OFF_TARGET')) return 'OFF_TARGET';
+        if (reason.startsWith('SAVED')) return 'SAVED';
+        if (reason.startsWith('BLOCK')) return 'BLOCKED';
+        return 'FAIL';
+    }
+    if (event.type === 'PASS' || event.type === 'DRIBBLE' || event.type === 'TACKLE' || event.type === 'SAVE') {
+        return event.metadata?.success === false ? 'FAIL' : 'SUCCESS';
+    }
+    return 'SUCCESS';
+}
+
+function resolveEventTrickGroup(eventType: string): string {
+    const type = String(eventType || '').toUpperCase();
+    if (type.includes('PASS')) return 'PASS';
+    if (type.includes('SHOT') || type === 'GOAL' || type === 'SAVE') return 'SHOT';
+    if (type.includes('DRIBBLE')) return 'DRIBBLE';
+    if (type.includes('TACKLE') || type.includes('INTERCEPTION')) return 'DEFENSE';
+    if (type.includes('CARD') || type === 'FREE_KICK' || type === 'CORNER' || type === 'THROW_IN') return 'SET_PIECE';
+    if (type.includes('SUB')) return 'SUBSTITUTION';
+    return 'EVENT';
 }
 
 function createV2Player(player: TeamState['players'][number], side: TeamKey, fallback: SpatialPosition): V2PlayerState {
@@ -891,16 +923,128 @@ function attemptV2Substitutions(
     return subsUsed;
 }
 
-function getSetPieceTaker(players: V2PlayerState[], kind: 'THROW' | 'CORNER'): V2PlayerState | null {
+function getSetPieceTaker(players: V2PlayerState[], kind: 'THROW' | 'CORNER' | 'FREE_KICK'): V2PlayerState | null {
     const onField = players.filter((p) => isPlayerActive(p));
     if (onField.length === 0) return null;
+
+    if (kind === 'THROW') {
+        const isPreferredThrowRole = (p: V2PlayerState) => {
+            const role = String(p.position || '').toUpperCase();
+            return role === 'DR' || role === 'DL' || role === 'DMR' || role === 'DML';
+        };
+
+        const preferred = onField.filter((p) => isPreferredThrowRole(p));
+        const highThrow = onField.filter((p) => (p.attributes.throw || 0) >= 13);
+        const candidates = preferred.length > 0 ? preferred : (highThrow.length > 0 ? highThrow : onField);
+
+        return [...candidates].sort((a, b) => {
+            const aRoleBonus = isPreferredThrowRole(a) ? 4 : 0;
+            const bRoleBonus = isPreferredThrowRole(b) ? 4 : 0;
+            const aScore = (a.attributes.throw || 0) + (a.attributes.passing || 0) * 0.35 + aRoleBonus;
+            const bScore = (b.attributes.throw || 0) + (b.attributes.passing || 0) * 0.35 + bRoleBonus;
+            return bScore - aScore;
+        })[0] || null;
+    }
+
     const sorted = [...onField].sort((a, b) => {
-        if (kind === 'THROW') {
-            return (b.attributes.throw || 0) - (a.attributes.throw || 0);
+        if (kind === 'CORNER') {
+            return (b.attributes.setPieces + b.attributes.crossing) - (a.attributes.setPieces + a.attributes.crossing);
         }
-        return (b.attributes.setPieces + b.attributes.crossing) - (a.attributes.setPieces + a.attributes.crossing);
+        return (b.attributes.setPieces + b.attributes.passing + b.attributes.shooting) - (a.attributes.setPieces + a.attributes.passing + a.attributes.shooting);
     });
     return sorted[0] || null;
+}
+
+function pickCornerBoxTarget(players: V2PlayerState[], takerId?: string): V2PlayerState | null {
+    const onField = players.filter((p) => isPlayerActive(p) && p.id !== takerId);
+    if (onField.length === 0) return null;
+
+    const preferred = onField.filter((p) => {
+        const role = String(p.position || '').toUpperCase();
+        return role === 'DC' || role === 'DCL' || role === 'DCR' || role === 'FWC' || role === 'FWR' || role === 'FWL';
+    });
+    const candidates = preferred.length > 0 ? preferred : onField;
+
+    return [...candidates].sort((a, b) => {
+        const aScore = (a.attributes.heading || 0) * 0.55 + (a.attributes.positioning || 0) * 0.3 + (a.attributes.bravery || 0) * 0.15;
+        const bScore = (b.attributes.heading || 0) * 0.55 + (b.attributes.positioning || 0) * 0.3 + (b.attributes.bravery || 0) * 0.15;
+        return bScore - aScore;
+    })[0] || null;
+}
+
+function applyCornerBoxShape(awardSide: TeamKey, players: V2PlayerState[], takerId?: string): void {
+    const attackers = players
+        .filter((p) => isPlayerActive(p) && p.id !== takerId)
+        .filter((p) => {
+            const role = String(p.position || '').toUpperCase();
+            return role === 'DC' || role === 'DCL' || role === 'DCR' || role === 'FWC' || role === 'FWR' || role === 'FWL';
+        })
+        .sort((a, b) => ((b.attributes.heading || 0) + (b.attributes.positioning || 0)) - ((a.attributes.heading || 0) + (a.attributes.positioning || 0)))
+        .slice(0, 4);
+
+    const anchorX = awardSide === 'home' ? 90 : 10;
+    const ySlots = [40, 47, 53, 60];
+    attackers.forEach((player, idx) => {
+        player.position2D = clampToField({ x: anchorX + (awardSide === 'home' ? idx * 0.8 : -idx * 0.8), y: ySlots[idx] ?? 50 });
+    });
+}
+
+function resolveFreeKickRestartV2(
+    awardSide: TeamKey,
+    minute: number,
+    foulPosition: SpatialPosition,
+    homeTeam: TeamState,
+    awayTeam: TeamState,
+    homePlayers: V2PlayerState[],
+    awayPlayers: V2PlayerState[],
+): {
+    possession: TeamKey;
+    carrier: V2PlayerState | null;
+    position: SpatialPosition;
+    text: string;
+} {
+    const attackingTeam = awardSide === 'home' ? homeTeam : awayTeam;
+    const players = awardSide === 'home' ? homePlayers : awayPlayers;
+    const taker = getSetPieceTaker(players, 'FREE_KICK') || pickOnFieldTarget(players);
+    if (!taker) {
+        return {
+            possession: awardSide,
+            carrier: null,
+            position: { ...foulPosition },
+            text: `Free kick for ${attackingTeam.name}.`,
+        };
+    }
+
+    const distanceToGoal = awardSide === 'home'
+        ? Math.max(0, FIELD.LENGTH - foulPosition.x)
+        : Math.max(0, foulPosition.x);
+
+    // In shooting range -> taker keeps the ball for direct attempt next decision tick.
+    if (distanceToGoal <= 24) {
+        taker.position2D = { ...foulPosition };
+        return {
+            possession: awardSide,
+            carrier: taker,
+            position: { ...foulPosition },
+            text: `${taker.name} stands over a direct free kick.`,
+        };
+    }
+
+    // Too far to shoot -> long delivery into the box.
+    const target = pickCornerBoxTarget(players, taker.id) || pickOnFieldTarget(players, taker.id) || taker;
+    const deliveredPosition = clampToField({
+        x: awardSide === 'home' ? Math.max(78, target.position2D.x) : Math.min(22, target.position2D.x),
+        y: target.position2D.y,
+    });
+
+    target.position2D = deliveredPosition;
+
+    return {
+        possession: awardSide,
+        carrier: target,
+        position: deliveredPosition,
+        text: `${taker.name} swings a long free kick into the box.`,
+    };
 }
 
 function getDisciplineProfileV2(defender: V2PlayerState, team: TeamState) {
@@ -1142,7 +1286,9 @@ function executeCornerV2(
         playerId: taker.id,
     });
 
-    const receiver = pickOnFieldTarget(players, taker.id) || taker;
+    // Bring key aerial targets (DC/FW) into the box before delivery.
+    applyCornerBoxShape(awardSide, players, taker.id);
+    const receiver = pickCornerBoxTarget(players, taker.id) || pickOnFieldTarget(players, taker.id) || taker;
     const cornerSpot: SpatialPosition = awardSide === 'home'
         ? { x: 96, y: ballPos.y < FIELD.WIDTH / 2 ? 4 : FIELD.WIDTH - 4 }
         : { x: 4, y: ballPos.y < FIELD.WIDTH / 2 ? 4 : FIELD.WIDTH - 4 };
@@ -1368,8 +1514,8 @@ export function simulateMatch2D(
             awayTeam.tactics.mentality,
         );
         
-        // Debug telemetry: Log team context every 120 ticks (10 minutes)
-        if (absoluteTick % 120 === 0) {
+        // Debug telemetry: Log team context every 10 minutes
+        if (absoluteTick % (TICKS_PER_MINUTE * 10) === 0) {
             console.log(`[V2-Phase1] Minute ${minute}: Home phase=${teamContexts.home.phase} pressure=${teamContexts.home.pressure} line=${teamContexts.home.lineHeight} | Away phase=${teamContexts.away.phase} pressure=${teamContexts.away.pressure} line=${teamContexts.away.lineHeight}`);
         }
 
@@ -1535,7 +1681,7 @@ export function simulateMatch2D(
         applyTeamSpacingGuard(activeHomePlayers, TUNING_PARAMS.minTeammateDistance);
         applyTeamSpacingGuard(activeAwayPlayers, TUNING_PARAMS.minTeammateDistance);
         
-        // Phase 2.4: Movement telemetry - log intents every 60 ticks (5 minutes)
+        // Phase 2.4: Movement telemetry - log intents on config interval
         if (absoluteTick % TUNING_PARAMS.telemetryLogIntervalTicks === 0 && carrier) {
             const teamKey = possession as 'home' | 'away';
             const intents = teamKey === 'home' ? homeIntents : awayIntents;
@@ -1710,9 +1856,26 @@ export function simulateMatch2D(
 
                     playerStats[carrier.id].freeKicks += 1;
                     teamStats[possession].freeKicks += 1;
-                    ball.possession = possession;
-                    ball.carrier = carrier;
-                    ball.position = { ...carrier.position2D };
+                    const freeKickRestart = resolveFreeKickRestartV2(
+                        possession,
+                        minute,
+                        { ...carrier.position2D },
+                        homeTeam,
+                        awayTeam,
+                        homePlayers,
+                        awayPlayers,
+                    );
+                    carrier = freeKickRestart.carrier;
+                    ball.possession = freeKickRestart.possession;
+                    ball.carrier = freeKickRestart.carrier;
+                    ball.position = { ...freeKickRestart.position };
+                    events.push({
+                        minute,
+                        type: 'FREE_KICK',
+                        text: freeKickRestart.text,
+                        teamId: possession === 'home' ? homeTeam.id : awayTeam.id,
+                        playerId: freeKickRestart.carrier?.id,
+                    });
                     continue;
                 }
 
@@ -1724,7 +1887,7 @@ export function simulateMatch2D(
                     carrier = tackler;
                     ball.possession = possession;
                     ball.carrier = carrier;
-                    if (absoluteTick % 60 === 0) {
+                    if (absoluteTick % TICKS_PER_MINUTE === 0) {
                         console.log(`[V2-Phase3] Minute ${minute}: TACKLE WON by ${tackler.position} (tackling=${defTackling}) vs ${carrier.position}`);
                     }
                     // Skip action this tick — possession just changed
@@ -1900,10 +2063,26 @@ export function simulateMatch2D(
                                     const attackingTeamKey: TeamKey = possession;
                                     playerStats[action.from.id].freeKicks += 1;
                                     teamStats[attackingTeamKey].freeKicks += 1;
-                                    carrier = action.from;
-                                    ball.possession = attackingTeamKey;
-                                    ball.carrier = carrier;
-                                    ball.position = { ...action.from.position2D };
+                                    const freeKickRestart = resolveFreeKickRestartV2(
+                                        attackingTeamKey,
+                                        minute,
+                                        { ...action.from.position2D },
+                                        homeTeam,
+                                        awayTeam,
+                                        homePlayers,
+                                        awayPlayers,
+                                    );
+                                    carrier = freeKickRestart.carrier;
+                                    ball.possession = freeKickRestart.possession;
+                                    ball.carrier = freeKickRestart.carrier;
+                                    ball.position = { ...freeKickRestart.position };
+                                    events.push({
+                                        minute,
+                                        type: 'FREE_KICK',
+                                        text: freeKickRestart.text,
+                                        teamId: attackingTeamKey === 'home' ? homeTeam.id : awayTeam.id,
+                                        playerId: freeKickRestart.carrier?.id,
+                                    });
                                     continue;
                                 }
 
@@ -1982,7 +2161,7 @@ export function simulateMatch2D(
                     const midY: number = (action.from.position2D.y + action.to.position2D.y) / 2;
                     const interceptor: V2PlayerState | undefined = findNearbyPlayers({ x: midX, y: midY }, defendingPlayers, 8)[0] ?? defendingPlayers[0];
                     if (interceptor) {
-                        if (absoluteTick % 60 === 0) {
+                        if (absoluteTick % TICKS_PER_MINUTE === 0) {
                             console.log(`[V2-Phase3] Minute ${minute}: INTERCEPTION by ${interceptor.position} (risk=${(interceptRisk * 100).toFixed(0)}%)`);
                         }
                         possession = possession === 'home' ? 'away' : 'home';
@@ -2256,8 +2435,8 @@ export function simulateMatch2D(
                         ? `⚽ GOAL! ${action.from.name} scores! (${shotDistance}m)`
                         : shotOutcome.outcome === 'SAVED'
                             ? shotOutcome.saveType === 'PARRY'
-                                ? `🧤 ${action.goalkeeper?.name || 'Goalkeeper'} parries - rebound! (${shotDistance}m)`
-                                : `🧤 Saved by ${action.goalkeeper?.name || 'goalkeeper'} (${shotDistance}m)`
+                                ? `🧤 ${action.goalkeeper?.name || 'Goalkeeper'} parries (shot by ${action.from.name}, ${shotDistance}m)`
+                                : `🧤 Saved by ${action.goalkeeper?.name || 'Goalkeeper'} (shot by ${action.from.name}, ${shotDistance}m)`
                             : `❌ ${action.from.name} fires wide (${shotDistance}m)`,
                     teamId: attackingTeamId,
                     playerId: action.from.id,
@@ -2425,6 +2604,111 @@ export function simulateMatch2D(
     teamStats.home = aggregateTeamStats(homeTeam.id);
     teamStats.away = aggregateTeamStats(awayTeam.id);
 
+    const teamIdByPlayerId = new Map<string, string>();
+    Object.values(playerStats).forEach((stat) => {
+        teamIdByPlayerId.set(stat.playerId, stat.teamId);
+    });
+
+    const v2ActionLogs: PlayerActionLog[] = [];
+    frames.forEach((frame) => {
+        const minute = Math.max(1, Number(frame.minute || 0) + 1);
+        const tick = Number(frame.tick || 0);
+        let sequence = 0;
+
+        // One compact movement snapshot record per tick (all on-field players in metadata).
+        const ballX = Number(frame.ball.position?.x ?? 50);
+        const ballY = Number(frame.ball.position?.y ?? 50);
+        const ballPosition = Math.max(0, Math.min(100, Math.round(ballX)));
+        const homeTeamPlayers = Object.entries(frame.playerPositions || {})
+            .filter(([playerId]) => teamIdByPlayerId.get(playerId) === homeTeam.id)
+            .map(([playerId, position]) => ({
+                playerId,
+                role: (playerStats[playerId]?.position || 'UNK'),
+                x: Number(position.x),
+                y: Number(position.y),
+            }));
+        const awayTeamPlayers = Object.entries(frame.playerPositions || {})
+            .filter(([playerId]) => teamIdByPlayerId.get(playerId) === awayTeam.id)
+            .map(([playerId, position]) => ({
+                playerId,
+                role: (playerStats[playerId]?.position || 'UNK'),
+                x: Number(position.x),
+                y: Number(position.y),
+            }));
+
+        const snapshotPlayerId = frame.ball?.carrier?.id
+            || homeTeamPlayers[0]?.playerId
+            || awayTeamPlayers[0]?.playerId;
+        const snapshotTeamId = snapshotPlayerId ? teamIdByPlayerId.get(snapshotPlayerId) : undefined;
+        if (snapshotPlayerId && snapshotTeamId) {
+            v2ActionLogs.push({
+                playerId: snapshotPlayerId,
+                teamId: snapshotTeamId,
+                minute,
+                snapshotMinute: minute,
+                tick,
+                sequence: sequence++,
+                logType: 'MOVEMENT',
+                x: ballX,
+                y: ballY,
+                ballPosition,
+                zone: getZoneFromBallPosition(ballPosition),
+                actionType: 'TICK_SNAPSHOT',
+                trickGroup: 'MOVEMENT',
+                trick: 'TEAM_POSITIONS',
+                result: 'TRACK',
+                isSuccessful: true,
+                metadata: JSON.stringify({
+                    source: 'V2_TICK_SNAPSHOT',
+                    home_team: homeTeamPlayers,
+                    away_team: awayTeamPlayers,
+                    carrierPlayerId: frame.ball?.carrier?.id || null,
+                }),
+            });
+        }
+
+        (frame.events || []).forEach((event) => {
+            if (!event.playerId || !event.teamId) return;
+
+            // x/y in PlayerActionLog are reserved for BALL position only.
+            const x = ballX;
+            const y = ballY;
+            const eventBallPosition = Math.max(0, Math.min(100, Math.round(x)));
+            const eventResult = resolveEventResult(event);
+
+            v2ActionLogs.push({
+                playerId: event.playerId,
+                teamId: String(event.teamId),
+                minute,
+                snapshotMinute: minute,
+                tick,
+                sequence: sequence++,
+                logType: 'ACTION',
+                x,
+                y,
+                ballPosition: eventBallPosition,
+                zone: getZoneFromBallPosition(eventBallPosition),
+                actionType: String(event.type || 'EVENT'),
+                trickGroup: resolveEventTrickGroup(String(event.type || 'EVENT')),
+                trick: String(event.type || 'EVENT'),
+                result: eventResult,
+                isSuccessful: eventResult === 'SUCCESS' || eventResult === 'GOAL',
+                expectedSuccessRate: undefined,
+                targetPlayerId: event.targetPlayerId,
+                metadata: JSON.stringify({
+                    source: 'V2_FRAME_EVENT',
+                    eventId: event.id,
+                    eventType: event.type,
+                    eventMinute: event.minute,
+                    frameTick: event.tick,
+                    reason: event.metadata?.reason,
+                    success: event.metadata?.success,
+                    distance: event.metadata?.distance,
+                }),
+            });
+        });
+    });
+
     return {
         minute: TOTAL_MINUTES,
         homeScore,
@@ -2433,7 +2717,7 @@ export function simulateMatch2D(
         awayTeamId: awayTeam.id,
         teamStats,
         events,
-        actionLogs: [],
+        actionLogs: v2ActionLogs,
         isFinished: true,
         playerStats,
         frames,

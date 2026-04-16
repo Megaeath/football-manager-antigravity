@@ -473,9 +473,9 @@ export const LAZY_UPDATE = {
  * Keep values conservative to avoid replay instability.
  */
 export const TUNING_PARAMS = {
-    // Simulation cadence (V2 loop = 30 ticks/min = 2 sec/tick)
-    simulationTicksPerMinute: 30,
-    movementTickSeconds: 2.0,
+    // Simulation cadence (strict spec: 10 ticks/min = 6 sec/tick)
+    simulationTicksPerMinute: 10,
+    movementTickSeconds: 6.0,
     // Defender tackle bonus (applied in match2d)
     defenderTackleBonus: DEFENDER_TACKLE_BONUS,
 
@@ -506,8 +506,8 @@ export const TUNING_PARAMS = {
     telemetryLogIntervalTicks: 300,
     telemetryPassSampleLimit: 160,
 
-    // Carrier action cadence (used to keep 60 tick loop stable and readable)
-    actionDecisionIntervalTicks: 4,
+    // Carrier action cadence (evaluate every tick)
+    actionDecisionIntervalTicks: 1,
 
     // Anti-collapse
     minTeammateDistance: 3.2,

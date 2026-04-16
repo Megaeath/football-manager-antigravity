@@ -56,6 +56,7 @@
 **Notes**:
 
 - Route นี้เป็น source of truth สำหรับ score, events, player stats, และ team stats บนหน้า `/match`
+- `events[].minute` เป็น canonical match minute แบบ `1..90` (ไม่ใช่ zero-based)
 - ถ้าเป็นแมตช์ `AI vs AI` ที่ยังไม่ถูกเล่น แต่ถูกเปิดเข้ามาดูตรง ๆ route นี้จะ process แมตช์นั้นก่อน แล้วค่อยคืน persisted result/stats กลับไป
 
 ---
@@ -69,6 +70,7 @@
 **Input Query**:
 
 - `playerId` (optional) - filter เฉพาะนักเตะ
+- `snapshotMinute` (optional) - filter เฉพาะ canonical minute (`1..90`) เพื่อดึง tick ทั้งหมดของนาทีนั้นสำหรับ replay sync
 
 **Output**:
 
@@ -88,26 +90,34 @@
     }
   },
   "rawLogs": [
-          "events": [],
-          "ballTransitions": [
-            {
-              "type": "PASS",
-              "fromPosition": { "x": 48, "y": 41 },
-              "toPosition": { "x": 58, "y": 45 },
-              "trajectory": [{ "x": 48, "y": 41 }, { "x": 52, "y": 43 }, { "x": 58, "y": 45 }],
-              "duration": 8,
-              "ballHeight": "low",
-              "success": true
-            }
-          ]
+    {
       "minute": 37,
+      "tick": 12,
+      "sequence": 4,
+      "logType": "ACTION",
+      "x": 58,
+      "y": 45,
       "ballPosition": 64,
-      "visualEvents": [],
-      "ballTransitions": []
       "actionType": "PASS_SHORT",
+      "trickGroup": "PASS",
+      "trick": "PASS",
       "result": "SUCCESS",
       "isSuccessful": true,
       "expectedSuccessRate": 0.78
+    },
+    {
+      "minute": 37,
+      "tick": 12,
+      "sequence": 5,
+      "logType": "MOVEMENT",
+      "x": 59,
+      "y": 44,
+      "ballPosition": 65,
+      "actionType": "MOVEMENT",
+      "trickGroup": "MOVEMENT",
+      "trick": "POSITION_SAMPLE",
+      "result": "TRACK",
+      "isSuccessful": true
     }
   ]
 }
@@ -116,6 +126,14 @@
 **Calls**:
 
 - `playerActionLog.findMany()`
+
+**Notes**:
+
+- Log rows are returned in deterministic timeline order: `minute ASC` → `tick ASC` → `sequence ASC` (fallback to legacy ordering if old schema/client is still used)
+- `logType` separates high-frequency movement samples (`MOVEMENT`) from incident/action rows (`ACTION`)
+- Tick-level fields (`tick`, `sequence`, `x`, `y`, `trickGroup`, `trick`) support 1:1 replay reconstruction from persisted logs
+- `x` / `y` in `PlayerActionLog` are now reserved for **BALL position only**
+- For per-tick player movement, route can return compact snapshot rows (`actionType = TICK_SNAPSHOT`) where all on-field players are grouped in `metadata`
 
 ---
 
@@ -247,6 +265,7 @@
 **Notes**:
 
 - Replay frames may include `ballTransitions` for smooth pass/shot travel on the canvas
+- V2 simulation cadence is config-driven and currently runs at `10 ticks/minute`
 - Saved shots stay visible by ending the trajectory at the goalkeeper instead of instantly snapping possession
 - Replay frames may include `debug` overlay payload (intent vectors + defensive assignment) for V2 tuning mode
 - Top-level `telemetry.engineSummary` mirrors replay telemetry summary for quick API-side diagnostics

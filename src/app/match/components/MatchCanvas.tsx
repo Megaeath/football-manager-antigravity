@@ -15,7 +15,8 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Stage, Layer } from 'react-konva';
-import type { V2MatchState, MatchFrame } from '@/lib/engine/v2/types2d';
+import type { V2MatchState, MatchFrame, BallTransition } from '@/lib/engine/v2/types2d';
+import { TUNING_PARAMS } from '@/lib/engine/v2/config';
 import { FieldLayer } from './FieldLayer';
 import { PlayersLayer } from './PlayersLayer';
 import { BallLayer } from './BallLayer';
@@ -71,9 +72,9 @@ type HighlightStoryWindow = {
     endIndex: number;
 };
 
-function createHighlightStoryWindow(highlightIndex: number, totalFrames: number): HighlightStoryWindow {
-    // Pre-roll: random 1-2 minutes (60-120 ticks)
-    const preRollSeconds = 60 + Math.floor(Math.random() * 61);
+function createHighlightStoryWindow(highlightIndex: number, totalFrames: number, ticksPerMinute: number): HighlightStoryWindow {
+    // Pre-roll: random 1-2 minutes (config-driven ticks)
+    const preRollSeconds = ticksPerMinute + Math.floor(Math.random() * (ticksPerMinute + 1));
     // Post-roll: random 10-20 seconds (10-20 ticks)
     const postRollSeconds = 10 + Math.floor(Math.random() * 11);
 
@@ -148,6 +149,20 @@ function interpolateFrame(currentFrame: MatchFrame, nextFrame?: MatchFrame, alph
 interface MatchCanvasProps {
     matchData: V2MatchState;
     authoritativeEvents?: Array<{ type: string; teamId?: string | null; minute: number; playerId?: string; playerName?: string; text?: string }>;
+    authoritativeRawLogs?: Array<{
+        minute?: number;
+        snapshotMinute?: number;
+        tick?: number;
+        sequence?: number;
+        teamId?: string;
+        playerId?: string;
+        actionType?: string;
+        result?: string;
+        x?: number | null;
+        y?: number | null;
+        metadata?: any;
+    }>;
+    preferAuthoritativeEvents?: boolean;
     width?: number;
     height?: number;
     onFrameChange?: (payload: {
@@ -178,9 +193,32 @@ export interface MatchCanvasControls {
     onReset: () => void;
 }
 
+function actionTypesForAuthoritativeEvent(type: string): string[] {
+    switch (canonicalizeAuthoritativeType(type)) {
+        case 'GOAL':
+            return ['GOAL'];
+        case 'SHOT':
+            return ['SHOT', 'SHOOT'];
+        case 'PASS':
+            return ['PASS', 'PASS_SHORT', 'PASS_LONG'];
+        case 'DRIBBLE':
+            return ['DRIBBLE'];
+        case 'YELLOW_CARD':
+            return ['CARD_YELLOW', 'YELLOW_CARD'];
+        case 'RED_CARD':
+            return ['CARD_RED', 'RED_CARD'];
+        case 'FREE_KICK':
+            return ['FOUL', 'FREE_KICK'];
+        default:
+            return [String(type || '').toUpperCase()];
+    }
+}
+
 export function MatchCanvas({
     matchData,
     authoritativeEvents = [],
+    authoritativeRawLogs = [],
+    preferAuthoritativeEvents = false,
     width = 900,
     height = 600,
     onFrameChange,
@@ -231,7 +269,7 @@ export function MatchCanvas({
         // Playback state
     const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [playbackSpeed, setPlaybackSpeed] = useState(2.0); // default 2x — at 60 ticks/min, 1x is real-time (too slow)
+    const [playbackSpeed, setPlaybackSpeed] = useState(2.0); // default 2x
     const [frameBlend, setFrameBlend] = useState(0);
     const [storyWindowRange, setStoryWindowRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
     
@@ -241,7 +279,9 @@ export function MatchCanvas({
     const highlightStoryWindowRef = useRef<HighlightStoryWindow | null>(null);
     
     // Calculate frame duration based on speed
-    const frameDuration = (1000 / 1) / playbackSpeed; // 60 ticks/minute = 1 tick per second at 1x speed
+    const frameDuration = (1000 / 1) / playbackSpeed; // tick playback duration at current speed
+    const ticksPerMinute = Math.max(1, Number(TUNING_PARAMS.simulationTicksPerMinute || 10));
+    const strictAuthoritativeMode = preferAuthoritativeEvents;
     
     // Get current frame
     const currentFrame: MatchFrame | undefined = matchData.frames[currentFrameIndex];
@@ -250,24 +290,49 @@ export function MatchCanvas({
     const highSpeedHighlightsOnly = playbackSpeed >= 15;
 
     const authoritativeEventsForFrame = useMemo(() => {
-        const byFrame = new Map<number, Array<{ type: string; minute: number; teamId?: string | null; playerId?: string; playerName?: string; text?: string }>>();
+        const byFrame = new Map<number, Array<{ type: string; minute: number; teamId?: string | null; playerId?: string; playerName?: string; text?: string; tick?: number; logX?: number; logY?: number }>>();
         if (!matchData.frames.length || !authoritativeEvents.length) return byFrame;
 
         authoritativeEvents.forEach((event) => {
             if (!event || typeof event.minute !== 'number') return;
             const targetMinute = Math.max(1, Number(event.minute || 1));
-            const frameIndex = matchData.frames.findIndex((frame) => ((Number(frame.minute || 0) + 1) >= targetMinute));
+            const targetActionTypes = actionTypesForAuthoritativeEvent(event.type);
+            const matchedLog = authoritativeRawLogs
+                .filter((log) => {
+                    const snapshotMinute = typeof log.snapshotMinute === 'number'
+                        ? Number(log.snapshotMinute)
+                        : Number(log.minute || 0);
+                    return snapshotMinute === targetMinute;
+                })
+                .filter((log) => targetActionTypes.includes(String(log.actionType || '').toUpperCase()))
+                .filter((log) => !event.playerId || log.playerId === event.playerId)
+                .filter((log) => !event.teamId || String(log.teamId || '') === String(event.teamId || ''))
+                .sort((a, b) => {
+                    const tickDiff = Number(a.tick || 0) - Number(b.tick || 0);
+                    if (tickDiff !== 0) return tickDiff;
+                    return Number(a.sequence || 0) - Number(b.sequence || 0);
+                })[0];
+
+            const frameIndex = matchedLog
+                ? matchData.frames.findIndex((frame) => (
+                    (Number(frame.minute || 0) + 1) === targetMinute
+                    && Number(frame.tick || 0) === Number(matchedLog.tick || 0)
+                ))
+                : matchData.frames.findIndex((frame) => ((Number(frame.minute || 0) + 1) >= targetMinute));
             if (frameIndex < 0) return;
             const arr = byFrame.get(frameIndex) || [];
             arr.push({
                 ...event,
                 type: canonicalizeAuthoritativeType(event.type),
+                tick: typeof matchedLog?.tick === 'number' ? matchedLog.tick : undefined,
+                logX: typeof matchedLog?.x === 'number' ? matchedLog.x : undefined,
+                logY: typeof matchedLog?.y === 'number' ? matchedLog.y : undefined,
             });
             byFrame.set(frameIndex, arr);
         });
 
         return byFrame;
-    }, [authoritativeEvents, matchData.frames]);
+    }, [authoritativeEvents, authoritativeRawLogs, matchData.frames]);
 
     const authoritativeVisualEventsForFrame = useMemo(() => {
         const byFrame = new Map<number, VisualEvent[]>();
@@ -279,7 +344,11 @@ export function MatchCanvas({
             const visualEvents = events.map((event, index) => {
                 const playerPosition = event.playerId ? frame.playerPositions?.[event.playerId] : null;
                 const fallbackBallPosition = frame.ball?.position || { x: 50, y: 50 };
-                const eventPosition = playerPosition || fallbackBallPosition;
+                const eventPosition = (
+                    typeof event.logX === 'number' && typeof event.logY === 'number'
+                        ? { x: event.logX, y: event.logY }
+                        : (playerPosition || fallbackBallPosition)
+                );
 
                 return {
                     id: `auth-${frameIndex}-${index}-${event.type}-${event.playerId || 'none'}`,
@@ -302,13 +371,123 @@ export function MatchCanvas({
         return byFrame;
     }, [authoritativeEventsForFrame, matchData.frames]);
 
-    const highlightFrameIndexes = useMemo(() => {
-        const result = new Set<number>();
-        matchData.frames.forEach((frame, index) => {
-            if (frame.events?.some((event) => isImportantHighlight(event.type))) {
-                result.add(index);
+    const authoritativeBallTransitionsForFrame = useMemo(() => {
+        const byFrame = new Map<number, BallTransition[]>();
+        if (!strictAuthoritativeMode || !matchData.frames.length) return byFrame;
+
+        const getSnapshotMinute = (log: {
+            snapshotMinute?: number;
+            minute?: number;
+        }) => {
+            if (typeof log.snapshotMinute === 'number' && Number.isFinite(log.snapshotMinute)) {
+                return log.snapshotMinute;
+            }
+            if (typeof log.minute === 'number' && Number.isFinite(log.minute)) {
+                return log.minute;
+            }
+            return null;
+        };
+
+        const normalizedLogs = authoritativeRawLogs
+            .map((log) => ({ ...log, snapshotMinute: getSnapshotMinute(log) }))
+            .filter((log) => typeof log.snapshotMinute === 'number');
+
+        authoritativeEventsForFrame.forEach((events, frameIndex) => {
+            const frame = matchData.frames[frameIndex];
+            if (!frame) return;
+
+            const transitions: BallTransition[] = [];
+                const minuteZeroBased = Number(frame.minute || 0);
+                const minuteOneBased = minuteZeroBased + 1;
+
+            events.forEach((event, eventIndex) => {
+                const type = canonicalizeAuthoritativeType(event.type);
+                if (type !== 'GOAL' && type !== 'SHOT') return;
+
+                const candidateLogs = normalizedLogs
+                    .filter((log) => {
+                        const snapshotMinute = Number(log.snapshotMinute);
+                        return snapshotMinute === minuteOneBased || snapshotMinute === minuteZeroBased;
+                    })
+                    .filter((log) => {
+                        const actionType = String(log.actionType || '').toUpperCase();
+                        return actionType === 'SHOOT' || actionType === 'SHOT';
+                    })
+                    .filter((log) => !event.playerId || log.playerId === event.playerId)
+                    .filter((log) => !event.teamId || String(log.teamId || '') === String(event.teamId || ''))
+                    .sort((a, b) => {
+                        const tickDiff = Number(a.tick || 0) - Number(b.tick || 0);
+                        if (tickDiff !== 0) return tickDiff;
+                        return Number(a.sequence || 0) - Number(b.sequence || 0);
+                    });
+
+                const resultHint = type === 'GOAL'
+                    ? ['GOAL']
+                    : ['SAVED', 'SAVED_PARRY', 'OFF_TARGET', 'FAIL', 'FAILED'];
+                const matchedLog = candidateLogs.find((log) => {
+                    const result = String(log.result || '').toUpperCase();
+                    return resultHint.some((hint) => result.includes(hint));
+                }) || candidateLogs[0];
+
+                const shooterPos = event.playerId
+                    ? frame.playerPositions?.[event.playerId]
+                    : null;
+                const fromPosition = {
+                    x: typeof matchedLog?.x === 'number' ? matchedLog.x : (shooterPos?.x ?? frame.ball.position.x),
+                    y: typeof matchedLog?.y === 'number' ? matchedLog.y : (shooterPos?.y ?? frame.ball.position.y),
+                };
+
+                const isHomeAttack = String(event.teamId || '') === String(matchData.homeTeamId || '');
+                const defaultGoalTarget = {
+                    x: isHomeAttack ? 99 : 1,
+                    y: 50,
+                };
+
+                const metadataTarget = matchedLog?.metadata && typeof matchedLog.metadata === 'object'
+                    ? {
+                        x: Number((matchedLog.metadata as any).targetX),
+                        y: Number((matchedLog.metadata as any).targetY),
+                    }
+                    : null;
+
+                const toPosition = (metadataTarget && Number.isFinite(metadataTarget.x) && Number.isFinite(metadataTarget.y))
+                    ? { x: metadataTarget.x, y: metadataTarget.y }
+                    : defaultGoalTarget;
+
+                transitions.push({
+                    type: type === 'GOAL' ? 'GOAL' : 'SHOT',
+                    fromPosition,
+                    toPosition,
+                    fromPlayerId: event.playerId || matchedLog?.playerId || 'unknown',
+                    toPlayerId: undefined,
+                    minute: Number(event.minute || Math.max(1, minuteZeroBased + 1)),
+                    tick: Number(frame.tick || 0),
+                    success: type === 'GOAL',
+                    trajectory: [fromPosition, toPosition],
+                    duration: 14,
+                    ballHeight: 'aerial',
+                    description: type === 'GOAL' ? 'Authoritative DB goal transition' : 'Authoritative DB shot transition',
+                });
+            });
+
+            if (transitions.length > 0) {
+                byFrame.set(frameIndex, transitions);
             }
         });
+
+        return byFrame;
+    }, [authoritativeEventsForFrame, authoritativeRawLogs, matchData.frames, matchData.homeTeamId, strictAuthoritativeMode]);
+
+    const highlightFrameIndexes = useMemo(() => {
+        const result = new Set<number>();
+
+        if (!strictAuthoritativeMode) {
+            matchData.frames.forEach((frame, index) => {
+                if (frame.events?.some((event) => isImportantHighlight(event.type))) {
+                    result.add(index);
+                }
+            });
+        }
 
         authoritativeEventsForFrame.forEach((events, index) => {
             if (events.some((event) => isImportantHighlight(String(event.type || '')) || String(event.type || '') === 'GOAL')) {
@@ -317,7 +496,7 @@ export function MatchCanvas({
         });
 
         return Array.from(result).sort((a, b) => a - b);
-    }, [matchData.frames, authoritativeEventsForFrame]);
+    }, [matchData.frames, authoritativeEventsForFrame, strictAuthoritativeMode]);
     const renderFrame = useMemo(
         () => (currentFrame ? interpolateFrame(currentFrame, nextFrame, frameBlend) : undefined),
         [currentFrame, nextFrame, frameBlend],
@@ -417,6 +596,10 @@ export function MatchCanvas({
 
     const visibleFrameEvents = useMemo(() => {
         const authoritativeVisualEvents = authoritativeVisualEventsForFrame.get(currentFrameIndex) || [];
+        if (strictAuthoritativeMode) {
+            return authoritativeVisualEvents as MatchFrame['events'];
+        }
+
         if (authoritativeVisualEvents.length > 0) {
             return authoritativeVisualEvents as MatchFrame['events'];
         }
@@ -425,13 +608,37 @@ export function MatchCanvas({
         if (!highSpeedHighlightsOnly) return currentFrame.events;
         if (isWithinHighlightStoryWindow) return currentFrame.events;
         return currentFrame.events.filter((event) => isImportantHighlight(event.type));
-    }, [currentFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow, authoritativeVisualEventsForFrame, currentFrameIndex]);
+    }, [currentFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow, authoritativeVisualEventsForFrame, currentFrameIndex, strictAuthoritativeMode]);
 
     const renderFrameForBallLayer = useMemo(() => {
         if (!renderFrame) return renderFrame;
-        if (!highSpeedHighlightsOnly) return renderFrame;
-        if (isWithinHighlightStoryWindow) return renderFrame;
-        const importantTransitions = (renderFrame.ballTransitions || []).filter((transition) => (
+        const authoritativeTransitions = authoritativeBallTransitionsForFrame.get(currentFrameIndex) || [];
+        const mergedTransitions = strictAuthoritativeMode
+            ? [
+                ...authoritativeTransitions,
+                ...(renderFrame.ballTransitions || []).filter((transition) => (
+                    transition.type !== 'GOAL' && transition.type !== 'SHOT'
+                )),
+            ]
+            : (
+                authoritativeTransitions.length > 0
+                    ? [...authoritativeTransitions, ...(renderFrame.ballTransitions || [])]
+                    : (renderFrame.ballTransitions || [])
+            );
+
+        if (!highSpeedHighlightsOnly) {
+            return {
+                ...renderFrame,
+                ballTransitions: mergedTransitions,
+            };
+        }
+        if (isWithinHighlightStoryWindow) {
+            return {
+                ...renderFrame,
+                ballTransitions: mergedTransitions,
+            };
+        }
+        const importantTransitions = mergedTransitions.filter((transition) => (
             transition.type === 'GOAL'
             || transition.type === 'SHOT'
             || transition.type === 'SAVE'
@@ -441,16 +648,20 @@ export function MatchCanvas({
             ...renderFrame,
             ballTransitions: importantTransitions,
         };
-    }, [renderFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow]);
+    }, [renderFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow, authoritativeBallTransitionsForFrame, currentFrameIndex, strictAuthoritativeMode]);
 
     const frameForEventsLayer = useMemo(() => {
         if (!currentFrame) return currentFrame;
-        if (!highSpeedHighlightsOnly) return currentFrame;
-        return {
-            ...currentFrame,
-            events: visibleFrameEvents,
-        };
-    }, [currentFrame, highSpeedHighlightsOnly, visibleFrameEvents]);
+        // In strict authoritative mode, ALWAYS use filtered (DB-only) events on canvas
+        // regardless of playback speed – prevents replay GOAL stars appearing for non-DB events
+        if (strictAuthoritativeMode || highSpeedHighlightsOnly) {
+            return {
+                ...currentFrame,
+                events: visibleFrameEvents,
+            };
+        }
+        return currentFrame;
+    }, [currentFrame, highSpeedHighlightsOnly, visibleFrameEvents, strictAuthoritativeMode]);
 
     const currentEventTexts = useMemo(() => {
         const replayTexts = visibleFrameEvents.map((event) => {
@@ -488,12 +699,12 @@ export function MatchCanvas({
                 return `⚽ GOAL! ${scorer} (${event.minute}')`;
             }
             if (type === 'SHOT') {
-                const shooter = event.playerName || 'Unknown';
-                return `❌ Shot by ${shooter} (${event.minute}')`;
+                // event.text already carries full outcome info (🧤/❌ + both player names)
+                return event.text ? `${event.text} (${event.minute}')` : `🎯 Shot by ${event.playerName || 'Unknown'} (${event.minute}')`;
             }
             if (type === 'FREE_KICK') {
-                const player = event.playerName || 'Unknown';
-                return `🟡 Foul by ${player} (${event.minute}')`;
+                // Use stored text which may be a foul description or free-kick restart description
+                return event.text ? `🟡 ${event.text} (${event.minute}')` : `🟡 Free kick (${event.minute}')`;
             }
             if (type === 'YELLOW_CARD') {
                 const player = event.playerName || 'Unknown';
@@ -506,7 +717,9 @@ export function MatchCanvas({
             return event.text || `• ${type} (${event.minute}')`;
         });
 
-        const merged = authoritativeTexts.length > 0 ? [...authoritativeTexts, ...replayTexts] : replayTexts;
+        const merged = strictAuthoritativeMode
+            ? authoritativeTexts
+            : (authoritativeTexts.length > 0 ? [...authoritativeTexts, ...replayTexts] : replayTexts);
         const seen = new Set<string>();
         const deduped: string[] = [];
         merged.forEach((text) => {
@@ -517,7 +730,7 @@ export function MatchCanvas({
         });
 
         return deduped;
-    }, [visibleFrameEvents, authoritativeEventsForFrame, currentFrameIndex]);
+    }, [visibleFrameEvents, authoritativeEventsForFrame, currentFrameIndex, strictAuthoritativeMode]);
 
     const sentOffTimeline = useMemo(() => {
         const byPlayerId = new Map<string, { playerId: string; teamId?: string; minute: number }>();
@@ -565,7 +778,7 @@ export function MatchCanvas({
                     return frameIndex;
                 }
 
-                const window = createHighlightStoryWindow(nextHighlight, totalFrames);
+                const window = createHighlightStoryWindow(nextHighlight, totalFrames, ticksPerMinute);
                 highlightStoryWindowRef.current = window;
                 setStoryWindowRange({ startIndex: window.startIndex, endIndex: window.endIndex });
                 return window.startIndex;
@@ -579,7 +792,7 @@ export function MatchCanvas({
 
         setCurrentFrameIndex(targetIndex);
         setFrameBlend(0);
-    }, [highSpeedHighlightsOnly, highlightFrameIndexes, matchData.frames, totalFrames]);
+    }, [highSpeedHighlightsOnly, highlightFrameIndexes, matchData.frames, totalFrames, ticksPerMinute]);
     
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
@@ -597,7 +810,7 @@ export function MatchCanvas({
                     return prev;
                 }
 
-                const window = createHighlightStoryWindow(nextHighlight, totalFrames);
+                const window = createHighlightStoryWindow(nextHighlight, totalFrames, ticksPerMinute);
                 highlightStoryWindowRef.current = window;
                 setStoryWindowRange({ startIndex: window.startIndex, endIndex: window.endIndex });
                 return window.startIndex;
@@ -607,7 +820,7 @@ export function MatchCanvas({
             highlightStoryWindowRef.current = null;
             setStoryWindowRange(null);
         }
-    }, [highlightFrameIndexes, matchData.frames, totalFrames]);
+    }, [highlightFrameIndexes, matchData.frames, totalFrames, ticksPerMinute]);
     
     const handleReset = useCallback(() => {
         setIsPlaying(false);
@@ -625,7 +838,7 @@ export function MatchCanvas({
                 currentFrame: currentFrameIndex,
                 totalFrames,
                 playbackSpeed,
-                currentMinute: currentFrame?.minute ?? 0,
+                currentMinute: Math.max(1, Number(currentFrame?.minute || 0) + 1),
                 onPlayPause: handlePlayPause,
                 onSeek: handleSeek,
                 onSpeedChange: handleSpeedChange,
@@ -677,7 +890,7 @@ export function MatchCanvas({
                                     return prev;
                                 }
 
-                                const nextWindow = createHighlightStoryWindow(nextHighlight, totalFrames);
+                                const nextWindow = createHighlightStoryWindow(nextHighlight, totalFrames, ticksPerMinute);
                                 highlightStoryWindowRef.current = nextWindow;
                                 setStoryWindowRange({ startIndex: nextWindow.startIndex, endIndex: nextWindow.endIndex });
                                 nextIndex = nextWindow.startIndex;
@@ -692,7 +905,7 @@ export function MatchCanvas({
                                 return prev;
                             }
 
-                            const nextWindow = createHighlightStoryWindow(nextHighlight, totalFrames);
+                            const nextWindow = createHighlightStoryWindow(nextHighlight, totalFrames, ticksPerMinute);
                             highlightStoryWindowRef.current = nextWindow;
                             setStoryWindowRange({ startIndex: nextWindow.startIndex, endIndex: nextWindow.endIndex });
                             nextIndex = nextWindow.startIndex;
@@ -733,7 +946,7 @@ export function MatchCanvas({
                 animationRef.current = null;
             }
         };
-    }, [isPlaying, frameDuration, totalFrames, highSpeedHighlightsOnly, highlightFrameIndexes]);
+    }, [isPlaying, frameDuration, totalFrames, highSpeedHighlightsOnly, highlightFrameIndexes, ticksPerMinute]);
 
     useEffect(() => {
         if (!currentFrame || !onFrameChange) return;
@@ -743,18 +956,20 @@ export function MatchCanvas({
 
         onFrameChange({
             frameIndex: currentFrameIndex,
-            minute: currentFrame.minute,
+            minute: Math.max(1, Number(currentFrame.minute || 0) + 1),
             tick: currentFrame.tick,
             carrierName,
             homeScore: currentReplayScore.home,
             awayScore: currentReplayScore.away,
-            eventTypes: [
-                ...visibleFrameEvents.map((event) => event.type),
-                ...((authoritativeEventsForFrame.get(currentFrameIndex) || []).map((event) => canonicalizeAuthoritativeType(event.type))),
-            ],
+            eventTypes: strictAuthoritativeMode
+                ? (authoritativeEventsForFrame.get(currentFrameIndex) || []).map((event) => canonicalizeAuthoritativeType(event.type))
+                : [
+                    ...visibleFrameEvents.map((event) => event.type),
+                    ...((authoritativeEventsForFrame.get(currentFrameIndex) || []).map((event) => canonicalizeAuthoritativeType(event.type))),
+                ],
             eventTexts: currentEventTexts,
         });
-    }, [currentFrame, currentEventTexts, onFrameChange, playerIdentity.playerNames, currentFrameIndex, currentReplayScore.home, currentReplayScore.away, visibleFrameEvents, authoritativeEventsForFrame]);
+    }, [currentFrame, currentEventTexts, onFrameChange, playerIdentity.playerNames, currentFrameIndex, currentReplayScore.home, currentReplayScore.away, visibleFrameEvents, authoritativeEventsForFrame, strictAuthoritativeMode]);
     
     if (!currentFrame || !renderFrame) {
         return (
@@ -878,7 +1093,7 @@ export function MatchCanvas({
                     currentFrame={currentFrameIndex}
                     totalFrames={totalFrames}
                     playbackSpeed={playbackSpeed}
-                    currentMinute={currentFrame.minute}
+                    currentMinute={Math.max(1, Number(currentFrame.minute || 0) + 1)}
                     onPlayPause={handlePlayPause}
                     onSeek={handleSeek}
                     onSpeedChange={handleSpeedChange}

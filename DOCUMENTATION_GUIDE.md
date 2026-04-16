@@ -37,11 +37,12 @@
 - วิเคราะห์ตำแหน่งครองบอล/ตำแหน่งเหตุการณ์บนสนาม → หน้า `/match` แท็บ `Heat Map` (รองรับ filter event: all/SHOT/PASS/DRIBBLE, team: all/home/away, และ player: all/ผู้เล่นรายคน โดยแสดงชื่อ+ตำแหน่ง, เรียงตำแหน่ง `GK -> DF -> MF -> FW`, จำกัดเฉพาะผู้เล่นที่ลงสนามจริง, และใช้การแรเงาแบบกระจายพื้นที่เพื่ออ่าน movement zone รายคนได้สมจริงขึ้น)
 - เมื่อ debug Heat Map ให้ยึด score/event ที่ persisted แล้วเป็นหลัก: จำนวน goal markers ต้องตรงกับ persisted `GOAL` events/score ของแมตช์ ไม่ใช่ทุกประตูจาก replay V2 ที่ generate ใหม่
 - เมื่อ debug replay scoreboard บน `/match` ให้ยึด goal progression จาก persisted match events และ final persisted score เป็นหลัก (ไม่ควรแกว่งตาม replay-generated goals เพียงอย่างเดียว)
-- เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events ด้วย: ถ้า V2 frame บางช่วงไม่มี incident แต่ persisted มี (เช่นประตูนาที 90) ระบบควรยังแสดงเหตุการณ์ใน replay flow
+- เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events แบบ strict สำหรับแมตช์ที่เล่นแล้ว: ไม่ควรดึง replay-generated incidents มาปะปนจนขัดกับ score/event ที่บันทึก
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
 - Header หลักด้านบนจะย่อแรงขึ้นเมื่อ scroll ลง โดยโลโก้ `⚽ FOOTBALL MANAGER` จะเหลือประมาณครึ่งหนึ่งของขนาดปกติเพื่อคืนพื้นที่ให้ content
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)
 - เข้าใจการ debug flow ทั้งเกมแบบ loop-by-loop → หน้า `/debug` (ใช้ raw action logs จาก `/api/match/[id]/actions`)
+- เมื่อ debug replay 1:1 กับ DB ให้ตรวจ `/api/match/[id]/actions` ที่เรียงลำดับ `minute -> tick -> sequence` และใช้ `logType` (`ACTION`/`MOVEMENT`) + `x,y` เป็นฐาน
 - **ทดสอบ action simulation แบบแยกตัว** → หน้า `/test-simulate` (เลือกทีม → นักเตะ → action → จำลองหลายรอบ → ดูผลลัพธ์แบบตาราง)
 - ปรับความสมจริงของ V2 spatial decision (มีบอล/ไม่มีบอล) → `src/lib/engine/v2/match2d.ts` + `src/lib/engine/v2/spatialEngine.ts`
 

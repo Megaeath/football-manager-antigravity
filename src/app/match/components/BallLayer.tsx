@@ -10,6 +10,7 @@
 import React from 'react';
 import { Circle, Group, Line, RegularPolygon } from 'react-konva';
 import type { MatchFrame } from '@/lib/engine/v2/types2d';
+import { TUNING_PARAMS } from '@/lib/engine/v2/config';
 
 interface BallLayerProps {
     frame: MatchFrame;
@@ -26,11 +27,22 @@ export function BallLayer({ frame, width, height }: BallLayerProps) {
         return axis === 'x' ? value * scaleX : value * scaleY;
     };
     
+    const goalMouthMinY = 46;
+    const goalMouthMaxY = 54;
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
     const ballPos = frame.ball.position;
     const activeTransition = frame.ballTransitions?.[0];
+    const isGoalFrame = Boolean(frame.events?.some((event) => event.type === 'GOAL')) || activeTransition?.type === 'GOAL';
+    const renderedBallPos = isGoalFrame
+        ? {
+            x: ballPos.x < 50 ? 1.5 : 98.5,
+            y: clamp(ballPos.y, goalMouthMinY, goalMouthMaxY),
+        }
+        : ballPos;
     
     // Skip if ball position is invalid
-    if (!ballPos || isNaN(ballPos.x) || isNaN(ballPos.y)) {
+    if (!renderedBallPos || isNaN(renderedBallPos.x) || isNaN(renderedBallPos.y)) {
         return null;
     }
     
@@ -40,30 +52,19 @@ export function BallLayer({ frame, width, height }: BallLayerProps) {
     const ballRadius = scale(baseRadius * heightFactor);
     const patternRadius = ballRadius * 0.24;
     const ringRadius = ballRadius * 0.58;
-    const spinAngle = ((frame.minute * 60 + frame.tick) * 14 + ((ballPos.x + ballPos.y) * 2)) % 360;
+    const ticksPerMinute = Math.max(1, Number(TUNING_PARAMS.simulationTicksPerMinute || 10));
+    const spinAngle = ((frame.minute * ticksPerMinute + frame.tick) * 14 + ((renderedBallPos.x + renderedBallPos.y) * 2)) % 360;
     
     // Shadow offset based on height
     const shadowOffset = frame.ball.z * 2;
     
     return (
         <>
-            {activeTransition && activeTransition.trajectory.length > 1 && (
-                <Line
-                    points={activeTransition.trajectory.flatMap((point) => [scale(point.x), scale(point.y, 'y')])}
-                    stroke={activeTransition.type === 'GOAL' ? '#fbbf24' : activeTransition.type === 'SHOT' ? '#fb7185' : '#93c5fd'}
-                    strokeWidth={2}
-                    opacity={0.55}
-                    dash={[6, 4]}
-                    lineCap="round"
-                    lineJoin="round"
-                />
-            )}
-
             {/* Ball shadow (on ground) */}
             {frame.ball.z > 0 && (
                 <Circle
-                    x={scale(ballPos.x) + shadowOffset}
-                    y={scale(ballPos.y, 'y') + shadowOffset}
+                    x={scale(renderedBallPos.x) + shadowOffset}
+                    y={scale(renderedBallPos.y, 'y') + shadowOffset}
                     radius={ballRadius * 0.8}
                     fill="rgba(0, 0, 0, 0.3)"
                     blur={5}
@@ -72,8 +73,8 @@ export function BallLayer({ frame, width, height }: BallLayerProps) {
             
             {/* Ball (football pattern + spin) */}
             <Group
-                x={scale(ballPos.x)}
-                y={scale(ballPos.y, 'y')}
+                x={scale(renderedBallPos.x)}
+                y={scale(renderedBallPos.y, 'y')}
                 rotation={spinAngle}
             >
                 <Circle

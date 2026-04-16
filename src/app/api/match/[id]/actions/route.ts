@@ -19,17 +19,33 @@ export async function GET(
         const { id } = await params;
         const { searchParams } = new URL(req.url);
         const playerId = searchParams.get('playerId');
+        const snapshotMinuteParam = searchParams.get('snapshotMinute');
+        const snapshotMinute = snapshotMinuteParam ? Number(snapshotMinuteParam) : null;
 
         const where: any = { matchId: id };
         if (playerId) where.playerId = playerId;
+        if (typeof snapshotMinute === 'number' && Number.isFinite(snapshotMinute)) {
+            where.snapshotMinute = snapshotMinute;
+        }
 
-        const logs = await ((prisma as any).playerActionLog).findMany({
-            where,
-            orderBy: [{ minute: 'asc' }, { createdAt: 'asc' }],
-            include: {
-                player: { select: { name: true, naturalPosition: true } }
-            }
-        });
+        let logs: any[] = [];
+        try {
+            logs = await ((prisma as any).playerActionLog).findMany({
+                where,
+                orderBy: [{ snapshotMinute: 'asc' }, { minute: 'asc' }, { tick: 'asc' }, { sequence: 'asc' }, { createdAt: 'asc' }],
+                include: {
+                    player: { select: { name: true, naturalPosition: true } }
+                }
+            });
+        } catch {
+            logs = await ((prisma as any).playerActionLog).findMany({
+                where,
+                orderBy: [{ minute: 'asc' }, { createdAt: 'asc' }],
+                include: {
+                    player: { select: { name: true, naturalPosition: true } }
+                }
+            });
+        }
 
         const teamZones: Record<string, { defensive: number; middle: number; attacking: number; total: number }> = {};
         const byPlayer: Record<string, any> = {};

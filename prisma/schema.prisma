@@ -435,10 +435,18 @@ model PlayerActionLog {
   playerId            String
   teamId              String
   minute              Int
+  snapshotMinute      Int? // Canonical minute bucket (1-90) for replay sync
+  tick                Int      @default(0) // 0-59 within minute (tick/trick granularity)
+  sequence            Int      @default(0) // deterministic order within same minute/tick
+  logType             String   @default("ACTION") // ACTION | MOVEMENT | BALL | SYSTEM
   ballPosition        Int // 0-100 field position
+  x                   Float? // 0-100 normalized BALL X at log time
+  y                   Float? // 0-100 normalized BALL Y at log time
   zone                String // DEFENSIVE | MIDDLE | ATTACKING
-  actionType          String // PASS_SHORT | PASS_LONG | DRIBBLE | SHOOT | TACKLE | SAVE | INTERCEPTION | FOUL
-  result              String // SUCCESS | FAIL | GOAL | SAVED | BLOCKED | OFF_TARGET
+  actionType          String // Extensible action/trick key (PASS_SHORT, DRIBBLE, MOVEMENT, ...)
+  trickGroup          String? // Optional group (PASS | SHOT | DRIBBLE | MOVEMENT | SET_PIECE | ...)
+  trick               String? // Optional concrete trick subtype for future tuning
+  result              String // Extensible result (SUCCESS | FAIL | GOAL | OFF_TARGET | TRACK | ...)
   isSuccessful        Boolean
   expectedSuccessRate Float? // 0-1 expected probability for this action
   targetPlayerId      String?
@@ -449,6 +457,9 @@ model PlayerActionLog {
   player Player @relation(fields: [playerId], references: [id])
 
   @@index([matchId, playerId])
+  @@index([matchId, minute, tick, sequence])
+  @@index([matchId, snapshotMinute, tick, sequence])
+  @@index([matchId, logType, actionType])
   @@index([playerId, actionType])
   @@index([teamId, zone])
 }

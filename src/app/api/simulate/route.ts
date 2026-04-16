@@ -92,7 +92,7 @@ export async function GET() {
         };
 
         // 3. Run Simulation
-        const result = simulateMatch(homeTeam, awayTeam);
+        const result = simulateMatch2D(homeTeam, awayTeam);
 
         // 4. Save Match to DB
         await prisma.$transaction(async (tx) => {

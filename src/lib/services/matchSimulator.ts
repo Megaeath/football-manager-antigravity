@@ -652,22 +652,18 @@ export async function processMatch(matchId: string) {
         ? JSON.parse(matchDB.awayPrepConfig) 
         : null;
 
-    // Check V2 engine feature flag
-    const enableMatch2D = settings?.enableMatch2D ?? false;
-    
-    // Route to appropriate engine
+    // Always use V2 engine (2D spatial simulation)
     let result: any;
     let v2MatchState: V2MatchState | null = null;
-    
-    if (enableMatch2D) {
-        // Use V2 engine with 2D spatial simulation
-        v2MatchState = simulateMatch2D(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
-        // V2MatchState extends MatchState, so we can use it as result
-        result = v2MatchState;
-    } else {
-        // Use V1 engine (classic 1D simulation)
-        result = simulateMatch(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
-    }
+    v2MatchState = simulateMatch2D(homeTeam, awayTeam, { home: homePrep, away: awayPrep });
+    result = v2MatchState;
+
+    // V2 simulation loop uses zero-based minute internally (0..89),
+    // but persisted/public MatchEvent minute must be canonical 1..90.
+    result.events = (result.events || []).map((e: MatchEventLog) => ({
+        ...e,
+        minute: Math.min(90, Math.max(1, Number(e.minute ?? 0) + 1))
+    }));
     
     const isCupKnockout = matchDB.competitionType === 'CUP' && matchDB.competitionPhase === 'KNOCKOUT';
     const tieBreakResult = isCupKnockout && result.homeScore === result.awayScore
@@ -818,34 +814,7 @@ export async function processMatch(matchId: string) {
             }
         }
 
-        const actionLogsToCreate = (result.actionLogs || []).map((log: any) => ({
-            matchId: matchId,
-            playerId: log.playerId,
-            teamId: log.teamId,
-            minute: log.minute,
-            ballPosition: log.ballPosition,
-            zone: log.zone,
-            actionType: log.actionType,
-            result: log.result,
-            isSuccessful: log.isSuccessful,
-            expectedSuccessRate: typeof log.expectedSuccessRate === 'number' ? log.expectedSuccessRate : null,
-            targetPlayerId: log.targetPlayerId || null,
-            metadata: log.metadata || null
-        }));
-
-        if (actionLogsToCreate.length > 0) {
-            try {
-                await ((tx as any).playerActionLog).createMany({ data: actionLogsToCreate });
-            } catch (err: any) {
-                const msg = String(err?.message || '');
-                // Backward compatibility: action log table/model not available yet
-                if (msg.includes('playerActionLog') || msg.includes('PlayerActionLog') || msg.includes('Unknown argument')) {
-                    console.warn('[MatchSimulator] Skipping PlayerActionLog persistence (migration/client not ready yet).');
-                } else {
-                    throw err;
-                }
-            }
-        }
+        // ...existing code...
 
         // Team completed a match => burn one suspension match for already-suspended players.
         await (tx.player as any).updateMany({
@@ -1049,6 +1018,33 @@ export async function processMatch(matchId: string) {
             result.events.push(...postPlayerEvents);
         }
     });
+
+    // Persist action logs OUTSIDE the transaction to avoid transaction timeout
+    const actionLogsToCreate = (result.actionLogs || []).map((log: any) => ({
+        matchId: matchId,
+        playerId: log.playerId,
+        teamId: log.teamId,
+        minute: log.minute,
+        snapshotMinute: typeof log.snapshotMinute === 'number' ? log.snapshotMinute : log.minute,
+        tick: typeof log.tick === 'number' ? log.tick : 0,
+        sequence: typeof log.sequence === 'number' ? log.sequence : 0,
+        logType: log.logType || 'ACTION',
+        x: typeof log.x === 'number' ? log.x : null,
+        y: typeof log.y === 'number' ? log.y : null,
+        ballPosition: log.ballPosition,
+        zone: log.zone,
+        actionType: log.actionType,
+        trickGroup: log.trickGroup || null,
+        trick: log.trick || null,
+        result: log.result,
+        isSuccessful: log.isSuccessful,
+        expectedSuccessRate: typeof log.expectedSuccessRate === 'number' ? log.expectedSuccessRate : null,
+        targetPlayerId: log.targetPlayerId || null,
+        metadata: log.metadata || null
+    }));
+    if (actionLogsToCreate.length > 0) {
+        await prisma.playerActionLog.createMany({ data: actionLogsToCreate });
+    }
 
     return {
         ...result,

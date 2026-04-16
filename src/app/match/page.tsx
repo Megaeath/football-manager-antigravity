@@ -77,12 +77,7 @@ type MatchActionAnalytics = {
     rawLogs: any[];
 };
 
-const HIGHLIGHT_TICKER_CONFIG = {
-    holdTicks: 30,
-    eventTypes: ['SHOT', 'FOUL', 'FREE_KICK', 'YELLOW_CARD', 'RED_CARD'] as const,
-};
-
-const HIGHLIGHT_TICKER_EVENT_SET = new Set<string>(HIGHLIGHT_TICKER_CONFIG.eventTypes);
+const IMPORTANT_EVENT_SET = new Set<string>(['GOAL', 'FOUL', 'FREE_KICK', 'CORNER']);
 
 export default function MatchPage() {
     return (
@@ -124,7 +119,6 @@ function MatchContent() {
         eventTexts: string[];
     } | null>(null);
     const [v2LiveCommentary, setV2LiveCommentary] = useState<string>('Kick-off');
-    const [v2HighlightTicker, setV2HighlightTicker] = useState<{ text: string; untilFrameIndex: number } | null>(null);
     const [v2CurrentFrameIndex, setV2CurrentFrameIndex] = useState(0);
     const [v2IsPlaying, setV2IsPlaying] = useState(false);
     const [v2PlaybackSpeed, setV2PlaybackSpeed] = useState(1.0);
@@ -362,7 +356,6 @@ function MatchContent() {
         setV2Error(null);
         setV2LiveFrame(null);
         setV2LiveCommentary('Kick-off');
-        setV2HighlightTicker(null);
     }, [matchData?.id]);
 
     useEffect(() => {
@@ -377,38 +370,21 @@ function MatchContent() {
             return;
         }
 
-        const displayMinute = Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1);
-        const timeLabel = `${displayMinute}'${v2LiveFrame.tick > 0 ? ` (+${v2LiveFrame.tick})` : ''}`;
+        const displayMinute = Math.max(1, Number(v2LiveFrame.minute || 1));
+        const timeLabel = `${displayMinute}'`;
         setV2LiveCommentary(`⏱️ ${timeLabel} • Possession: ${v2LiveFrame.carrierName}`);
     }, [v2LiveFrame]);
 
-    useEffect(() => {
-        if (!v2LiveFrame) return;
-
+    const currentImportantEventText = useMemo(() => {
+        if (!v2LiveFrame) return null;
         const eventTypes = v2LiveFrame.eventTypes || [];
         const eventTexts = v2LiveFrame.eventTexts || [];
-        let nextTickerText: string | null = null;
-
         for (let i = 0; i < eventTypes.length; i++) {
             const eventType = String(eventTypes[i] || '').toUpperCase();
-            if (!HIGHLIGHT_TICKER_EVENT_SET.has(eventType)) continue;
-            nextTickerText = eventTexts[i] || eventTypes[i] || null;
-            if (nextTickerText) break;
+            if (!IMPORTANT_EVENT_SET.has(eventType)) continue;
+            return eventTexts[i] || eventType;
         }
-
-        if (nextTickerText) {
-            setV2HighlightTicker({
-                text: nextTickerText,
-                untilFrameIndex: v2LiveFrame.frameIndex + HIGHLIGHT_TICKER_CONFIG.holdTicks,
-            });
-            return;
-        }
-
-        setV2HighlightTicker((prev) => {
-            if (!prev) return null;
-            if (v2LiveFrame.frameIndex <= prev.untilFrameIndex) return prev;
-            return null;
-        });
+        return null;
     }, [v2LiveFrame]);
 
     const v2QuickStats = useMemo(() => {
@@ -543,7 +519,7 @@ function MatchContent() {
 
     const currentSentOffPlayers = useMemo(() => {
         const replayMinute = v2LiveFrame
-            ? Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1)
+            ? Math.max(1, Number(v2LiveFrame.minute || 1))
             : 1;
         return sentOffTimeline.filter((event) => (event.minute || 0) <= replayMinute);
     }, [sentOffTimeline, v2LiveFrame?.frameIndex]);
@@ -1350,13 +1326,6 @@ function MatchContent() {
                     </div>
 
                     <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', background: '#f8fafc' }}>
-                        <style>{`
-                            @keyframes matchHighlightTicker {
-                                0% { transform: translateX(100%); }
-                                100% { transform: translateX(-100%); }
-                            }
-                        `}</style>
-
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                                 {v2Error && (
                                     <div style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.65rem 0.85rem', fontSize: '0.85rem' }}>
@@ -1412,6 +1381,8 @@ function MatchContent() {
                                                 <MatchCanvas
                                                     matchData={v2DisplayReplay || v2Replay}
                                                     authoritativeEvents={matchData?.events || []}
+                                                    authoritativeRawLogs={matchActionAnalytics?.rawLogs || []}
+                                                    preferAuthoritativeEvents={Boolean(matchData?.isPlayed)}
                                                     width={900}
                                                     height={360}
                                                     hideOverlays
@@ -1470,46 +1441,30 @@ function MatchContent() {
                                             {/* BELOW FIELD: Live Commentary */}
                                             <div
                                                 style={{
-                                                    minHeight: '56px',
-                                                    maxHeight: '120px',
+                                                    minHeight: '64px',
+                                                    maxHeight: '140px',
                                                     overflowY: 'auto',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid rgba(148,163,184,0.25)',
-                                                    background: 'rgba(15,23,42,0.88)',
-                                                    padding: '0.55rem 0.7rem',
-                                                    fontSize: '0.84rem',
+                                                    borderRadius: '10px',
+                                                    border: currentImportantEventText
+                                                        ? '1px solid rgba(251,191,36,0.85)'
+                                                        : '1px solid rgba(148,163,184,0.28)',
+                                                    background: currentImportantEventText
+                                                        ? 'linear-gradient(135deg, rgba(120,53,15,0.95) 0%, rgba(146,64,14,0.95) 55%, rgba(69,26,3,0.95) 100%)'
+                                                        : 'rgba(15,23,42,0.9)',
+                                                    boxShadow: currentImportantEventText
+                                                        ? '0 0 0 1px rgba(245,158,11,0.35), 0 10px 24px rgba(120,53,15,0.35)'
+                                                        : 'none',
+                                                    padding: '0.6rem 0.8rem',
+                                                    fontSize: '0.9rem',
                                                     lineHeight: 1.45
                                                 }}
                                             >
-                                                {v2HighlightTicker?.text && (
-                                                    <div
-                                                        style={{
-                                                            marginBottom: '0.45rem',
-                                                            borderRadius: '6px',
-                                                            border: '1px solid rgba(251,191,36,0.7)',
-                                                            background: 'rgba(251,191,36,0.13)',
-                                                            padding: '0.35rem 0.5rem',
-                                                            overflow: 'hidden',
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                display: 'inline-block',
-                                                                whiteSpace: 'nowrap',
-                                                                fontSize: '1.02rem',
-                                                                fontWeight: 800,
-                                                                color: '#fde68a',
-                                                                animation: 'matchHighlightTicker 10s linear infinite',
-                                                            }}
-                                                        >
-                                                            {v2HighlightTicker.text}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: '3px' }}>
-                                                    {v2LiveFrame ? `Minute ${Math.max(1, Math.floor((v2LiveFrame.frameIndex + 1) / 60) + 1)}${v2LiveFrame.tick > 0 ? ` (+${v2LiveFrame.tick})` : ''}` : 'Minute 1'}
+                                                <div style={{ fontSize: '0.76rem', opacity: currentImportantEventText ? 0.95 : 0.82, marginBottom: '4px', color: currentImportantEventText ? '#fef3c7' : '#cbd5e1', fontWeight: 600 }}>
+                                                    {v2LiveFrame ? `Minute ${Math.max(1, Number(v2LiveFrame.minute || 1))}` : 'Minute 1'}
                                                 </div>
-                                                <div style={{ fontWeight: 600 }}>{v2LiveCommentary}</div>
+                                                <div style={{ fontWeight: currentImportantEventText ? 800 : 650, color: currentImportantEventText ? '#fff7ed' : '#f8fafc', fontSize: currentImportantEventText ? '1.02rem' : '0.92rem' }}>
+                                                    {v2LiveCommentary}
+                                                </div>
                                             </div>
 
                                             {/* BOTTOM: Playback Controls */}
@@ -1627,9 +1582,12 @@ function MatchContent() {
                                             case 'CARD_YELLOW': return '🟨';
                                             case 'CARD_RED': return '🟥';
                                             case 'MISS': return '❌';
+                                            case 'SHOT': return '🎯';
                                             case 'OFFSIDE': return '🚩';
                                             case 'CORNER': return '📐';
                                             case 'FOUL': return '🔔';
+                                            case 'FREE_KICK': return '🟡';
+                                            case 'THROW_IN': return '↔️';
                                             case 'SUB': return '🔁';
                                             default: return '●';
                                         }

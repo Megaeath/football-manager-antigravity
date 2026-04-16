@@ -33,8 +33,8 @@ export function PlaybackControls({
     onReset,
 }: PlaybackControlsProps) {
     const speedOptions = [2.0, 4.0, 8.0, 10.0, 15.0, 20.0];
-    const displayCurrentMinute = Math.max(1, Math.floor((currentFrame + 1) / 60) + 1);
-    const displayEndMinute = Math.max(1, Math.floor(totalFrames / 60) + 1);
+    const displayCurrentMinute = Math.max(1, Number(currentMinute || 1));
+    const displayEndMinute = 90;
     
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         onSeek(parseInt(e.target.value));
@@ -111,10 +111,7 @@ export function PlaybackControls({
                     </div>
                 </div>
                 
-                {/* Progress indicator */}
-                <div className="text-sm text-gray-500 text-center">
-                    Frame {currentFrame + 1} / {totalFrames}
-                </div>
+                {/* Minute-only mode intentionally hides frame/tick details */}
             </div>
         </div>
     );

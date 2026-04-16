@@ -1,0 +1,22 @@
+---
+description: Enforce Copilot-aligned execution standards for this repository
+alwaysApply: true
+---
+
+# Copilot-Aligned Execution Rule
+
+- Follow mandatory read order before code/API/schema/service/UI edits:
+  1) `.github/personal-game-dev-skill.md`
+  2) `DOCUMENTATION_GUIDE.md`
+  3) `API_REFERENCE.md` (for API-related work)
+  4) `.github/copilot-instructions.md`
+- Reuse existing architecture and services before creating new abstractions.
+- Make the smallest safe change that satisfies the request.
+- Keep UX and interaction patterns consistent with existing pages/components.
+- If behavior/contracts/workflow change, update relevant docs in the same task:
+  - `API_REFERENCE.md`
+  - `DOCUMENTATION_GUIDE.md`
+  - `.github/copilot-instructions.md`
+  - `TACTICAL_GUIDE.md` (when tactical/wording impact exists)
+- Prefer end-to-end completion: implement, verify, and report.
+- Validation expectation: run appropriate checks (`lint`, `build`, or targeted tests) when changes are substantive.

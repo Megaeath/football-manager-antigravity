@@ -373,7 +373,7 @@ export interface V2TelemetrySummary {
  */
 export interface V2MatchState extends MatchState {
     // Spatial replay data
-    frames: MatchFrame[];                          // All frames (1,080 frames = 90 min × 12 ticks)
+    frames: MatchFrame[];                          // All frames (config-driven; baseline 900 = 90 min × 10 ticks)
     
     // Optimized storage (key frames only)
     keyFrames?: MatchFrame[];                      // Goals, cards, set pieces only

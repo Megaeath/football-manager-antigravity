@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { Circle, Text, Star, Group } from 'react-konva';
+import { Circle, Text, Group } from 'react-konva';
 import type { MatchFrame } from '@/lib/engine/v2/types2d';
 
 interface EventsLayerProps {
@@ -43,34 +43,7 @@ export function EventsLayer({ frame, width, height }: EventsLayerProps) {
                 // Render different visuals based on event type
                 switch (event.type) {
                     case 'GOAL':
-                        return (
-                            <Group key={`${event.id}-${index}`}>
-                                {/* Goal celebration star */}
-                                <Star
-                                    x={scale(eventPos.x)}
-                                    y={scale(eventPos.y, 'y')}
-                                    numPoints={5}
-                                    innerRadius={scale(3)}
-                                    outerRadius={scale(6)}
-                                    fill="#fbbf24"
-                                    stroke="#f59e0b"
-                                    strokeWidth={2}
-                                    rotation={0}
-                                />
-                                
-                                {/* Goal text */}
-                                <Text
-                                    x={scale(eventPos.x) - 30}
-                                    y={scale(eventPos.y, 'y') - 40}
-                                    text="⚽ GOAL!"
-                                    fontSize={20}
-                                    fontStyle="bold"
-                                    fill="#fbbf24"
-                                    stroke="#000000"
-                                    strokeWidth={2}
-                                />
-                            </Group>
-                        );
+                        return null;
                     
                     case 'YELLOW_CARD':
                         return (

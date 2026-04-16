@@ -68,6 +68,9 @@ The match engine is the heart of the system:
 The match engine now stores **raw action-level logs** (`PlayerActionLog`) for analysis-first workflows.
 
 - Every key action is logged with: minute, ballPosition (0-100), zone, actionType, result, expectedSuccessRate
+- Log timeline now supports tick-level sequencing for replay-grade fidelity: `minute`, `tick`, `sequence`
+- `PlayerActionLog.x` / `PlayerActionLog.y` are reserved for **BALL position only**
+- Per-tick all-player positions are persisted as compact snapshot JSON in tick-snapshot rows (`actionType = TICK_SNAPSHOT`) to avoid per-player movement row explosion
 - Zones are normalized into 3 thirds:
     - **DEFENSIVE** = 1-30
     - **MIDDLE** = 31-70
@@ -122,6 +125,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Base shape in V2 should remain role-realistic: goalkeeper stays inside usable box depth, back lines hold below midfield, and forwards must stay offside-safe relative to the defensive line when idling/supporting
 - Goal validation in V2 must respect the actual goal mouth; shots that finish outside the post range should remain saved/off-target instead of being counted as goals
 - V2 now applies V1-style incident conditions for `THROW_IN`, `CORNER`, `FOUL`, `CARD_YELLOW`, and `CARD_RED` in dribble/pass/shot resolution, including foul-driven free-kicks and dismissal handling
+- V2 set-piece taker selection is role-aware: throw-ins prefer `DR`/`DL` or highest `throw`, corners/free-kicks prefer highest `setPieces` profile, corners pull `DC`/target attackers into the box, and foul free-kicks choose direct-shot vs long-delivery restart by distance-to-goal
 - At playback `15x/20x`, canvas overlays switch to highlight-only mode (major events + major transitions) to reduce visual spam
 - Highlight event text now includes shot distance (meters from shooter to target) so long-range shot volume is easy to inspect during replay tuning
 - On `/match`, the V2 panel prioritizes replay viewport height; top telemetry cards are removed so the canvas/highlight area can be taller and easier to read
@@ -143,7 +147,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Heat Map pitch drawing should follow the same field geometry/proportions as V2 canvas FieldLayer (3:2 display ratio, matching penalty/goal box and corner arc layout)
 - On `/match`, authoritative score/event/player-stat/team-stat data must come from persisted match tables (`GET /api/match/[id]`), not from on-demand V2 replay generation; V2 replay is visualization-only and may be regenerated without replacing saved result data
 - Replay scoreboard in `/match` should follow authoritative persisted goal progression and reconcile with final persisted score (so late/missing replay-only events do not drift from saved result)
-- Replay highlight flow should supplement frame-level V2 events with authoritative persisted match events when needed (e.g., late 90' incidents), so commentary/highlight navigation does not miss saved goals/cards
+- Replay highlight/commentary flow on `/match` should be **authoritative-first** for played matches: only persisted match events drive ticker/commentary/highlight labels, so replay-generated incidents never contradict saved score/events
 - Replay timeline bar in `/match` should include a +1 minute display window (showing up to ~91) so 90th-minute incidents remain reachable/visible on slider endpoints
 - For already-played matches, V2 replay should prefer the authoritative match participants (players with persisted minutes) so current squad changes or stale tactical assignments do not introduce players who did not actually appear in that match
 - If an `AI vs AI` match is opened directly before another scheduler step processes it, the match detail route may simulate and persist that AI-only match first so the page still renders saved results rather than ephemeral replay-only values
@@ -200,7 +204,7 @@ Phase 6/7 realism hardening (current implementation):
 - Passing can now fail without an interception event through contextual pass-error probability (pressure, distance, receiver crowding, passer/receiver quality)
 - On-ball dribble displacement is capped by each player's pace-driven per-tick movement (`movementSpeed * movementTickSeconds`) to prevent unrealistic carrier teleporting and keep chasers relevant
 - After a goal event resolves, V2 now performs a center-circle kickoff reset (ball to midfield with conceding side possession) to avoid post-goal stalled play
-- V2 simulation cadence now runs at `60 ticks/minute` (one-second resolution). Carrier decisions are throttled by `actionDecisionIntervalTicks` so movement stays smooth without producing unrealistic action spam
+- V2 simulation cadence now runs at `10 ticks/minute` (config-driven). Carrier decisions are evaluated every tick, while movement remains hard-capped by pace-table + acceleration + fitness/stamina so players cannot warp or exceed speed limits
 
 **Tuning note**: if V2 over-shoots volume, tune coefficients in `selectAction()` first before changing global movement constants.
 
