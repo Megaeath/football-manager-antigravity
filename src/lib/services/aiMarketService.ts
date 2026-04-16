@@ -28,7 +28,12 @@ const MAX_SQUAD_SIZE = 30;
 const FORMATION_POSITION_REQUIREMENTS: Record<string, string[]> = {
     '4-4-2': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'],
     '4-3-3': ['GK', 'DR', 'DC', 'DL', 'MC', 'FW'],
-    '4-5-1': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW']
+    '4-5-1': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW'],
+    '3-4-3': ['GK', 'DC', 'MR', 'MC', 'ML', 'FW'],
+    '3-5-2': ['GK', 'DC', 'MR', 'MC', 'ML', 'FW'],
+    '4-2-4': ['GK', 'DR', 'DC', 'DL', 'MC', 'FW'],
+    '5-3-1': ['GK', 'DR', 'DC', 'DL', 'MC', 'AMC', 'FW'],
+    '5-4-1': ['GK', 'DR', 'DC', 'DL', 'MR', 'MC', 'ML', 'FW']
 };
 
 function getPositionKey(position: string): string {

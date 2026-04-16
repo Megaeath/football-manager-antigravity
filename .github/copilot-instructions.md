@@ -108,6 +108,12 @@ The `/match` page provides deep player performance analysis with interactive vis
   - Styled with light background, uppercase, smaller font
   - Includes tooltips on hover explaining each column
 
+**Player Row Icons**:
+- Expanded/collapsed player rows on `/match` should surface key per-match icons inline after the player name
+- Supported icons: `⚽` scorer, `🅰️` assist, `🟨` yellow, `🟥` red, `🔼` subbed on, `🔽` subbed off
+- `🌟` should mark the best-rated player for that match view (derived from actual match ratings/minutes, tie-broken by goals/assists), not a decorative scoreboard badge
+- Scoreboard chips on `/match` and `/fixtures` should not show an unlabeled star overlay
+
 **Implementation** (`src/app/match/page.tsx`):
 - State: `selectedZoneFilter` (future zone filtering)
 - Calculation: Zone percentages use `analytics?.zones` with fallback to `playerMatchStats` thirds
@@ -135,6 +141,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - On `/match`, the V2 replay panel hides the old visualization header strip (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) to keep focus on scoreboard/canvas/highlight flow
 - Highlight commentary now promotes major incidents (goal/shot/cards) as large ticker-style text in the commentary area for quick readability
 - Live commentary box on `/match` should remain a single-line ticker (ellipsis for overflow) so replay controls/filter areas keep enough visible space on smaller screens
+- Replay ticker on `/match` should include defensive context during live possession flow (press/cover actor names from the defending side) so users can see who is chasing/marking the ball carrier
 - For unprocessed matches (`isPlayed = false`), `/match` should show only the top scoreboard state (typically `0-0`); replay/session panel and all lower tabs (`stats/events/home/away/heatmap`) must stay hidden until the match is processed
 - Replay panel on `/match` now includes an `Animation Event` filter (`all`, `SHOT`, `PASS`, `DRIBBLE`) that controls which on-canvas event markers and live ticker event texts are shown during playback
 - When `Animation Event` filter is not `all`, replay playback should prioritize filtered incident windows by playing the event minute plus the following minute, then skipping ahead to the next matching window
@@ -173,6 +180,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - If an `AI vs AI` match is opened directly before another scheduler step processes it, the match detail route may simulate and persist that AI-only match first so the page still renders saved results rather than ephemeral replay-only values
 - Dribble metrics now count only opponent-beating dribble duels; simple lane carries are treated as possession-space progression, not `dribblesWon`
 - On `/match` player tabs (`home`/`away`), list ordering should stay stable by bucket: starting XI first, then reserves; each bucket sorts by role group `GK -> DF -> MF -> FW`, and substitutions must not reshuffle starter rows so reserve players who came on remain visible as reserve entries
+- On `/match` player tabs (`home`/`away`), the `NAME` column should display jersey number prefix when available (for example `#9 Player Name`) in both desktop and mobile rows
 
 ### 1.3 V2 Spatial Decision Model (Develop Mode)
 
@@ -234,6 +242,7 @@ Phase 6/7 realism hardening (current implementation):
 - Kickoff reset ใน V2 ต้องจัดตำแหน่งผู้เล่นกลับฝั่งตัวเอง (forwards stay kickoff-safe at/behind halfway line)
 - Shots that finish off target should restart via explicit `GOAL_KICK` state (not loose-ball chaos behind goal)
 - V2 simulation cadence now runs at `10 ticks/minute` (config-driven). Carrier decisions are evaluated every tick, while movement remains hard-capped by pace-table + acceleration + fitness/stamina so players cannot warp or exceed speed limits
+- V2 now also applies an absolute per-tick displacement clamp (`TUNING_PARAMS.maxPlayerDisplacementPerTick`, default `5.0`) in both movement execution and final anti-warp pass, so non-set-piece movement cannot jump unrealistically between adjacent ticks
 - Non-major possession actions should now resolve continuously at tick cadence: outside cooldown windows, V2 can chain one action per tick (for example pass receipt → next decision on the same receiving tick), while major incidents like shots/goals/cards still apply cooldown for readability
 
 **Tuning note**: if V2 over-shoots volume, tune coefficients in `selectAction()` first before changing global movement constants.
@@ -275,7 +284,7 @@ Phase 6/7 realism hardening (current implementation):
 ### 4. Tactical System (6 Dimensions)
 
 **Database Fields** (`Team` model):
-- `formation` (4-4-2, 4-3-3, 5-3-2, 4-5-1) → position distribution
+- `formation` (4-4-2, 4-3-3, 4-5-1, 3-4-3, 3-5-2, 4-2-4, 5-3-1, 5-4-1; legacy 5-3-2 still supported in engine paths) → position distribution
 - `mentality` (ULTRA_DEFENSIVE to ALL_OUT_ATTACK) → action modifier buffs (1.0-1.5x)
 - `passing` (SHORT, MIXED, LONG) → pass type weight distribution
 - `tackling` (SOFT, NORMAL, HARD) → tackle success rate & foul probability
@@ -305,6 +314,32 @@ Phase 6/7 realism hardening (current implementation):
 - Incoming player assignment rule: always use the **lowest available** squad number first (reuse vacated numbers before new numbers)
 - When a player leaves team context (free agent/retired/contract release), `jerseyNumber` must be cleared (`null`)
 - Applies to both user and AI teams (new game initialization + market transfer completion + release paths)
+- `/squad` has a dedicated `Jersey Numbers` tab: user team can manually assign numbers (unique in team) or run auto-assign; AI teams are view-only there
+
+**Squad Roles UX** (`/squad`):
+- Standalone `Roles` tab is removed; attacking/defensive role dropdowns are shown inline on the `Squad` tab for faster lineup edits
+- Auto Select on `/squad` still picks best XI and now also applies suggested attacking/defensive role presets for selected players
+- Role dropdowns are position-aware: only roles eligible for the player's `naturalPosition` are shown (via `getEligibleRoles()` from `playerRoles.ts`)
+- Role changes are saved via `PATCH /api/player/[id]/role` (REST) or `updatePlayerRole()` server action
+
+**28-Role System** (`src/lib/engine/playerRoles.ts`):
+- Replaces old 13-role system; roles are now split into `state: 'attacking' | 'defending'` (e.g. `Attacking Midfielder` vs `Defensive Midfielder`)
+- Each role has: `positions[]` (eligible positions), `primaryAttributes[]`, `effects`, `conditionDrainMultiplier`
+- `POSITION_ROLE_MAP` maps each base position to its eligible role names
+- API surface: `getEligibleRoles()`, `getEligibleRolesByState()`, `getSuggestedRolePresets()`, `calculateRoleSuitability()`, `getRoleEffects()`, `getRoleConditionDrain()`, `getAllRoles()`, `getPreferredRoleNamesForPhase()`
+
+**Role Movement Config** (`src/lib/engine/v2/roleMovementConfig.ts`):
+- Single source of truth for V2 spatial movement bias per role (28 configs)
+- Each config: `targetXRange`, `yBehavior` (center/hug_left/hug_right/half_width), `pressHighLine`, `deepBlockLine`
+- `getActiveRoleConfig(attackingPreset, defensivePreset, phaseState)` — selects config by in/out-of-possession phase
+- Applied in `roleSpecialists/index.ts` via `applyRoleMovementConfig()` after base specialist intent is generated
+
+**Role Preset Pipeline (V2 Simulation)**:
+1. DB: `player.attackingRolePreset` / `player.defensiveRolePreset` fields (Prisma schema)
+2. `matchSimulator.ts` → `PlayerState` (line 519)
+3. `v2-sim/route.ts` → `DbPlayerLite` → `mapPlayer()` → `PlayerState`
+4. `match2d.ts` → `createV2Player()` → `V2PlayerState`
+5. `roleSpecialists/index.ts` → `generateSpecialistIntent()` → `applyRoleMovementConfig()`
 
 **Player Value** (`evaluateMarketValue`):
 - Base: (overall * 10,000) + (age factor * 5,000,000)
@@ -560,6 +595,7 @@ npx prisma migrate  # List/create migrations
 | Purpose | Files |
 |---------|-------|
 | **Match Engine** | `match.ts`, `playerPower.ts`, `formulas.ts` |
+| **Role System** | `playerRoles.ts` (28 roles), `v2/roleMovementConfig.ts` (movement bias) |
 | **Financial System** | `financial.ts`, `market.ts` (bidding) |
 | **Experience & Progression** | `experience.ts`, `financial.ts` (decay) |
 | **Training System** | `training.ts` (service), `constants/training.ts`, `app/training/*` |

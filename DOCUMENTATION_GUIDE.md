@@ -30,6 +30,7 @@
 - ถ้าแมตช์ยังไม่ถูก process (`isPlayed=false`) หน้า `/match` ต้องแสดงเฉพาะ scoreboard ด้านบน (เช่น `0-0`) และซ่อนส่วน replay/session + tabs ทั้งหมดจนกว่าจะกด process match
 - ช่องคำบรรยายใต้ replay จะแสดงเหตุการณ์สำคัญ (GOAL/SHOT/CARD) แบบตัวใหญ่และ ticker-style เพื่อให้อ่านง่ายขึ้นระหว่างดูไฮไลต์
 - กล่องคำบรรยายใต้ replay ควรแสดงแบบบรรทัดเดียว (single-line ticker + ellipsis) เพื่อไม่กินพื้นที่แนวตั้งและไม่บังโซน control/filter
+- ข้อความ live commentary ใต้ replay ควรแสดงทั้งคนครองบอลและชื่อผู้เล่นฝั่งรับที่มีบทบาทเกมรับหลัก (เช่น press/cover) เพื่ออ่านคู่ไล่บอลได้ทันที
 - ใต้ scoreboard ของ replay มีตัวกรอง `Animation Event` (`all`, `SHOT`, `PASS`, `DRIBBLE`) สำหรับคุม marker/ข้อความเหตุการณ์ที่แสดงระหว่าง animation โดยตรง
 - เมื่อเลือก `Animation Event` ไม่ใช่ `all` replay จะเล่นเฉพาะช่วงนาทีของ event + นาทีถัดไป แล้วข้ามไปช่วง event ถัดไปอัตโนมัติ
 - สำหรับแมตช์ที่เล่นแล้ว โหมดกรอง `PASS`/`DRIBBLE` ของ animation จะอิง replay incident stream เพื่อให้มีช่วงเหตุการณ์ให้เล่นจริง (เพราะ persisted authoritative events มักไม่มีเหตุการณ์ละเอียดระดับ pass/dribble)
@@ -53,6 +54,8 @@
 - เวลาใน replay UI ของหน้า `/match` ควรแสดงนาทีแบบตัวเลขเดี่ยว `0` ... `90` (ใน player control และข้อความคำบรรยาย) และตัดบรรทัดหัว `Minute xx` เหนือคำบรรยายออกเพื่อลดความสูง UI; canonical minute ใน DB/events ยังคงเป็น `1..90`
 - แท็บผู้เล่นบนหน้า `/match` (`home`/`away`) ต้องเรียงข้อมูลแบบคงที่: ตัวจริง 11 คนก่อน แล้วค่อยตัวสำรอง โดยแต่ละกลุ่มเรียง `GK -> DF -> MF -> FW`; เมื่อมีการเปลี่ยนตัว ห้ามสลับแถวตัวจริงขึ้นลงตามตัวที่ลงมาใหม่ เพื่อให้เห็นชัดว่าตัวสำรองคนไหนได้ลงเล่น
 - ในแท็บผู้เล่นหน้า `/match` เมื่อกด expand การ์ดนักเตะ (`Action Breakdown`/`Detailed Action Stats`) ให้ยึดค่า analytics จาก raw logs เป็นหลัก และ fallback เป็น persisted row stats (`passes/crosses/dribbles/shots`) เมื่อ raw logs ไม่มี/ไม่ครบ เพื่อเลี่ยงเคสตัวเลข 0 ทั้งบล็อกทั้งที่แถวหลักมีสถิติ
+- ไอคอนหลังชื่อนักเตะในแท็บ `home` / `away` บนหน้า `/match` ต้องสื่อความหมายตรงตามนัดนั้นจริง: `⚽` ยิง, `🅰️` แอสซิสต์, `🟨/🟥` ใบเหลือง/แดง, `🔼/🔽` เปลี่ยนเข้า/ออก, และ `🌟` สำหรับผู้เล่นเรตติ้งดีที่สุดของนัด; ไม่ควรมีดาวลอยบน score chip ของหน้า `/match` หรือ `/fixtures`
+- คอลัมน์ `NAME` ในแท็บผู้เล่น `/match` (`home` / `away`) ควรแสดงเบอร์เสื้อร่วมกับชื่อ (เช่น `#10 Player Name`) เมื่อมีข้อมูลเบอร์ เพื่อให้เทียบกับ replay/event ได้เร็วขึ้น
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
 - Header หลักด้านบนจะย่อแรงขึ้นเมื่อ scroll ลง โดยโลโก้ `⚽ FOOTBALL MANAGER` จะเหลือประมาณครึ่งหนึ่งของขนาดปกติเพื่อคืนพื้นที่ให้ content
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)
@@ -84,6 +87,8 @@
 - เพิ่ม/แก้ระบบฝึกซ้อม → ดู [TRAINING.md](TRAINING.md) และ API `/api/training/*`
 - เพิ่ม/แก้ flow `Settings > New Game` หรือ legend mode → ดู `.github/copilot-instructions.md` หัวข้อ `Fix/reset new game initialization` และ `Legend mode new game`
 - เพิ่ม/แก้ระบบหมายเลขเสื้อ → ดู `src/lib/services/jerseyNumberService.ts` + จุดย้ายทีมใน `src/lib/engine/market.ts`
+- ปรับหน้า `/squad` ด้าน lineup/role/jersey → ดู `src/app/squad/SquadClient.tsx` (Roles ถูกย้ายมาเป็น dropdown ในแท็บ Squad และมีแท็บ `Jersey Numbers` สำหรับ assign เบอร์; AI team เป็น view-only)
+- เพิ่มรูปแบบแผนใหม่ในระบบจัดตัว (`3-4-3`, `3-5-2`, `4-2-4`, `5-3-1`, `5-4-1`) → sync ทั้ง `SquadClient`, `matchSimulator`, `autoTacticalPositionSelector`, `v2/config`, และ depth requirement ใน `aiMarketService`
 
 ### เมื่อแก้อะไร ต้องอัปเดตเอกสารไหน
 

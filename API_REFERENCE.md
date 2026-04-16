@@ -651,7 +651,64 @@
 
 ---
 
-### 9. `PATCH /api/player/[id]/status`
+### 9. `PATCH /api/player/[id]/role`
+
+**ตัวอักษร**: อัพเดท Player Role Presets
+
+**สิ่งที่ทำ**: บันทึก attacking/defensive role preset ของผู้เล่น (ระบบ 28 roles)
+
+**Input**:
+
+```json
+{
+  "attackingRolePreset": "Advanced Playmaker",
+  "defensiveRolePreset": "Ball-Winning Midfielder"
+}
+```
+
+**Output**:
+
+```json
+{
+  "success": true,
+  "player": {
+    "id": "...",
+    "attackingRolePreset": "Advanced Playmaker",
+    "defensiveRolePreset": "Ball-Winning Midfielder"
+  }
+}
+```
+
+**Validation**:
+
+- ตรวจ role name ใน `ROLE_DEFINITIONS` (playerRoles.ts)
+- ตรวจ position compatibility ผ่าน `POSITION_ROLE_MAP`
+
+**Calls**:
+
+- `prisma.player.update()` — บันทึก `attackingRolePreset`, `defensiveRolePreset`, และ legacy `playerRole`
+
+**Server Action Alternative**: `updatePlayerRole(playerId, attackingRolePreset, defensiveRolePreset)` ใน `actions.ts`
+
+---
+
+### 9b. `GET /api/player/[id]/role`
+
+**ตัวอักษร**: ดึง Role Presets ของผู้เล่น
+
+**Output**:
+
+```json
+{
+  "id": "...",
+  "attackingRolePreset": "Advanced Playmaker",
+  "defensiveRolePreset": "Ball-Winning Midfielder"
+}
+```
+
+---
+
+### 10. `PATCH /api/player/[id]/status`
 
 **ตัวอักษร**: อัพเดท Player Transfer Status
 

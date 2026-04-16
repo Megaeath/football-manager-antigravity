@@ -383,20 +383,15 @@ export default async function FixturesPage({
                                                 <div style={{ margin: '0 2rem', textAlign: 'center', minWidth: '120px' }}>
                                                     {isPlayed ? (
                                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                                            <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                                <div style={{
-                                                                    background: 'var(--sidebar-bg)',
-                                                                    color: 'white',
-                                                                    padding: '6px 16px',
-                                                                    borderRadius: '8px',
-                                                                    fontWeight: 'bold',
-                                                                    fontSize: '1.1rem'
-                                                                }}>
-                                                                    {m.homeScore} - {m.awayScore}
-                                                                </div>
-                                                                {m.motmPlayerId && (
-                                                                    <span title={MATCH.PLAYER_OF_MATCH} style={{ position: 'absolute', top: '-8px', right: '-8px', fontSize: '1.2rem' }}>🌟</span>
-                                                                )}
+                                                            <div style={{
+                                                                background: 'var(--sidebar-bg)',
+                                                                color: 'white',
+                                                                padding: '6px 16px',
+                                                                borderRadius: '8px',
+                                                                fontWeight: 'bold',
+                                                                fontSize: '1.1rem'
+                                                            }}>
+                                                                {m.homeScore} - {m.awayScore}
                                                             </div>
                                                             {hasPenalties && (
                                                                 <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b45309' }}>

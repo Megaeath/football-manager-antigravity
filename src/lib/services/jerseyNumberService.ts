@@ -107,34 +107,35 @@ export async function assignInitialJerseyNumbersForTeam(teamId: string, db: DbCl
             return a.name.localeCompare(b.name);
         });
 
-    const updates: Array<Promise<unknown>> = [];
-
+    // Build target map first
+    const targetMap = new Map<string, number>();
     starters.forEach((player, index) => {
-        const target = index + 1;
-        if (player.jerseyNumber !== target) {
-            updates.push(
-                db.player.update({
-                    where: { id: player.id },
-                    data: { jerseyNumber: target },
-                })
-            );
-        }
+        targetMap.set(player.id, index + 1);
     });
-
     bench.forEach((player, index) => {
-        const target = 12 + index;
-        if (player.jerseyNumber !== target) {
-            updates.push(
-                db.player.update({
-                    where: { id: player.id },
-                    data: { jerseyNumber: target },
-                })
-            );
-        }
+        targetMap.set(player.id, 12 + index);
     });
 
-    if (updates.length > 0) {
-        await Promise.all(updates);
+    // Check if any changes needed
+    const needsUpdate = [...targetMap.entries()].some(([id, target]) => {
+        const player = players.find((p) => p.id === id);
+        return player?.jerseyNumber !== target;
+    });
+
+    if (!needsUpdate) return;
+
+    // Step 1: Clear all jersey numbers for the team to avoid unique constraint conflicts
+    await db.player.updateMany({
+        where: { teamId },
+        data: { jerseyNumber: null },
+    });
+
+    // Step 2: Assign new numbers sequentially (safe since all are cleared)
+    for (const [playerId, target] of targetMap.entries()) {
+        await db.player.update({
+            where: { id: playerId },
+            data: { jerseyNumber: target },
+        });
     }
 }
 

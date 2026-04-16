@@ -113,5 +113,9 @@ comment db url on .env
 npx prisma generate
 npm run dev
 
+## list project file
+
+git ls-files | xargs wc -l
+git ls-files | xargs wc -l | awk '$1 > 500 && $2 != "total" {print $0}' | sort -rn
 
 *Developed with ❤️ for the Football Management community.*

@@ -199,6 +199,10 @@ export interface V2PlayerState extends PlayerState {
     // Visual state
     isSprinting: boolean;             // Show sprint animation
     facingDirection: number;          // Degrees (0-360)
+
+    // Role presets — read by specialist modules each tick to apply movement config
+    attackingRolePreset?: string | null;
+    defensiveRolePreset?: string | null;
 }
 
 // ============================================================

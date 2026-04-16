@@ -65,7 +65,7 @@ function normalizeMentality(value: string | undefined | null): AIPlaystyleTactic
 
 function normalizeFormation(value: string | undefined | null): AIPlaystyleTactics['formation'] {
     const v = (value || '').toUpperCase();
-    if (v === '4-3-3' || v === '4-5-1') return v;
+    if (v === '4-3-3' || v === '4-5-1' || v === '3-4-3' || v === '3-5-2' || v === '4-2-4' || v === '5-3-1' || v === '5-4-1') return v;
     return '4-4-2';
 }
 

@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updateTacticalPosition, updateTeamTactics } from '../actions';
+import { autoAssignTeamJerseyNumbers, bulkAssignTacticalPositions, clearAllTacticalPositions, clearTacticalPosition, updatePlayerJerseyNumber, updateTacticalPosition, updateTeamTactics } from '../actions';
 import type { PlayerAttributes } from '../../lib/engine/types';
 import { calculatePlayerPower, getFitnessFactor, getEffectiveAttributes } from '@/lib/engine/playerPower';
 import { getExpBonus } from '@/lib/engine/experience';
 import PlayerModal from '@/components/PlayerModal';
 import TacticsTabs from '@/components/TacticsTabs';
-import PlayerRolesTab from '@/components/PlayerRolesTab';
 import MatchPrepTab from '@/components/MatchPrepTab';
+import { getEligibleRoles, getSuggestedRolePresets } from '@/lib/engine/playerRoles';
 
 type PlayerProps = {
     id: string;
@@ -23,6 +23,7 @@ type PlayerProps = {
     suspensionMatchesRemaining: number;
     injuryWeeksRemaining: number;
     injurySeverity?: string | null;
+    jerseyNumber?: number | null;
     tacticalPosition: string | null;
     playerRole?: string | null;
     attackingRolePreset?: string | null;
@@ -129,6 +130,71 @@ const FORMATIONS: Record<string, { id: string, label: string }[]> = {
         { id: 'MC_L', label: 'CM (L)' },
         { id: 'ML', label: 'LM' },
         { id: 'FW', label: 'ST' }
+    ],
+    '3-4-3': [
+        { id: 'GK', label: 'GK' },
+        { id: 'DC_R', label: 'CB (R)' },
+        { id: 'DC_C', label: 'CB (C)' },
+        { id: 'DC_L', label: 'CB (L)' },
+        { id: 'MR', label: 'RM' },
+        { id: 'MC_R', label: 'CM (R)' },
+        { id: 'MC_L', label: 'CM (L)' },
+        { id: 'ML', label: 'LM' },
+        { id: 'FW_R', label: 'RW' },
+        { id: 'FW_C', label: 'ST' },
+        { id: 'FW_L', label: 'LW' }
+    ],
+    '3-5-2': [
+        { id: 'GK', label: 'GK' },
+        { id: 'DC_R', label: 'CB (R)' },
+        { id: 'DC_C', label: 'CB (C)' },
+        { id: 'DC_L', label: 'CB (L)' },
+        { id: 'MR', label: 'RM' },
+        { id: 'MC_R', label: 'CM (R)' },
+        { id: 'MC_C', label: 'CM (C)' },
+        { id: 'MC_L', label: 'CM (L)' },
+        { id: 'ML', label: 'LM' },
+        { id: 'FW_R', label: 'ST (R)' },
+        { id: 'FW_L', label: 'ST (L)' }
+    ],
+    '4-2-4': [
+        { id: 'GK', label: 'GK' },
+        { id: 'DR', label: 'RB' },
+        { id: 'DC_R', label: 'CB (R)' },
+        { id: 'DC_L', label: 'CB (L)' },
+        { id: 'DL', label: 'LB' },
+        { id: 'MC_R', label: 'CM (R)' },
+        { id: 'MC_L', label: 'CM (L)' },
+        { id: 'FW_R', label: 'RW' },
+        { id: 'FW_RC', label: 'ST (R)' },
+        { id: 'FW_LC', label: 'ST (L)' },
+        { id: 'FW_L', label: 'LW' }
+    ],
+    '5-3-1': [
+        { id: 'GK', label: 'GK' },
+        { id: 'DR', label: 'RWB' },
+        { id: 'DC_R', label: 'CB (R)' },
+        { id: 'DC_C', label: 'CB (C)' },
+        { id: 'DC_L', label: 'CB (L)' },
+        { id: 'DL', label: 'LWB' },
+        { id: 'MC_R', label: 'CM (R)' },
+        { id: 'MC_C', label: 'CM (C)' },
+        { id: 'MC_L', label: 'CM (L)' },
+        { id: 'AMC', label: 'AM' },
+        { id: 'FW', label: 'ST' }
+    ],
+    '5-4-1': [
+        { id: 'GK', label: 'GK' },
+        { id: 'DR', label: 'RWB' },
+        { id: 'DC_R', label: 'CB (R)' },
+        { id: 'DC_C', label: 'CB (C)' },
+        { id: 'DC_L', label: 'CB (L)' },
+        { id: 'DL', label: 'LWB' },
+        { id: 'MR', label: 'RM' },
+        { id: 'MC_R', label: 'CM (R)' },
+        { id: 'MC_L', label: 'CM (L)' },
+        { id: 'ML', label: 'LM' },
+        { id: 'FW', label: 'ST' }
     ]
 };
 
@@ -141,7 +207,7 @@ const POS_ORDER: Record<string, number> = {
     'FWR': 13, 'FWL': 14, 'FWC': 15
 };
 
-export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [], transferHistory = [], inProcessTransfers = [] }: {
+export default function SquadClient({ teamId, players, currentTactics, matches = [], currentSeason = 1, upcomingMatch, opponentPlayers = [], transferHistory = [], inProcessTransfers = [], isUserTeam = true }: {
     teamId: string,
     players: PlayerProps[],
     currentTactics: { formation: string, mentality: string, passing: string, tackling: string, attacking_focus: string, creative_freedom: string }
@@ -156,12 +222,13 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     },
     opponentPlayers?: { id: string; name: string; position: string; power: number; condition?: number; avgRating?: number; goals?: number; assists?: number }[],
     transferHistory?: TransferHistoryItem[],
-    inProcessTransfers?: InProcessTransferItem[]
+    inProcessTransfers?: InProcessTransferItem[],
+    isUserTeam?: boolean,
 }) {
     const [loading, setLoading] = useState(false);
     const [sortKey, setSortKey] = useState<'name' | 'pos' | 'apps' | 'goals' | 'assists' | 'rating' | 'fit' | 'physical' | 'technical' | 'tactical' | 'mental' | 'exp' | 'power' | 'age'>('pos');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep' | 'transfer'>('squad');
+    const [activeTab, setActiveTab] = useState<'squad' | 'matches' | 'tactics' | 'numbers' | 'matchprep' | 'transfer'>('squad');
     const [selectedSeason, setSelectedSeason] = useState(currentSeason);
     const [transferFilter, setTransferFilter] = useState<'all' | 'in' | 'out'>('all');
     const [lineupPresets, setLineupPresets] = useState<Record<PresetKey, SavedLineupPreset | null>>({ A: null, B: null, C: null });
@@ -173,8 +240,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
 
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab === 'squad' || tab === 'matches' || tab === 'tactics' || tab === 'roles' || tab === 'matchprep' || tab === 'transfer') {
-            setActiveTab(tab as 'squad' | 'matches' | 'tactics' | 'roles' | 'matchprep' | 'transfer');
+        if (tab === 'squad' || tab === 'matches' || tab === 'tactics' || tab === 'numbers' || tab === 'matchprep' || tab === 'transfer') {
+            setActiveTab(tab as 'squad' | 'matches' | 'tactics' | 'numbers' | 'matchprep' | 'transfer');
         }
     }, [searchParams]);
 
@@ -207,6 +274,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const savePreset = (key: PresetKey) => {
+        if (!isUserTeam) return;
         const assignments = getCurrentAssignments();
         if (assignments.length === 0) {
             showPresetFeedback(`Preset ${key}: No players assigned`);
@@ -233,6 +301,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const loadPreset = async (key: PresetKey) => {
+        if (!isUserTeam) return;
         const preset = lineupPresets[key];
         if (!preset) {
             showPresetFeedback(`Preset ${key}: ยังไม่เคยบันทึก`);
@@ -256,6 +325,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const clearPreset = (key: PresetKey) => {
+        if (!isUserTeam) return;
         if (!lineupPresets[key]) {
             showPresetFeedback(`Preset ${key}: ไม่มีข้อมูลให้ลบ`);
             return;
@@ -303,6 +373,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const handleAssign = async (playerId: string, posId: string, currentPosId?: string | null) => {
+        if (!isUserTeam) return;
         const targetPlayer = players.find(p => p.id === playerId);
         if (targetPlayer && isPlayerUnavailable(targetPlayer)) {
             return;
@@ -328,6 +399,16 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
         setLoading(true);
         try {
             await clearAllTacticalPositions(teamId);
+            // Also clear ATK/DEF role presets for all players
+            await Promise.all(
+                players.map((p) =>
+                    fetch(`/api/player/${p.id}/role`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ attackingRolePreset: null, defensiveRolePreset: null }),
+                    })
+                )
+            );
         } catch (error) {
             console.error('Failed to clear all positions', error);
         } finally {
@@ -336,6 +417,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const handleAutoSelect = async () => {
+        if (!isUserTeam) return;
         setLoading(true);
         try {
             const eligiblePlayers = sortedPlayers.filter(
@@ -406,6 +488,31 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
             }
 
             await bulkAssignTacticalPositions(teamId, assignments);
+
+            // Keep auto-select behavior complete: assign recommended attacking/defensive role presets
+            // Skip players who already have both role presets assigned
+            const playerMap = new Map(players.map((p) => [p.id, p]));
+            await Promise.all(
+                assignments.map(async (assignment) => {
+                    const player = playerMap.get(assignment.playerId);
+                    if (!player) return;
+
+                    // Skip if player already has both presets — preserve manual assignments
+                    if (player.attackingRolePreset && player.defensiveRolePreset) return;
+
+                    const suggested = getSuggestedRolePresets(player.naturalPosition);
+                    if (!suggested.attackingRolePreset && !suggested.defensiveRolePreset) return;
+
+                    await fetch(`/api/player/${assignment.playerId}/role`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            attackingRolePreset: player.attackingRolePreset || suggested.attackingRolePreset,
+                            defensiveRolePreset: player.defensiveRolePreset || suggested.defensiveRolePreset,
+                        }),
+                    });
+                })
+            );
         } catch (error) {
             console.error('Failed to auto select lineup', error);
         } finally {
@@ -414,11 +521,74 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
     };
 
     const handleFormationChange = async (formation: string) => {
+        if (!isUserTeam) return;
         setLoading(true);
         try {
             await updateTeamTactics(teamId, { formation });
         } catch (error) {
             console.error('Failed to update formation', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRolePresetChange = async (
+        playerId: string,
+        mode: 'attackingRolePreset' | 'defensiveRolePreset',
+        roleName: string
+    ) => {
+        if (!isUserTeam) return;
+        setLoading(true);
+        try {
+            const payload = mode === 'attackingRolePreset'
+                ? { attackingRolePreset: roleName || null }
+                : { defensiveRolePreset: roleName || null };
+
+            const res = await fetch(`/api/player/${playerId}/role`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data?.success) {
+                throw new Error(data?.error || 'Failed to update role preset');
+            }
+
+            router.refresh();
+        } catch (error: any) {
+            console.error('Failed to update player role preset', error);
+            alert(error?.message || 'Failed to update role preset');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleJerseyChange = async (playerId: string, value: string) => {
+        if (!isUserTeam) return;
+        setLoading(true);
+        try {
+            const parsed = value === '' ? null : Number(value);
+            const normalized = parsed === null ? null : (Number.isFinite(parsed) ? parsed : null);
+            await updatePlayerJerseyNumber(teamId, playerId, normalized);
+            router.refresh();
+        } catch (error: any) {
+            console.error('Failed to update jersey number', error);
+            alert(error?.message || 'Failed to update jersey number');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAutoJersey = async () => {
+        if (!isUserTeam) return;
+        setLoading(true);
+        try {
+            await autoAssignTeamJerseyNumbers(teamId);
+            router.refresh();
+        } catch (error: any) {
+            console.error('Failed to auto assign jersey numbers', error);
+            alert(error?.message || 'Failed to auto assign jersey numbers');
         } finally {
             setLoading(false);
         }
@@ -642,20 +812,20 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                     ⚙️ Tactics
                 </button>
                 <button
-                    onClick={() => setActiveTab('roles')}
+                    onClick={() => setActiveTab('numbers')}
                     style={{
                         padding: '12px 16px',
                         background: 'none',
                         border: 'none',
-                        borderBottom: activeTab === 'roles' ? '3px solid var(--primary)' : 'none',
+                        borderBottom: activeTab === 'numbers' ? '3px solid var(--primary)' : 'none',
                         cursor: 'pointer',
-                        fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
+                        fontWeight: activeTab === 'numbers' ? 'bold' : 'normal',
                         fontSize: '0.9rem',
-                        color: activeTab === 'roles' ? 'var(--primary)' : 'inherit'
+                        color: activeTab === 'numbers' ? 'var(--primary)' : 'inherit'
                     }}
                     className="text-sm md:text-base md:px-5"
                 >
-                    👥 Roles
+                    🔢 Jersey Numbers
                 </button>
                 <button
                     onClick={() => setActiveTab('transfer')}
@@ -723,21 +893,26 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                             <select
                                 value={currentTactics.formation}
                                 onChange={(e) => handleFormationChange(e.target.value)}
-                                disabled={loading}
+                                disabled={loading || !isUserTeam}
                                 style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}
                             >
                                 <option value="4-4-2">4-4-2</option>
                                 <option value="4-3-3">4-3-3</option>
                                 <option value="4-5-1">4-5-1</option>
+                                <option value="3-4-3">3-4-3</option>
+                                <option value="3-5-2">3-5-2</option>
+                                <option value="4-2-4">4-2-4</option>
+                                <option value="5-3-1">5-3-1</option>
+                                <option value="5-4-1">5-4-1</option>
                             </select>
                             <span style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 'bold' }}>⚡{getTeamPower()}</span>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <button onClick={handleAutoSelect} disabled={loading} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--primary-dark)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--primary)'; }}>
+                            <button onClick={handleAutoSelect} disabled={loading || !isUserTeam} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading && isUserTeam) e.currentTarget.style.background = 'var(--primary-dark)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--primary)'; }}>
                                 Auto Select
                             </button>
-                            <button onClick={handleClearAll} disabled={loading} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--muted)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading) e.currentTarget.style.borderColor = 'var(--primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
+                            <button onClick={handleClearAll} disabled={loading || !isUserTeam} style={{ padding: '6px 14px', fontSize: '0.9rem', border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--muted)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseEnter={(e) => { if (!loading && isUserTeam) e.currentTarget.style.borderColor = 'var(--primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
                                 Clear All
                             </button>
                         </div>
@@ -753,7 +928,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                         <div key={`save-${key}`} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                                             <button
                                                 onClick={() => savePreset(key)}
-                                                disabled={loading}
+                                                disabled={loading || !isUserTeam}
                                                 title={`Save current lineup to preset ${key}`}
                                                 style={{
                                                     padding: '5px 9px',
@@ -771,7 +946,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             </button>
                                             <button
                                                 onClick={() => loadPreset(key)}
-                                                disabled={loading || !hasData}
+                                                disabled={loading || !hasData || !isUserTeam}
                                                 title={hasData ? `Load preset ${key}` : `Preset ${key} is empty`}
                                                 style={{
                                                     padding: '5px 8px',
@@ -787,7 +962,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             </button>
                                             <button
                                                 onClick={() => clearPreset(key)}
-                                                disabled={loading || !hasData}
+                                                disabled={loading || !hasData || !isUserTeam}
                                                 title={hasData ? `Clear preset ${key}` : `Preset ${key} is empty`}
                                                 style={{
                                                     padding: '5px 8px',
@@ -823,6 +998,8 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                 <th style={{ padding: '6px' }}>
                                     <button onClick={() => handleSort('pos')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Pos</button>
                                 </th>
+                                <th style={{ padding: '6px' }}>ATK Role</th>
+                                <th style={{ padding: '6px' }}>DEF Role</th>
                                 <th style={{ padding: '6px', textAlign: 'center' }}>
                                     <button onClick={() => handleSort('apps')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>App</button>
                                 </th>
@@ -949,7 +1126,7 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             <select
                                                 value={p.tacticalPosition || ''}
                                                 onChange={(e) => handleAssign(p.id, e.target.value, p.tacticalPosition)}
-                                                disabled={loading || unavailable}
+                                                disabled={loading || unavailable || !isUserTeam}
                                                 style={{ padding: '4px', border: '1px solid #ccc', width: '110px', background: unavailable ? '#f3f4f6' : 'white' }}
                                             >
                                                 <option value="">-</option>
@@ -1010,6 +1187,32 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                             {p.tacticalPosition && <strong style={{ color: '#558b2f' }}> ({p.tacticalPosition})</strong>}
                                         </td>
                                         <td style={{ padding: '6px' }}>{p.naturalPosition}</td>
+                                        <td style={{ padding: '6px' }}>
+                                            <select
+                                                value={p.attackingRolePreset || p.playerRole || ''}
+                                                onChange={(e) => handleRolePresetChange(p.id, 'attackingRolePreset', e.target.value)}
+                                                disabled={loading || !isUserTeam}
+                                                style={{ padding: '4px', border: '1px solid #ccc', width: '130px', background: !isUserTeam ? '#f3f4f6' : 'white' }}
+                                            >
+                                                <option value="">-</option>
+                                                {getEligibleRoles(p.naturalPosition).map((role) => (
+                                                    <option key={`atk-${p.id}-${role.name}`} value={role.name}>{role.displayName}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td style={{ padding: '6px' }}>
+                                            <select
+                                                value={p.defensiveRolePreset || p.playerRole || ''}
+                                                onChange={(e) => handleRolePresetChange(p.id, 'defensiveRolePreset', e.target.value)}
+                                                disabled={loading || !isUserTeam}
+                                                style={{ padding: '4px', border: '1px solid #ccc', width: '130px', background: !isUserTeam ? '#f3f4f6' : 'white' }}
+                                            >
+                                                <option value="">-</option>
+                                                {getEligibleRoles(p.naturalPosition).map((role) => (
+                                                    <option key={`def-${p.id}-${role.name}`} value={role.name}>{role.displayName}</option>
+                                                ))}
+                                            </select>
+                                        </td>
                                         <td style={{ padding: '6px', textAlign: 'center' }}>{p.apps}</td>
                                         <td style={{ padding: '6px', textAlign: 'center' }}>{p.goals}</td>
                                         <td style={{ padding: '6px', textAlign: 'center' }}>{p.assists}</td>
@@ -1100,6 +1303,36 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                                         <div><span className="text-gray-500">Suitability:</span> <span className="font-semibold" style={{ color: power >= 70 ? 'var(--success)' : power >= 60 ? 'var(--accent)' : 'inherit' }}>{power}</span></div>
                                         <div><span className="text-gray-500">Age:</span> <span className="font-semibold">{p.age}</span></div>
                                         <div><span className="text-gray-500">G/A:</span> <span className="font-semibold">{p.goals}/{p.assists}</span></div>
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-1 gap-2 text-sm">
+                                        <div>
+                                            <span className="text-gray-500">ATK Role:</span>
+                                            <select
+                                                value={p.attackingRolePreset || p.playerRole || ''}
+                                                onChange={(e) => handleRolePresetChange(p.id, 'attackingRolePreset', e.target.value)}
+                                                disabled={loading || !isUserTeam}
+                                                style={{ marginLeft: '6px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px', background: !isUserTeam ? '#f3f4f6' : 'white' }}
+                                            >
+                                                <option value="">-</option>
+                                                {getEligibleRoles(p.naturalPosition).map((role) => (
+                                                    <option key={`m-atk-${p.id}-${role.name}`} value={role.name}>{role.displayName}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">DEF Role:</span>
+                                            <select
+                                                value={p.defensiveRolePreset || p.playerRole || ''}
+                                                onChange={(e) => handleRolePresetChange(p.id, 'defensiveRolePreset', e.target.value)}
+                                                disabled={loading || !isUserTeam}
+                                                style={{ marginLeft: '6px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px', background: !isUserTeam ? '#f3f4f6' : 'white' }}
+                                            >
+                                                <option value="">-</option>
+                                                {getEligibleRoles(p.naturalPosition).map((role) => (
+                                                    <option key={`m-def-${p.id}-${role.name}`} value={role.name}>{role.displayName}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             ))
@@ -1201,8 +1434,122 @@ export default function SquadClient({ teamId, players, currentTactics, matches =
                 </div>
             )}
 
-            {activeTab === 'roles' && (
-                <PlayerRolesTab players={players} teamId={teamId} onViewPlayer={openPlayerModal} />
+            {activeTab === 'numbers' && (
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                        <div>
+                            <h3 style={{ margin: 0 }}>🔢 Jersey Number Management</h3>
+                            <p style={{ margin: '4px 0 0 0', color: 'var(--muted)', fontSize: '0.9rem' }}>
+                                {isUserTeam
+                                    ? 'You can manually assign player shirt numbers. Auto mode is still available.'
+                                    : 'Read-only view for AI team. AI manages jersey numbers automatically.'}
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleAutoJersey}
+                            disabled={loading || !isUserTeam}
+                            className="btn btn-primary"
+                            style={{ width: 'auto' }}
+                        >
+                            ♻️ Auto Assign Numbers
+                        </button>
+                    </div>
+
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }} className="hidden md:table">
+                        <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '10px', textAlign: 'left' }}>Player</th>
+                                <th style={{ padding: '10px', textAlign: 'left' }}>Pos</th>
+                                <th style={{ padding: '10px', textAlign: 'center' }}>Condition</th>
+                                <th style={{ padding: '10px', textAlign: 'center' }}>Jersey #</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {[...players]
+                                .sort((a, b) => {
+                                    const aj = a.jerseyNumber ?? 999;
+                                    const bj = b.jerseyNumber ?? 999;
+                                    if (aj !== bj) return aj - bj;
+                                    return a.name.localeCompare(b.name);
+                                })
+                                .map((p) => {
+                                    const unavailable = isPlayerUnavailable(p);
+                                    return (
+                                        <tr key={`jersey-${p.id}`} style={{ borderBottom: '1px solid var(--border)', background: unavailable ? '#fef2f2' : 'transparent' }}>
+                                            <td style={{ padding: '10px' }}>
+                                                <button
+                                                    onClick={() => openPlayerModal(p.id)}
+                                                    style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                                                >
+                                                    {p.name}
+                                                </button>
+                                            </td>
+                                            <td style={{ padding: '10px' }}>{p.naturalPosition}</td>
+                                            <td style={{ padding: '10px', textAlign: 'center', color: p.condition < 80 ? '#c62828' : '#2e7d32' }}>{Math.round(p.condition)}%</td>
+                                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                {isUserTeam ? (
+                                                    <select
+                                                        value={p.jerseyNumber ?? ''}
+                                                        onChange={(e) => handleJerseyChange(p.id, e.target.value)}
+                                                        disabled={loading}
+                                                        style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', minWidth: '90px' }}
+                                                    >
+                                                        <option value="">-</option>
+                                                        {Array.from({ length: 99 }, (_, i) => i + 1).map((n) => (
+                                                            <option key={`jersey-opt-${p.id}-${n}`} value={n}>{n}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <span style={{ fontWeight: 700 }}>{p.jerseyNumber ?? '-'}</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                        </tbody>
+                    </table>
+
+                    <div className="flex flex-col gap-3 md:hidden">
+                        {[...players]
+                            .sort((a, b) => {
+                                const aj = a.jerseyNumber ?? 999;
+                                const bj = b.jerseyNumber ?? 999;
+                                if (aj !== bj) return aj - bj;
+                                return a.name.localeCompare(b.name);
+                            })
+                            .map((p) => (
+                                <div key={`m-jersey-${p.id}`} className="rounded-lg border border-[var(--border)] p-3 bg-[var(--card-bg)]">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <button
+                                            onClick={() => openPlayerModal(p.id)}
+                                            style={{ color: '#1565c0', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '0.95rem', fontWeight: 700 }}
+                                        >
+                                            {p.name}
+                                        </button>
+                                        <span style={{ fontWeight: 700 }}>{p.naturalPosition}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span style={{ color: 'var(--muted)' }}>Condition: {Math.round(p.condition)}%</span>
+                                        {isUserTeam ? (
+                                            <select
+                                                value={p.jerseyNumber ?? ''}
+                                                onChange={(e) => handleJerseyChange(p.id, e.target.value)}
+                                                disabled={loading}
+                                                style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', minWidth: '90px' }}
+                                            >
+                                                <option value="">-</option>
+                                                {Array.from({ length: 99 }, (_, i) => i + 1).map((n) => (
+                                                    <option key={`m-jersey-opt-${p.id}-${n}`} value={n}>{n}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <span style={{ fontWeight: 700 }}>#{p.jerseyNumber ?? '-'}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                </div>
             )}
 
             {activeTab === 'transfer' && (

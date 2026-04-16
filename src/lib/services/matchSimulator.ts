@@ -60,6 +60,71 @@ const FORMATIONS: Record<string, { id: string }[]> = {
         { id: 'MC_L' },
         { id: 'ML' },
         { id: 'FW' }
+    ],
+    '3-4-3': [
+        { id: 'GK' },
+        { id: 'DC_R' },
+        { id: 'DC_C' },
+        { id: 'DC_L' },
+        { id: 'MR' },
+        { id: 'MC_R' },
+        { id: 'MC_L' },
+        { id: 'ML' },
+        { id: 'FW_R' },
+        { id: 'FW_C' },
+        { id: 'FW_L' }
+    ],
+    '3-5-2': [
+        { id: 'GK' },
+        { id: 'DC_R' },
+        { id: 'DC_C' },
+        { id: 'DC_L' },
+        { id: 'MR' },
+        { id: 'MC_R' },
+        { id: 'MC_C' },
+        { id: 'MC_L' },
+        { id: 'ML' },
+        { id: 'FW_R' },
+        { id: 'FW_L' }
+    ],
+    '4-2-4': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MC_R' },
+        { id: 'MC_L' },
+        { id: 'FW_R' },
+        { id: 'FW_RC' },
+        { id: 'FW_LC' },
+        { id: 'FW_L' }
+    ],
+    '5-3-1': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_C' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MC_R' },
+        { id: 'MC_C' },
+        { id: 'MC_L' },
+        { id: 'AMC' },
+        { id: 'FW' }
+    ],
+    '5-4-1': [
+        { id: 'GK' },
+        { id: 'DR' },
+        { id: 'DC_R' },
+        { id: 'DC_C' },
+        { id: 'DC_L' },
+        { id: 'DL' },
+        { id: 'MR' },
+        { id: 'MC_R' },
+        { id: 'MC_L' },
+        { id: 'ML' },
+        { id: 'FW' }
     ]
 };
 
@@ -70,6 +135,7 @@ const SLOT_NATURAL_PREFERENCES: Record<string, string[]> = {
     DC: ['DC', 'DMC', 'DR', 'DL'],
     DMC: ['DMC', 'MC', 'AMC', 'DMR', 'DML', 'DC'],
     MC: ['MC', 'DMC', 'AMC', 'MR', 'ML', 'DMR', 'DML'],
+    AMC: ['AMC', 'MC', 'DMC', 'AMR', 'AML', 'MR', 'ML', 'FWC', 'FWR', 'FWL'],
     MR: ['MR', 'ML', 'AMR', 'AML', 'AMC', 'MC', 'FWR', 'FWL', 'FWC'],
     ML: ['ML', 'MR', 'AML', 'AMR', 'AMC', 'MC', 'FWL', 'FWR', 'FWC'],
     FW: ['FWC', 'FWR', 'FWL', 'AMC', 'MR', 'ML']

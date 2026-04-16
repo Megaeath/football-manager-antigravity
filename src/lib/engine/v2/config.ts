@@ -233,6 +233,91 @@ export const FORMATION_POSITIONS: Record<string, Record<string, SpatialPosition>
         // Forward 1
         'FWC': { x: 61, y: 50 },   // Lone Striker
     },
+
+    // ========================================
+    // 3-4-3 Formation
+    // ========================================
+    '3-4-3': {
+        'GK': { x: 4, y: 50 },
+        'DCR': { x: 14, y: 66 },
+        'DC': { x: 12, y: 50 },
+        'DCL': { x: 14, y: 34 },
+        'MR': { x: 39, y: 82 },
+        'MCR': { x: 37, y: 60 },
+        'MCL': { x: 37, y: 40 },
+        'ML': { x: 39, y: 18 },
+        'FWR': { x: 62, y: 74 },
+        'FWC': { x: 65, y: 50 },
+        'FWL': { x: 62, y: 26 },
+    },
+
+    // ========================================
+    // 3-5-2 Formation
+    // ========================================
+    '3-5-2': {
+        'GK': { x: 4, y: 50 },
+        'DCR': { x: 14, y: 66 },
+        'DC': { x: 12, y: 50 },
+        'DCL': { x: 14, y: 34 },
+        'MR': { x: 39, y: 84 },
+        'MCR': { x: 37, y: 63 },
+        'MC': { x: 34, y: 50 },
+        'MCL': { x: 37, y: 37 },
+        'ML': { x: 39, y: 16 },
+        'FWR': { x: 62, y: 56 },
+        'FWL': { x: 62, y: 44 },
+    },
+
+    // ========================================
+    // 4-2-4 Formation
+    // ========================================
+    '4-2-4': {
+        'GK': { x: 4, y: 50 },
+        'DR': { x: 16, y: 84 },
+        'DCR': { x: 14, y: 60 },
+        'DCL': { x: 14, y: 40 },
+        'DL': { x: 16, y: 16 },
+        'MCR': { x: 35, y: 60 },
+        'MCL': { x: 35, y: 40 },
+        'FWR': { x: 62, y: 80 },
+        'FWRC': { x: 64, y: 58 },
+        'FWLC': { x: 64, y: 42 },
+        'FWL': { x: 62, y: 20 },
+    },
+
+    // ========================================
+    // 5-3-1 Formation
+    // ========================================
+    '5-3-1': {
+        'GK': { x: 4, y: 50 },
+        'DR': { x: 18, y: 88 },
+        'DCR': { x: 14, y: 66 },
+        'DC': { x: 12, y: 50 },
+        'DCL': { x: 14, y: 34 },
+        'DL': { x: 18, y: 12 },
+        'MCR': { x: 37, y: 63 },
+        'MC': { x: 34, y: 50 },
+        'MCL': { x: 37, y: 37 },
+        'AMC': { x: 50, y: 50 },
+        'FWC': { x: 66, y: 50 },
+    },
+
+    // ========================================
+    // 5-4-1 Formation
+    // ========================================
+    '5-4-1': {
+        'GK': { x: 4, y: 50 },
+        'DR': { x: 18, y: 88 },
+        'DCR': { x: 14, y: 66 },
+        'DC': { x: 12, y: 50 },
+        'DCL': { x: 14, y: 34 },
+        'DL': { x: 18, y: 12 },
+        'MR': { x: 39, y: 84 },
+        'MCR': { x: 35, y: 60 },
+        'MCL': { x: 35, y: 40 },
+        'ML': { x: 39, y: 16 },
+        'FWC': { x: 63, y: 50 },
+    },
 };
 
 // ============================================================
@@ -476,6 +561,9 @@ export const TUNING_PARAMS = {
     // Simulation cadence (strict spec: 10 ticks/min = 6 sec/tick)
     simulationTicksPerMinute: 10,
     movementTickSeconds: 6.0,
+    // Hard anti-warp clamp (absolute max displacement for any player per tick)
+    // Applies to normal movement + post-action safety clamp in match2d.
+    maxPlayerDisplacementPerTick: 5.0,
     // Defender tackle bonus (applied in match2d)
     defenderTackleBonus: DEFENDER_TACKLE_BONUS,
 

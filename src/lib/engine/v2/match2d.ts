@@ -156,6 +156,9 @@ function createV2Player(player: TeamState['players'][number], side: TeamKey, fal
         movementSpeed: 0,
         isSprinting: false,
         facingDirection: 0,
+        // Role presets from DB — used by specialist modules
+        attackingRolePreset: player.attackingRolePreset,
+        defensiveRolePreset: player.defensiveRolePreset,
     };
 }
 
@@ -649,10 +652,11 @@ function enforcePerTickMovementCap(
             minute,
             TUNING_PARAMS.movementTickSeconds,
         );
+        const hardMaxDistance = Math.max(0, Number(TUNING_PARAMS.maxPlayerDisplacementPerTick || 0));
         const clampedPosition = clampDisplacementToReachableDistance(
             previousPosition,
             player.position2D,
-            maxDistance,
+            hardMaxDistance > 0 ? Math.min(maxDistance, hardMaxDistance) : maxDistance,
         );
 
         if (clampedPosition.x !== player.position2D.x || clampedPosition.y !== player.position2D.y) {
@@ -1866,12 +1870,18 @@ export function simulateMatch2D(
         carrier,
     };
 
+
     for (let absoluteTick = 0; absoluteTick < TOTAL_TICKS; absoluteTick += 1) {
         const minute = Math.floor(absoluteTick / TICKS_PER_MINUTE);
         const tick = absoluteTick % TICKS_PER_MINUTE;
         const frameEvents: VisualEvent[] = [];
         const frameTransitions: BallTransition[] = [];
-        
+
+        // --- Store previous positions for all players at the start of the tick ---
+        [...homePlayers, ...awayPlayers].forEach((player) => {
+            previousPositionByPlayer.set(player.id, { ...player.position2D });
+        });
+
         // Substitution check (once per minute, starting at minute 55)
         if (tick === 0 && minute >= 55 && minute < 90) {
             homeSubsUsed = attemptV2Substitutions(homePlayers, playerStats, frameEvents, minute, homeSubsUsed, maxSubs, homeTeam.id);
@@ -1997,10 +2007,11 @@ export function simulateMatch2D(
             }
         }
 
+
         // Phase 2: Generate movement intents and update positions
         const homeIntents: Record<string, RoleIntent> = {};
         const awayIntents: Record<string, RoleIntent> = {};
-        
+
         // Home team movement
         activeHomePlayers.forEach((player) => {
             const phaseState = getPlayerPhaseState(player, carrier, possession);
@@ -2053,7 +2064,7 @@ export function simulateMatch2D(
                 }
             }
             homeIntents[player.id] = intent;
-            
+
             // Apply role-clamped movement toward intent target
             const desiredX = clampRoleX(player, target.x, 'home', phaseState);
             // Apply offside safety check for attacking players
@@ -2068,7 +2079,7 @@ export function simulateMatch2D(
                 TUNING_PARAMS.movementTickSeconds,
             );
         });
-        
+
         // Away team movement
         activeAwayPlayers.forEach((player) => {
             const phaseState = getPlayerPhaseState(player, carrier, possession);
@@ -2121,7 +2132,7 @@ export function simulateMatch2D(
                 }
             }
             awayIntents[player.id] = intent;
-            
+
             // Apply role-clamped movement toward intent target
             const desiredX = clampRoleX(player, target.x, 'away', phaseState);
             // Apply offside safety check for attacking players
@@ -2139,6 +2150,9 @@ export function simulateMatch2D(
 
         applyTeamSpacingGuard(activeHomePlayers, TUNING_PARAMS.minTeammateDistance);
         applyTeamSpacingGuard(activeAwayPlayers, TUNING_PARAMS.minTeammateDistance);
+
+        // --- Clamp all player movement to per-tick max after all actions (including after passes) ---
+        enforcePerTickMovementCap([...homePlayers, ...awayPlayers], previousPositionByPlayer, minute, carrier?.id);
         
         // Phase 2.4: Movement telemetry - log intents on config interval
         if (absoluteTick % TUNING_PARAMS.telemetryLogIntervalTicks === 0 && carrier) {

@@ -329,7 +329,10 @@ export function updatePlayerPosition(
     // Direction vector normalization keeps diagonal speed fair (no diagonal boost)
     // Hard anti-warp guard: per-tick displacement may never exceed
     // pace-table top speed adjusted by ball-carry, condition, and stamina.
-    const maxStepPerTick = Math.max(0, topSpeed * tickSeconds);
+    const maxStepPerTick = Math.max(
+        0,
+        Math.min(topSpeed * tickSeconds, TUNING_PARAMS.maxPlayerDisplacementPerTick),
+    );
     const step = Math.min(nextSpeed * tickSeconds, maxStepPerTick, distance);
     const moveX = (dx / distance) * step;
     const moveY = (dy / distance) * step;

@@ -35,6 +35,8 @@ interface DbPlayerLite {
   strength: number;
   agility: number;
   balance: number;
+  attackingRolePreset: string | null;
+  defensiveRolePreset: string | null;
 }
 
 interface DbTeamLite {
@@ -382,6 +384,8 @@ function mapPlayer(p: DbPlayerLite): PlayerState {
     morale: p.morale ?? 80,
     exp: p.exp ?? 0,
     tacticalPosition: p.tacticalPosition || p.naturalPosition || null,
+    attackingRolePreset: p.attackingRolePreset || null,
+    defensiveRolePreset: p.defensiveRolePreset || null,
     cards: { yellow: 0, red: 0 },
     stats: { goals: 0, assists: 0, tackles: 0, passes: 0 },
   };

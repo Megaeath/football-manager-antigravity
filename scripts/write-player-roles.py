@@ -1,4 +1,4 @@
-import { Player } from '@prisma/client';
+content = r"""import { Player } from '@prisma/client';
 import { PlayerAttributes } from './types';
 
 export interface RoleDefinition {
@@ -164,3 +164,9 @@ export function getPreferredRoleNamesForPhase(phase: 'attacking' | 'defensive'):
   for (const list of Object.values(map)) list.forEach(n => all.add(n));
   return [...all];
 }
+"""
+
+with open('/Users/auii/Project/game/src/lib/engine/playerRoles.ts', 'w') as f:
+    f.write(content)
+
+print('Written', len(content), 'chars')

@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { initializeNewGame, type NewGameMode } from '@/lib/services/newGameInitializer';
 import { AI_PLAYSTYLE_PROFILE_MAP } from '@/lib/services/aiPlaystyleProfiles';
+import { assignInitialJerseyNumbersForTeam } from '@/lib/services/jerseyNumberService';
 
 async function assertPlayerAvailableForSelection(playerId: string, teamId: string) {
     const player = await prisma.player.findUnique({
@@ -118,6 +119,18 @@ export async function updateTeamTactics(teamId: string, tactics: { formation?: s
     revalidatePath('/squad');
 }
 
+export async function updatePlayerRole(playerId: string, attackingRolePreset: string | null, defensiveRolePreset: string | null) {
+    await prisma.player.update({
+        where: { id: playerId },
+        data: {
+            attackingRolePreset,
+            defensiveRolePreset,
+        },
+    });
+
+    revalidatePath('/squad');
+}
+
 export async function resetGameWithSelectedTeam(teamName: string, mode: NewGameMode = 'normal') {
     if (!teamName) {
         throw new Error('Team is required');
@@ -169,5 +182,55 @@ export async function updateTeamPlaystyleProfile(teamId: string, profileId: stri
     });
 
     revalidatePath('/settings');
+    revalidatePath('/squad');
+}
+
+export async function updatePlayerJerseyNumber(teamId: string, playerId: string, jerseyNumber: number | null) {
+    const normalizedNumber = jerseyNumber === null
+        ? null
+        : Math.max(1, Math.min(99, Math.round(Number(jerseyNumber))));
+
+    await prisma.$transaction(async (tx) => {
+        const player = await tx.player.findUnique({
+            where: { id: playerId },
+            select: {
+                id: true,
+                name: true,
+                teamId: true,
+                isRetired: true,
+            }
+        });
+
+        if (!player || player.teamId !== teamId || player.isRetired) {
+            throw new Error('Player not eligible for jersey update');
+        }
+
+        if (normalizedNumber !== null) {
+            const conflict = await tx.player.findFirst({
+                where: {
+                    teamId,
+                    isRetired: false,
+                    id: { not: playerId },
+                    jerseyNumber: normalizedNumber,
+                },
+                select: { id: true, name: true }
+            });
+
+            if (conflict) {
+                throw new Error(`Jersey #${normalizedNumber} already used by ${conflict.name}`);
+            }
+        }
+
+        await tx.player.update({
+            where: { id: playerId },
+            data: { jerseyNumber: normalizedNumber }
+        });
+    });
+
+    revalidatePath('/squad');
+}
+
+export async function autoAssignTeamJerseyNumbers(teamId: string) {
+    await assignInitialJerseyNumbersForTeam(teamId);
     revalidatePath('/squad');
 }

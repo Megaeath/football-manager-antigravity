@@ -1,4 +1,4 @@
-export type PlaystyleFormation = '4-4-2' | '4-3-3' | '4-5-1';
+export type PlaystyleFormation = '4-4-2' | '4-3-3' | '4-5-1' | '3-4-3' | '3-5-2' | '4-2-4' | '5-3-1' | '5-4-1';
 export type PlaystyleMentality = 'ALL_OUT_ATTACK' | 'ATTACKING' | 'NORMAL' | 'DEFENSIVE' | 'ULTRA_DEFENSIVE';
 export type PlaystylePassing = 'SHORT' | 'MIXED' | 'DIRECT';
 export type PlaystyleTackling = 'SOFT' | 'NORMAL' | 'HARD';

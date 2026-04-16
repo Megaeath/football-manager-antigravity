@@ -193,6 +193,7 @@ interface MatchCanvasProps {
         minute: number;
         tick: number;
         carrierName: string;
+        defensiveSummary: string;
         homeScore: number;
         awayScore: number;
         eventTypes: string[];
@@ -236,6 +237,49 @@ function actionTypesForAuthoritativeEvent(type: string): string[] {
         default:
             return [String(type || '').toUpperCase()];
     }
+}
+
+function getPlayerDisplayName(playerId: string, playerNames: Record<string, string>): string {
+    return playerNames[playerId] || playerId;
+}
+
+function buildDefensiveSummary(frame: MatchFrame, playerNames: Record<string, string>): string {
+    const possessionSide = frame.ball?.possession;
+    if (possessionSide !== 'home' && possessionSide !== 'away') return '';
+
+    const defendingSide: 'home' | 'away' = possessionSide === 'home' ? 'away' : 'home';
+    const debugDefensive = frame.debug?.defensive?.[defendingSide];
+
+    const labels: string[] = [];
+    const seen = new Set<string>();
+
+    const pushLabel = (playerId: string | undefined, roleLabel: string) => {
+        if (!playerId || seen.has(playerId)) return;
+        seen.add(playerId);
+        labels.push(`${roleLabel}: ${getPlayerDisplayName(playerId, playerNames)}`);
+    };
+
+    pushLabel(debugDefensive?.presserId, 'Press');
+    pushLabel(debugDefensive?.coverId, 'Cover');
+
+    if (labels.length > 0) {
+        return labels.join(' • ');
+    }
+
+    const fallbackIntent = (frame.debug?.intents || [])
+        .filter((intent) => intent.team === defendingSide)
+        .filter((intent) => intent.job === 'PRESS' || intent.job === 'MARK' || intent.job === 'COVER')
+        .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0))[0];
+
+    if (!fallbackIntent?.playerId) return '';
+
+    const roleLabel = fallbackIntent.job === 'MARK'
+        ? 'Mark'
+        : fallbackIntent.job === 'COVER'
+            ? 'Cover'
+            : 'Press';
+
+    return `${roleLabel}: ${getPlayerDisplayName(fallbackIntent.playerId, playerNames)}`;
 }
 
 export function MatchCanvas({
@@ -313,6 +357,9 @@ export function MatchCanvas({
     const nextFrame: MatchFrame | undefined = matchData.frames[Math.min(currentFrameIndex + 1, Math.max(0, matchData.frames.length - 1))];
     const totalFrames = matchData.frames.length;
     const highSpeedHighlightsOnly = playbackSpeed >= 15;
+    const defensiveOverlaySummary = currentFrame
+        ? buildDefensiveSummary(currentFrame, playerIdentity.playerNames)
+        : '';
 
     const authoritativeEventsForFrame = useMemo(() => {
         const byFrame = new Map<number, Array<{ type: string; minute: number; teamId?: string | null; playerId?: string; playerName?: string; text?: string; tick?: number; logX?: number; logY?: number }>>();
@@ -1101,12 +1148,14 @@ export function MatchCanvas({
         const carrierName = currentFrame.ball?.carrier?.id
             ? playerIdentity.playerNames[currentFrame.ball.carrier.id] || currentFrame.ball.carrier.name || 'Unknown'
             : 'Loose ball';
+        const defensiveSummary = buildDefensiveSummary(currentFrame, playerIdentity.playerNames);
 
         onFrameChange({
             frameIndex: currentFrameIndex,
             minute: Math.max(1, Number(currentFrame.minute || 0) + 1),
             tick: currentFrame.tick,
             carrierName,
+            defensiveSummary,
             homeScore: currentReplayScore.home,
             awayScore: currentReplayScore.away,
             eventTypes: (strictAuthoritativeMode && !useReplayStreamForFilter)
@@ -1202,9 +1251,16 @@ export function MatchCanvas({
 
                         {/* Current ball carrier name */}
                         <div className="absolute top-4 right-4 bg-black/55 text-white px-3 py-2 rounded-lg text-sm">
-                            {currentFrame.ball?.carrier?.id
-                                ? `⚽ ${playerIdentity.playerNames[currentFrame.ball.carrier.id] || currentFrame.ball.carrier.name || 'Unknown'}`
-                                : '⚽ Loose ball'}
+                            <div>
+                                {currentFrame.ball?.carrier?.id
+                                    ? `⚽ ${playerIdentity.playerNames[currentFrame.ball.carrier.id] || currentFrame.ball.carrier.name || 'Unknown'}`
+                                    : '⚽ Loose ball'}
+                            </div>
+                            {defensiveOverlaySummary && (
+                                <div style={{ fontSize: '0.72rem', opacity: 0.9, marginTop: '2px' }}>
+                                    🛡️ {defensiveOverlaySummary}
+                                </div>
+                            )}
                         </div>
                     </>
                 )}

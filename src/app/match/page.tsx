@@ -122,6 +122,7 @@ function MatchContent() {
         minute: number;
         tick: number;
         carrierName: string;
+        defensiveSummary: string;
         homeScore: number;
         awayScore: number;
         eventTypes: string[];
@@ -395,7 +396,10 @@ function MatchContent() {
         }
 
         const timeLabel = `${getPlaybackDisplayMinute(v2LiveFrame.minute)}'`;
-        setV2LiveCommentary(`⏱️ ${timeLabel} • Possession: ${v2LiveFrame.carrierName}`);
+        const defensiveSuffix = v2LiveFrame.defensiveSummary
+            ? ` • Def: ${v2LiveFrame.defensiveSummary}`
+            : '';
+        setV2LiveCommentary(`⏱️ ${timeLabel} • Possession: ${v2LiveFrame.carrierName}${defensiveSuffix}`);
     }, [v2LiveFrame, v2CommentaryHoldUntilFrame, animationEventFilter]);
 
     const currentImportantEventText = useMemo(() => {
@@ -440,6 +444,32 @@ function MatchContent() {
     const syncedPlayerStats = useMemo(() => {
         return ((matchData?.playerStats as Record<string, any>) || {});
     }, [matchData]);
+
+    const displayMotmPlayerId = useMemo(() => {
+        const players = Object.values((syncedPlayerStats as Record<string, any>) || {});
+        const eligible = players.filter((player: any) => Number(player?.minutes || 0) > 0);
+        if (eligible.length === 0) {
+            return matchData?.motmPlayerId || null;
+        }
+
+        const ranked = [...eligible].sort((a: any, b: any) => {
+            const ratingDiff = Number(b?.rating || 0) - Number(a?.rating || 0);
+            if (ratingDiff !== 0) return ratingDiff;
+
+            const goalDiff = Number(b?.goals || 0) - Number(a?.goals || 0);
+            if (goalDiff !== 0) return goalDiff;
+
+            const assistDiff = Number(b?.assists || 0) - Number(a?.assists || 0);
+            if (assistDiff !== 0) return assistDiff;
+
+            const sotDiff = Number(b?.shotsOnTarget || 0) - Number(a?.shotsOnTarget || 0);
+            if (sotDiff !== 0) return sotDiff;
+
+            return Number(b?.minutes || 0) - Number(a?.minutes || 0);
+        });
+
+        return ranked[0]?.playerId || matchData?.motmPlayerId || null;
+    }, [syncedPlayerStats, matchData?.motmPlayerId]);
 
     const homeStats = useMemo(() => {
         return ((matchData?.teamStats as any)?.home || {});
@@ -790,28 +820,6 @@ function MatchContent() {
                     </div>
                 </div>
             </div>
-        );
-    };
-
-    const renderCardIcons = (player: any) => {
-        const yellowCards = Number(player?.yellowCards || 0);
-        const redCards = Number(player?.redCards || 0);
-
-        if (yellowCards <= 0 && redCards <= 0) return null;
-
-        return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                {yellowCards > 0 && (
-                    <span title={`Yellow card${yellowCards > 1 ? 's' : ''}: ${yellowCards}`} style={{ fontSize: '0.95em', lineHeight: 1 }}>
-                        🟨{yellowCards > 1 ? `x${yellowCards}` : ''}
-                    </span>
-                )}
-                {redCards > 0 && (
-                    <span title={`Red card${redCards > 1 ? 's' : ''}: ${redCards}`} style={{ fontSize: '0.95em', lineHeight: 1 }}>
-                        🟥{redCards > 1 ? `x${redCards}` : ''}
-                    </span>
-                )}
-            </span>
         );
     };
 
@@ -1338,7 +1346,7 @@ function MatchContent() {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
                                         const assistMatch = e.text?.match(/assisted by ([^.!]+)/i);
                                         const assistName = assistMatch?.[1]?.trim();
-                                        const isEventMotM = !!matchData.motmPlayerId && e.playerId === matchData.motmPlayerId;
+                                        const isEventMotM = !!displayMotmPlayerId && e.playerId === displayMotmPlayerId;
                                         return (
                                             <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                 <span title="Scorer">⚽</span>
@@ -1357,11 +1365,8 @@ function MatchContent() {
                             </div>
                         </div>
                         <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', letterSpacing: '4px', position: 'relative', display: 'inline-block' }} className="md:text-6xl md:letter-spacing-2">
+                            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', letterSpacing: '4px', display: 'inline-block' }} className="md:text-6xl md:letter-spacing-2">
                                 {syncedHomeScore} - {syncedAwayScore}
-                                {matchData.motmPlayerId && (
-                                    <span title="Man of the Match awarding" style={{ position: 'absolute', top: '-10px', right: '-40px', fontSize: '1.5rem' }} className="md:text-4xl">🌟</span>
-                                )}
                             </div>
                             {matchData.wentToPenalties && matchData.penaltyHome !== null && matchData.penaltyAway !== null ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginTop: '8px' }}>
@@ -1394,7 +1399,7 @@ function MatchContent() {
                                         const playerName = e.playerName || e.text?.split(' scored')?.[0] || 'Unknown';
                                         const assistMatch = e.text?.match(/assisted by ([^.!]+)/i);
                                         const assistName = assistMatch?.[1]?.trim();
-                                        const isEventMotM = !!matchData.motmPlayerId && e.playerId === matchData.motmPlayerId;
+                                        const isEventMotM = !!displayMotmPlayerId && e.playerId === displayMotmPlayerId;
                                         return (
                                             <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                 <span title="Scorer">⚽</span>
@@ -2184,6 +2189,38 @@ function MatchContent() {
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
                                     const replayPlayerStats = (v2Replay?.playerStats || {}) as Record<string, any>;
                                     const syncedPlayerStatsMap = (syncedPlayerStats || {}) as Record<string, any>;
+                                    const renderInlinePlayerIcons = (player: any, opts?: { isSubIn?: boolean; isSubOut?: boolean; isMotM?: boolean }) => {
+                                        const isSubIn = !!opts?.isSubIn;
+                                        const isSubOut = !!opts?.isSubOut;
+                                        const isMotM = !!opts?.isMotM;
+                                        const goals = Number(player?.goals || 0);
+                                        const assists = Number(player?.assists || 0);
+                                        const yellowCards = Number(player?.yellowCards || 0);
+                                        const redCards = Number(player?.redCards || 0);
+
+                                        if (goals <= 0 && assists <= 0 && yellowCards <= 0 && redCards <= 0 && !isSubIn && !isSubOut && !isMotM) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                                {goals > 0 && <span title={`Scorer (${goals})`}>⚽{goals > 1 ? `x${goals}` : ''}</span>}
+                                                {assists > 0 && <span title={`Assist (${assists})`}>🅰️{assists > 1 ? `x${assists}` : ''}</span>}
+                                                {yellowCards > 0 && <span title={`Yellow card${yellowCards > 1 ? 's' : ''}: ${yellowCards}`}>🟨{yellowCards > 1 ? `x${yellowCards}` : ''}</span>}
+                                                {redCards > 0 && <span title={`Red card${redCards > 1 ? 's' : ''}: ${redCards}`}>🟥{redCards > 1 ? `x${redCards}` : ''}</span>}
+                                                {isSubIn && <span title="Subbed On">🔼</span>}
+                                                {isSubOut && <span title="Subbed Off">🔽</span>}
+                                                {isMotM && <span title="Best rating this match">🌟</span>}
+                                            </span>
+                                        );
+                                    };
+
+                                    const getPlayerNameWithNumber = (player: any) => {
+                                        const jerseyNumber = Number(player?.jerseyNumber);
+                                        const hasNumber = Number.isFinite(jerseyNumber) && jerseyNumber > 0;
+                                        const name = String(player?.name || '-');
+                                        return hasNumber ? `#${jerseyNumber} ${name}` : name;
+                                    };
 
                                     const mergedPlayerById = new Map<string, any>();
 
@@ -2297,6 +2334,9 @@ function MatchContent() {
                                             .map((p: any) => {
                                                 const displayPos = normalizePosForDisplay(getDisplayPos(p));
                                                 const displayRating = (p.minutes || 0) <= 0 ? '-' : Number(p.rating || 0).toFixed(1);
+                                                const isSubIn = subInIds.has(String(p.playerId || ''));
+                                                const isSubOut = subOutIds.has(String(p.playerId || '')) || subOutNames.has(p.name);
+                                                const isMotM = String(p.playerId || '') === String(displayMotmPlayerId || '');
                                                 return (
                                                     <div
                                                         key={p.playerId}
@@ -2311,7 +2351,10 @@ function MatchContent() {
                                                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
                                                                 <div style={{ fontWeight: 'bold', minWidth: '40px' }}>{displayPos}</div>
                                                                 <div style={{ minWidth: 0 }}>
-                                                                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                                                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                                        <span>{getPlayerNameWithNumber(p)}</span>
+                                                                        {renderInlinePlayerIcons(p, { isSubIn, isSubOut, isMotM })}
+                                                                    </div>
                                                                     <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
                                                                         MIN {p.minutes || 0}' • RAT {displayRating} • FIT {p.fitnessEnd ?? 0}
                                                                     </div>
@@ -2361,7 +2404,7 @@ function MatchContent() {
                                         .map((p: any) => {
                                             const isSubIn = subInIds.has(p.playerId);
                                             const isSubOut = subOutIds.has(String(p.playerId || '')) || subOutNames.has(p.name);
-                                            const isMotM = p.playerId === matchData.motmPlayerId;
+                                            const isMotM = String(p.playerId || '') === String(displayMotmPlayerId || '');
                                             const isExpanded = expandedPlayerId === p.playerId;
                                             const displayPos = normalizePosForDisplay(getDisplayPos(p));
                                             const didNotPlay = (p.minutes || 0) <= 0;
@@ -2514,14 +2557,9 @@ function MatchContent() {
                                                                         }}
                                                                         style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '0.9rem' }}
                                                                     >
-                                                                        {p.name}
+                                                                        {getPlayerNameWithNumber(p)}
                                                                     </button>
-                                                                    {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽</span>}
-                                                                    {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️</span>}
-                                                                    {renderCardIcons(p)}
-                                                                    {isSubIn && <span title="Subbed On">🔼</span>}
-                                                                    {isSubOut && <span title="Subbed Off">🔽</span>}
-                                                                    {isMotM && <span title="Man of the Match">🌟</span>}
+                                                                    {renderInlinePlayerIcons(p, { isSubIn, isSubOut, isMotM })}
                                                                 </div>
                                                             </div>
                                                             <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{displayRating}</div>
@@ -2576,14 +2614,9 @@ function MatchContent() {
                                                                 }}
                                                                 style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
                                                             >
-                                                                {p.name}
+                                                                {getPlayerNameWithNumber(p)}
                                                             </button>
-                                                            {p.goals > 0 && p.minutes > 0 && <span title={`Scorer (${p.goals})`}>⚽{p.goals > 1 ? `x${p.goals}` : ''}</span>}
-                                                            {p.assists > 0 && p.minutes > 0 && <span title={`Assist (${p.assists})`}>🅰️{p.assists > 1 ? `x${p.assists}` : ''}</span>}
-                                                            {renderCardIcons(p)}
-                                                            {isSubIn && <span title="Subbed On">🔼</span>}
-                                                            {isSubOut && <span title="Subbed Off">🔽</span>}
-                                                            {isMotM && <span title="Man of the Match">🌟</span>}
+                                                            {renderInlinePlayerIcons(p, { isSubIn, isSubOut, isMotM })}
                                                         </div>
                                                         <div style={{ width: '56px', textAlign: 'center', flexShrink: 0 }}>{p.minutes}'</div>
                                                         <div style={{ width: '56px', textAlign: 'center', fontWeight: 'bold', flexShrink: 0 }}>{displayRating}</div>
