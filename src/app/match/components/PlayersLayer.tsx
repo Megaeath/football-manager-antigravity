@@ -40,10 +40,14 @@ export function PlayersLayer({ frame, width, height, homePlayerIds, playerNames,
         : rawPositions instanceof Map
             ? Array.from(rawPositions.entries())
             : Object.entries(rawPositions);
+
+    const sortedPlayerPositions = playerPositions
+        .slice()
+        .sort(([leftId], [rightId]) => String(leftId).localeCompare(String(rightId)));
     
     return (
         <>
-            {playerPositions.map(([playerId, pos]) => {
+            {sortedPlayerPositions.map(([playerId, pos]) => {
                 const position = pos as SpatialPosition;
                 if (!position || Number.isNaN(position.x) || Number.isNaN(position.y)) {
                     return null;

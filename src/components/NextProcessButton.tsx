@@ -25,12 +25,6 @@ export default function NextProcessButton({ compact = false }: NextProcessButton
 
             if (data?.success) {
                 if (data.requiresUserAction) {
-                    const pendingType = data.userPendingType;
-                    if (pendingType === 'overdue') {
-                        alert('You have an overdue match pending. Please complete it before advancing day.');
-                    } else {
-                        alert('You have a match today! Please proceed to the match page.');
-                    }
                     const matchId = data.userMatchId ? `?matchId=${data.userMatchId}` : '';
                     router.push(`/match${matchId}`, { scroll: false });
                     return;

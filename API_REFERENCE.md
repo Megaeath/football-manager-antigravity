@@ -132,8 +132,8 @@
 - Log rows are returned in deterministic timeline order: `minute ASC` → `tick ASC` → `sequence ASC` (fallback to legacy ordering if old schema/client is still used)
 - `logType` separates high-frequency movement samples (`MOVEMENT`) from incident/action rows (`ACTION`)
 - Tick-level fields (`tick`, `sequence`, `x`, `y`, `trickGroup`, `trick`) support 1:1 replay reconstruction from persisted logs
-- `x` / `y` in `PlayerActionLog` are now reserved for **BALL position only**
-- For per-tick player movement, route can return compact snapshot rows (`actionType = TICK_SNAPSHOT`) where all on-field players are grouped in `metadata`
+- `TICK_SNAPSHOT` rows keep compact all-player positions grouped in `metadata`
+- Per-player audit rows now use `actionType = POSITION_SAMPLE` so a player's exact `x` / `y` path can be queried directly by `playerId` without relying on snapshot metadata parsing
 
 ---
 

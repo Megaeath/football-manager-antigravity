@@ -496,6 +496,10 @@ export const TUNING_PARAMS = {
     // Pass option selection
     passTopOptions: 5,
     passLaneWidth: 4,
+    passShortDistanceThreshold: 18,
+    passLaneBlockRadius: 2,
+    passReceiverContestRadius: 2,
+    longPassArrivalContestRadius: 2,
 
     // Defensive coordination
     coverOffsetX: 5,

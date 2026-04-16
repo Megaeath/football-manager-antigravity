@@ -367,12 +367,12 @@ function MatchContent() {
         setV2LiveFrame(null);
         setV2LiveCommentary('Kick-off');
         setV2CommentaryHoldUntilFrame(-1);
-    }, [matchData?.id]);
+    }, [matchData?.id, matchData?.isPlayed]);
 
     useEffect(() => {
-        if (!matchData?.id) return;
+        if (!matchData?.id || !matchData?.isPlayed) return;
         loadV2Replay(matchData.id);
-    }, [matchData?.id, loadV2Replay]);
+    }, [matchData?.id, matchData?.isPlayed, loadV2Replay]);
 
     useEffect(() => {
         if (!v2LiveFrame) return;
@@ -719,6 +719,7 @@ function MatchContent() {
 
     const syncedHomeScore = matchData?.homeScore ?? 0;
     const syncedAwayScore = matchData?.awayScore ?? 0;
+    const showPostMatchDetails = Boolean(matchData?.isPlayed);
 
     const StatRow = ({ label, homeVal, awayVal, isPercentage = false, inverse = false }: { label: string, homeVal: number, awayVal: number, isPercentage?: boolean, inverse?: boolean }) => {
         const homeWin = inverse ? homeVal < awayVal : homeVal > awayVal;
@@ -1405,6 +1406,7 @@ function MatchContent() {
                         </div>
                     </div>
 
+                    {showPostMatchDetails && (
                     <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', background: '#f8fafc' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                                 {v2Error && (
@@ -1606,7 +1608,9 @@ function MatchContent() {
                                 )}
                         </div>
                     </div>
+                    )}
 
+                    {showPostMatchDetails && (
                     <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border)', overflowX: 'auto' }} className="md:overflow-visible">
                         {['stats', 'events', 'home', 'away', 'heatmap'].map((tab) => {
                             let tabIcon = '';
@@ -1646,7 +1650,15 @@ function MatchContent() {
                             );
                         })}
                     </div>
+                    )}
 
+                    {!showPostMatchDetails && (
+                        <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--border)', background: '#fffbeb', color: '#854d0e', fontSize: '0.9rem', fontWeight: 600 }}>
+                            Match is not processed yet. Only scoreboard is shown until you process this match.
+                        </div>
+                    )}
+
+                    {showPostMatchDetails && (
                     <div style={{ padding: '1rem' }} className="md:py-8 md:px-8">
                         {activeTab === 'stats' && (
                             <div style={{ width: '100%', maxWidth: '980px', margin: '0 auto' }}>
@@ -2746,6 +2758,7 @@ function MatchContent() {
                             </div>
                         )}
                     </div>
+                    )}
 
                 </div>
             )}

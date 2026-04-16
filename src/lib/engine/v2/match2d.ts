@@ -25,14 +25,12 @@ import { assignFormationPositions, clampToField, getDistance } from './formation
 import {
     generateMovementIntent,
     updatePlayerPosition,
-    calculatePassLaneRisk,
     findNearbyPlayers,
     scorePassTargets,
     assignDefensiveRoles,
     applyTeamSpacingGuard,
-    calculatePassFailureProbability,
 } from './spatialEngine';
-import { FIELD, TUNING_PARAMS, GK_SAVE_ZONES, SHOT_TARGET_SELECTION } from './config';
+import { FIELD, TUNING_PARAMS, GK_SAVE_ZONES, SHOT_TARGET_SELECTION, PACE_SPEED_TABLE } from './config';
 import { blendRoleIntent, generateSpecialistIntent } from './roleSpecialists';
 import { V2TelemetryCollector, buildFrameDebug } from './telemetry';
 import { BASE_DIRECT_RED_CHANCE, BASE_YELLOW_CARD_CHANCE, clamp } from '../../constants/disciplineInjury';
@@ -41,6 +39,10 @@ import { createSeededRandom, runWithV2Random, v2Random } from './random';
 const TICKS_PER_MINUTE = TUNING_PARAMS.simulationTicksPerMinute;
 const TOTAL_MINUTES = 90;
 const TOTAL_TICKS = TOTAL_MINUTES * TICKS_PER_MINUTE;
+const GOAL_MOUTH_CENTER_Y = FIELD.WIDTH / 2;
+const GOAL_MOUTH_HALF_WIDTH = FIELD.GOAL.WIDTH / 2;
+const GOAL_MOUTH_MIN_Y = GOAL_MOUTH_CENTER_Y - GOAL_MOUTH_HALF_WIDTH;
+const GOAL_MOUTH_MAX_Y = GOAL_MOUTH_CENTER_Y + GOAL_MOUTH_HALF_WIDTH;
 
 type ReplayAction =
     | { kind: 'PASS'; from: V2PlayerState; to: V2PlayerState; team: 'home' | 'away' }
@@ -183,11 +185,13 @@ function createBallTransition(
 ): BallTransition {
     const distance = getDistance(fromPosition, toPosition);
     const numericHeight = type === 'SHOT' || type === 'GOAL' || type === 'SAVE' ? 7 : distance > 22 ? 5 : 2;
-    const duration = type === 'GOAL'
-        ? Math.max(6, Math.min(9, Math.round(distance / 4.2)))
-        : type === 'SHOT' || type === 'SAVE'
-            ? Math.max(3, Math.min(6, Math.round(distance / 6.5)))
-            : Math.max(6, Math.min(18, Math.round(distance / 2.2)));
+    const duration = type === 'PASS'
+        ? 1
+        : type === 'GOAL'
+            ? Math.max(3, Math.min(5, Math.round(distance / 7)))
+            : type === 'SHOT' || type === 'SAVE'
+                ? Math.max(2, Math.min(3, Math.round(distance / 10)))
+                : Math.max(1, Math.min(2, Math.round(distance / 12)));
     const trajectory: SpatialPosition[] = [];
 
     const midX = (fromPosition.x + toPosition.x) / 2;
@@ -250,26 +254,30 @@ function selectShotTarget(
     let targetType: 'CORNER' | 'MID' | 'BLAST' | 'OFF_TARGET' = 'MID';
     let y: number;
 
-    const goalWidthHalf = SHOT_TARGET_SELECTION.goalWidthHalf;
-    const centerY = SHOT_TARGET_SELECTION.centerGoalY;
+    const goalWidthHalf = GOAL_MOUTH_HALF_WIDTH;
+    const centerY = GOAL_MOUTH_CENTER_Y;
 
     if (rand < tier.cornerChance) {
-        // Corner shot (Y < 20 or Y > 80)
+        // Near-post / far-post shot but still inside the true goal mouth.
         targetType = 'CORNER';
         const isBottomCorner = v2Random() < 0.5;
-        y = isBottomCorner ? centerY - goalWidthHalf - 8 - v2Random() * 12 : centerY + goalWidthHalf + 8 + v2Random() * 12;
+        const postOffset = Math.max(0.6, goalWidthHalf - 0.4);
+        y = isBottomCorner
+            ? centerY - postOffset + v2Random() * 0.25
+            : centerY + postOffset - v2Random() * 0.25;
     } else if (rand < tier.cornerChance + tier.midChance) {
-        // Mid/center shot (Y 40-60)
+        // Center shot inside goal mouth.
         targetType = 'MID';
-        y = centerY + (v2Random() - 0.5) * 20;
+        y = centerY + (v2Random() - 0.5) * Math.min(2.4, goalWidthHalf * 0.8);
     } else if (rand < tier.cornerChance + tier.midChance + tier.blastChance) {
-        // Blast/simple shot (Y 45-55)
+        // Power shot inside goal mouth.
         targetType = 'BLAST';
-        y = centerY + (v2Random() - 0.5) * 10;
+        y = centerY + (v2Random() - 0.5) * Math.min(3.6, goalWidthHalf * 1.2);
     } else {
         // Off target
         targetType = 'OFF_TARGET';
-        y = FIELD.WIDTH / 2 + (v2Random() - 0.5) * 60;
+        const missDirection = v2Random() < 0.5 ? -1 : 1;
+        y = centerY + missDirection * (goalWidthHalf + 2 + v2Random() * 10);
     }
 
     // Clamp Y to field boundaries
@@ -366,6 +374,19 @@ function createShotOutcome(
     const shotTarget = selectShotTarget(shooter, attackingTeam);
     const targetY = shotTarget.y;
     const targetType = shotTarget.targetType;
+
+    if (targetY < GOAL_MOUTH_MIN_Y || targetY > GOAL_MOUTH_MAX_Y) {
+        const missTarget: SpatialPosition = {
+            x: attackingTeam === 'home' ? FIELD.LENGTH + 2 : -2,
+            y: Math.max(5, Math.min(95, targetY)),
+        };
+        return {
+            outcome: 'OFF_TARGET',
+            target: missTarget,
+            resultingPossession: attackingTeam === 'home' ? 'away' : 'home',
+            receivingPlayer: null,
+        };
+    }
 
     // Check if it's an off-target shot
     if (targetType === 'OFF_TARGET') {
@@ -535,6 +556,302 @@ function choosePassOption(
     }
 
     return topOptions[0] || null;
+}
+
+function clampAttribute20(value: number | undefined): number {
+    const numeric = Number.isFinite(value as number) ? Number(value) : 10;
+    return Math.max(1, Math.min(20, Math.round(numeric)));
+}
+
+function getTopSpeedFromPace(pace: number): number {
+    return PACE_SPEED_TABLE[pace] ?? (5 + pace * 0.25);
+}
+
+function getMovementTopSpeedForPlayer(
+    player: V2PlayerState,
+    minute: number,
+    hasBall: boolean,
+): number {
+    const pace = clampAttribute20(player.attributes?.pace);
+    const stamina = clampAttribute20(player.attributes?.stamina);
+    let topSpeed = getTopSpeedFromPace(pace);
+
+    if (hasBall) {
+        topSpeed *= TUNING_PARAMS.onBallSpeedMultiplier;
+    }
+
+    const conditionFactor = Math.max(0.55, Math.min(1, (player.condition || 100) / 100));
+    topSpeed *= conditionFactor;
+
+    if (minute >= 70) {
+        const fatigueProgress = Math.min(1, (minute - 70) / 20);
+        const staminaResilience = 0.7 + (stamina / 20) * 0.3;
+        const lateGameFactor = 1 - fatigueProgress * (1 - staminaResilience);
+        topSpeed *= lateGameFactor;
+    }
+
+    return Math.max(0, topSpeed);
+}
+
+function estimateReachDistance(
+    player: V2PlayerState,
+    minute: number,
+    travelSeconds: number,
+): number {
+    if (travelSeconds <= 0) return 0;
+
+    const topSpeed = getMovementTopSpeedForPlayer(player, minute, false);
+    const acceleration = clampAttribute20(player.attributes?.acceleration ?? player.attributes?.pace);
+    const accelerationTime =
+        TUNING_PARAMS.accelerationTimeMaxSec -
+        ((acceleration - 1) / 19) * (TUNING_PARAMS.accelerationTimeMaxSec - TUNING_PARAMS.accelerationTimeMinSec);
+    const accelTime = Math.max(0.1, accelerationTime);
+    const accelerationPerSecond = topSpeed / accelTime;
+
+    if (travelSeconds <= accelTime) {
+        return 0.5 * accelerationPerSecond * travelSeconds * travelSeconds;
+    }
+
+    const accelDistance = 0.5 * accelerationPerSecond * accelTime * accelTime;
+    const cruiseDistance = topSpeed * (travelSeconds - accelTime);
+    return accelDistance + cruiseDistance;
+}
+
+function clampDisplacementToReachableDistance(
+    previousPosition: SpatialPosition,
+    nextPosition: SpatialPosition,
+    maxDistance: number,
+): SpatialPosition {
+    const distance = getDistance(previousPosition, nextPosition);
+    if (distance <= maxDistance || distance <= 0.0001) {
+        return { ...nextPosition };
+    }
+
+    const ratio = maxDistance / distance;
+    return {
+        x: previousPosition.x + (nextPosition.x - previousPosition.x) * ratio,
+        y: previousPosition.y + (nextPosition.y - previousPosition.y) * ratio,
+    };
+}
+
+function enforcePerTickMovementCap(
+    players: V2PlayerState[],
+    previousPositionByPlayer: Map<string, SpatialPosition>,
+    minute: number,
+    carrierId?: string | null,
+): void {
+    players.forEach((player) => {
+        const previousPosition = previousPositionByPlayer.get(player.id);
+        if (!previousPosition) return;
+
+        const maxDistance = estimateReachDistance(
+            player,
+            minute,
+            TUNING_PARAMS.movementTickSeconds,
+        );
+        const clampedPosition = clampDisplacementToReachableDistance(
+            previousPosition,
+            player.position2D,
+            maxDistance,
+        );
+
+        if (clampedPosition.x !== player.position2D.x || clampedPosition.y !== player.position2D.y) {
+            const movedDistance = getDistance(previousPosition, player.position2D);
+            player.position2D = clampToField(clampedPosition);
+            player.velocity = {
+                dx: player.position2D.x - previousPosition.x,
+                dy: player.position2D.y - previousPosition.y,
+            };
+            player.movementSpeed = getDistance(previousPosition, player.position2D) / Math.max(0.01, TUNING_PARAMS.movementTickSeconds);
+
+            if (minute % 10 === 0) {
+                console.log(
+                    `[V2-MOVE] Clamp ${player.position} ${player.id.slice(0, 8)} from ${movedDistance.toFixed(2)} to ${maxDistance.toFixed(2)} units`,
+                );
+            }
+        }
+
+        if (player.id === carrierId) {
+            player.targetPosition = { ...player.position2D };
+        }
+    });
+}
+
+function getPassTravelTicks(distance: number): number {
+    return Math.max(6, Math.min(18, Math.round(distance / 2.2)));
+}
+
+function getDistanceToSegment(point: SpatialPosition, from: SpatialPosition, to: SpatialPosition): { distance: number; projection: number } {
+    const segmentDx = to.x - from.x;
+    const segmentDy = to.y - from.y;
+    const lenSq = segmentDx * segmentDx + segmentDy * segmentDy;
+    if (lenSq <= 0.0001) {
+        return { distance: getDistance(point, from), projection: 0 };
+    }
+
+    const pointDx = point.x - from.x;
+    const pointDy = point.y - from.y;
+    const projection = Math.max(0, Math.min(1, (pointDx * segmentDx + pointDy * segmentDy) / lenSq));
+    const closestX = from.x + projection * segmentDx;
+    const closestY = from.y + projection * segmentDy;
+    return {
+        distance: getDistance(point, { x: closestX, y: closestY }),
+        projection,
+    };
+}
+
+function findShortPassLaneBlocker(
+    from: SpatialPosition,
+    to: SpatialPosition,
+    defenders: V2PlayerState[],
+): V2PlayerState | null {
+    const radius = Math.max(0.5, Number(TUNING_PARAMS.passLaneBlockRadius || 2));
+    const blockers = defenders
+        .map((defender) => {
+            const segment = getDistanceToSegment(defender.position2D, from, to);
+            return { defender, ...segment };
+        })
+        .filter((entry) => entry.distance <= radius)
+        .filter((entry) => entry.projection >= 0.05 && entry.projection <= 0.95)
+        .sort((left, right) => {
+            if (left.projection !== right.projection) return left.projection - right.projection;
+            return left.distance - right.distance;
+        });
+
+    return blockers[0]?.defender || null;
+}
+
+function isGoalkeeper(player: V2PlayerState): boolean {
+    return String(player.position || '').toUpperCase() === 'GK';
+}
+
+function getBackwardDistance(from: SpatialPosition, to: SpatialPosition, team: TeamKey): number {
+    return team === 'home'
+        ? Math.max(0, from.x - to.x)
+        : Math.max(0, to.x - from.x);
+}
+
+function isAdvancedCarrierZone(carrier: V2PlayerState, team: TeamKey): boolean {
+    return team === 'home' ? carrier.position2D.x >= 70 : carrier.position2D.x <= 30;
+}
+
+function buildSafePassCandidates(
+    carrier: V2PlayerState,
+    teammates: V2PlayerState[],
+    defenders: V2PlayerState[],
+    team: TeamKey,
+): V2PlayerState[] {
+    const advancedCarrier = isAdvancedCarrierZone(carrier, team);
+
+    return teammates
+        .filter((player) => player.id !== carrier.id)
+        .filter((player) => {
+            const distance = getDistance(carrier.position2D, player.position2D);
+            if (distance > 34) return false;
+
+            const backwardDistance = getBackwardDistance(carrier.position2D, player.position2D, team);
+            if (backwardDistance > 18) return false;
+            if (advancedCarrier && backwardDistance > 10) return false;
+
+            if (advancedCarrier && isGoalkeeper(player)) return false;
+
+            const isShort = distance <= Number(TUNING_PARAMS.passShortDistanceThreshold || 18);
+            if (isShort && findShortPassLaneBlocker(carrier.position2D, player.position2D, defenders)) {
+                return false;
+            }
+
+            return true;
+        });
+}
+
+function pickQuickDistributionTarget(
+    goalkeeper: V2PlayerState,
+    teammates: V2PlayerState[],
+    defenders: V2PlayerState[],
+    team: TeamKey,
+): V2PlayerState {
+    const candidates = buildSafePassCandidates(goalkeeper, teammates, defenders, team)
+        .filter((player) => !isGoalkeeper(player));
+
+    const fallbackPool = teammates
+        .filter((player) => player.id !== goalkeeper.id)
+        .filter((player) => !isGoalkeeper(player));
+
+    const ranked = (candidates.length > 0 ? candidates : fallbackPool)
+        .slice()
+        .sort((left, right) => {
+            const leftDistance = getDistance(goalkeeper.position2D, left.position2D);
+            const rightDistance = getDistance(goalkeeper.position2D, right.position2D);
+            const leftBackward = getBackwardDistance(goalkeeper.position2D, left.position2D, team);
+            const rightBackward = getBackwardDistance(goalkeeper.position2D, right.position2D, team);
+
+            const leftScore = leftDistance + leftBackward * 0.9;
+            const rightScore = rightDistance + rightBackward * 0.9;
+            return leftScore - rightScore;
+        });
+
+    return ranked[0] || goalkeeper;
+}
+
+function findNearestDefenderToPoint(
+    point: SpatialPosition,
+    defenders: V2PlayerState[],
+): { defender: V2PlayerState; distance: number } | null {
+    if (!defenders.length) return null;
+    const sorted = defenders
+        .map((defender) => ({ defender, distance: getDistance(defender.position2D, point) }))
+        .sort((left, right) => left.distance - right.distance);
+    return sorted[0] || null;
+}
+
+function resolveShortPassReceiverContest(
+    passer: V2PlayerState,
+    receiver: V2PlayerState,
+    defenders: V2PlayerState[],
+): V2PlayerState | null {
+    const nearest = findNearestDefenderToPoint(receiver.position2D, defenders);
+    const contestRadius = Math.max(0.5, Number(TUNING_PARAMS.passReceiverContestRadius || 2));
+    if (!nearest || nearest.distance > contestRadius) return null;
+
+    const defenderScore = (nearest.defender.attributes?.tackling || 10) + (nearest.defender.attributes?.positioning || 10);
+    const receiverSecureScore =
+        (receiver.attributes?.positioning || 10)
+        + (receiver.attributes?.composure || receiver.attributes?.dribbling || 10)
+        + (passer.attributes?.passing || 10) * 0.35;
+
+    return defenderScore > receiverSecureScore ? nearest.defender : null;
+}
+
+function resolveLongPassArrivalContest(
+    passer: V2PlayerState,
+    receiver: V2PlayerState,
+    defenders: V2PlayerState[],
+    minute: number,
+    passTravelTicks: number,
+): V2PlayerState | null {
+    const nearest = findNearestDefenderToPoint(receiver.position2D, defenders);
+    if (!nearest) return null;
+
+    const contestRadius = Math.max(0.5, Number(TUNING_PARAMS.longPassArrivalContestRadius || 2));
+    const travelSeconds = passTravelTicks * TUNING_PARAMS.movementTickSeconds;
+    const reachableDistance = estimateReachDistance(nearest.defender, minute, travelSeconds);
+    const requiredDistance = Math.max(0, nearest.distance - contestRadius);
+
+    if (reachableDistance < requiredDistance) {
+        return null;
+    }
+
+    const defenderScore =
+        (nearest.defender.attributes?.tackling || 10)
+        + (nearest.defender.attributes?.heading || 10)
+        + (nearest.defender.attributes?.positioning || 10);
+    const receiverScore =
+        (receiver.attributes?.heading || 10)
+        + (receiver.attributes?.positioning || 10)
+        + (receiver.attributes?.composure || receiver.attributes?.dribbling || 10)
+        + (passer.attributes?.passing || 10) * 0.25;
+
+    return defenderScore > receiverScore ? nearest.defender : null;
 }
 
 function lineHeightToX(team: TeamKey, lineHeight: number): number {
@@ -1418,14 +1735,15 @@ export function simulateMatch2D(
     const playerStats = {} as V2MatchState['playerStats'];
 
     homePlayers.forEach((player) => {
+        const isStarter = player.tacticalPosition !== null;
         playerStats[player.id] = {
             playerId: player.id,
             name: player.name,
             teamId: homeTeam.id,
             position: player.position,
             jerseyNumber: null,
-            rating: 6,
-            minutes: 90,
+            rating: isStarter ? 6 : 0,
+            minutes: isStarter ? 90 : 0,
             goals: 0,
             assists: 0,
             saves: 0,
@@ -1454,14 +1772,15 @@ export function simulateMatch2D(
     });
 
     awayPlayers.forEach((player) => {
+        const isStarter = player.tacticalPosition !== null;
         playerStats[player.id] = {
             playerId: player.id,
             name: player.name,
             teamId: awayTeam.id,
             position: player.position,
             jerseyNumber: null,
-            rating: 6,
-            minutes: 90,
+            rating: isStarter ? 6 : 0,
+            minutes: isStarter ? 90 : 0,
             goals: 0,
             assists: 0,
             saves: 0,
@@ -1861,7 +2180,9 @@ export function simulateMatch2D(
                 pendingKickoff = null;
                 applyMajorEventCooldown(absoluteTick);
             }
-        } else if (activeTransition) {
+        }
+
+        if (!pendingKickoff && activeTransition) {
             const progressTick = absoluteTick - activeTransition.startedAtTick;
             const progressIndex = Math.max(0, Math.min(activeTransition.transition.trajectory.length - 1, progressTick));
             const progress = activeTransition.transition.duration <= 1 ? 1 : progressIndex / (activeTransition.transition.duration - 1);
@@ -1958,23 +2279,26 @@ export function simulateMatch2D(
 
                 activeTransition = null;
             }
-        } else if (carrier) {
-            if (absoluteTick < actionCooldownUntilTick) {
-                ball.position = { ...carrier.position2D };
-                ball.carrier = carrier;
+        }
+
+        if (!pendingKickoff && !activeTransition && carrier) {
+            const actingCarrier = carrier as V2PlayerState;
+            if (absoluteTick < actionCooldownUntilTick && !isGoalkeeper(actingCarrier)) {
+                ball.position = { ...actingCarrier.position2D };
+                ball.carrier = actingCarrier;
                 ball.possession = possession;
-            } else if (!shouldResolveCarrierAction(absoluteTick, carrier, defendingPlayers)) {
-                ball.position = { ...carrier.position2D };
-                ball.carrier = carrier;
+            } else if (!shouldResolveCarrierAction(absoluteTick, actingCarrier, defendingPlayers)) {
+                ball.position = { ...actingCarrier.position2D };
+                ball.carrier = actingCarrier;
                 ball.possession = possession;
             } else {
-            const distanceToGoal = possession === 'home' ? FIELD.LENGTH - carrier.position2D.x : carrier.position2D.x;
+            const distanceToGoal = possession === 'home' ? FIELD.LENGTH - actingCarrier.position2D.x : actingCarrier.position2D.x;
             const baseShootBias = distanceToGoal < 18 ? 0.34 : distanceToGoal < 26 ? 0.16 : distanceToGoal < 34 ? 0.06 : 0.015;
-            const shootBias = canAttemptShot(carrier, possession) ? baseShootBias : 0;
+            const shootBias = canAttemptShot(actingCarrier, possession) ? baseShootBias : 0;
 
             // ── Phase 3: Tackle duel ────────────────────────────────────────
             // Check if a nearby defender can steal the ball before any action
-            const nearDefenders = findNearbyPlayers(carrier.position2D, defendingPlayers, TUNING_PARAMS.dribblePressureRadius);
+            const nearDefenders = findNearbyPlayers(actingCarrier.position2D, defendingPlayers, TUNING_PARAMS.dribblePressureRadius);
             if (nearDefenders.length > 0) {
                 const tackler = nearDefenders[0];
                 const defTackling = (tackler.attributes?.tackling ?? 10);
@@ -2098,7 +2422,20 @@ export function simulateMatch2D(
 
             let action: ReplayAction;
 
-            if (v2Random() < shootBias) {
+            if (isGoalkeeper(actingCarrier)) {
+                const quickTarget = pickQuickDistributionTarget(
+                    actingCarrier,
+                    attackingPlayers,
+                    defendingPlayers,
+                    possession,
+                );
+                action = {
+                    kind: 'PASS',
+                    from: actingCarrier,
+                    to: quickTarget,
+                    team: possession,
+                };
+            } else if (v2Random() < shootBias) {
                 const shotOutcome = createShotOutcome(carrier, possession, goalkeeper);
                 action = {
                     kind: 'SHOT',
@@ -2295,18 +2632,28 @@ export function simulateMatch2D(
                     }
                 } else {
                 const attackingContext = possession === 'home' ? teamContexts.home : teamContexts.away;
-                const passOption = choosePassOption(
-                    carrier,
+                const safePassCandidates = buildSafePassCandidates(
+                    actingCarrier,
                     attackingPlayers,
+                    defendingPlayers,
+                    possession,
+                );
+                const passOption = choosePassOption(
+                    actingCarrier,
+                    safePassCandidates.length > 0 ? safePassCandidates : attackingPlayers,
                     defendingPlayers,
                     ball,
                     attackingContext,
                 );
-                const fallbackTarget = attackingPlayers.find((player) => player.id !== carrier!.id) || carrier;
-                const selectedTarget = passOption?.receiver || fallbackTarget;
+                const fallbackPool = safePassCandidates.length > 0 ? safePassCandidates : attackingPlayers.filter((player) => player.id !== actingCarrier.id);
+                const fallbackTarget: V2PlayerState = fallbackPool
+                    .slice()
+                    .sort((left, right) => getDistance(actingCarrier.position2D, left.position2D) - getDistance(actingCarrier.position2D, right.position2D))[0]
+                    || actingCarrier;
+                const selectedTarget: V2PlayerState = passOption?.receiver || fallbackTarget;
                 action = {
                     kind: 'PASS',
-                    from: carrier,
+                    from: actingCarrier,
                     to: selectedTarget,
                     team: possession,
                 };
@@ -2333,129 +2680,117 @@ export function simulateMatch2D(
                 playerStats[action.from.id].passesAttempted += 1;
                 teamStats[possession].passesAttempted += 1;
 
-                // ── Phase 3: Interception check ─────────────────────────────
-                const interceptRisk = calculatePassLaneRisk(
-                    action.from.position2D,
-                    action.to.position2D,
-                    defendingPlayers,
-                    TUNING_PARAMS.passLaneWidth,
-                );
-                if (v2Random() < interceptRisk) {
-                    // Find the defender closest to the pass lane midpoint
-                    const midX: number = (action.from.position2D.x + action.to.position2D.x) / 2;
-                    const midY: number = (action.from.position2D.y + action.to.position2D.y) / 2;
-                    const interceptor: V2PlayerState | undefined = findNearbyPlayers({ x: midX, y: midY }, defendingPlayers, 8)[0] ?? defendingPlayers[0];
-                    if (interceptor) {
-                        if (absoluteTick % TICKS_PER_MINUTE === 0) {
-                            console.log(`[V2-Phase3] Minute ${minute}: INTERCEPTION by ${interceptor.position} (risk=${(interceptRisk * 100).toFixed(0)}%)`);
-                        }
-                        possession = possession === 'home' ? 'away' : 'home';
-                        carrier = interceptor;
+                const passDistance = getDistance(action.from.position2D, action.to.position2D);
+                const isShortPass = passDistance <= Number(TUNING_PARAMS.passShortDistanceThreshold || 18);
+                const passTravelTicks = getPassTravelTicks(passDistance);
+                let turnoverWinner: V2PlayerState | null = null;
+                let turnoverReason = '';
 
-                        // V1 parity: occasional throw-in after failed pass sequence
-                        if (v2Random() < 0.2) {
-                            const throwResult = executeThrowInV2(
-                                possession,
-                                minute,
-                                tick,
-                                { ...ball.position },
-                                homeTeam,
-                                awayTeam,
-                                homePlayers,
-                                awayPlayers,
-                                playerStats,
-                                teamStats,
-                                frameEvents,
-                                visualEvents,
-                                events,
-                            );
-                            possession = throwResult.possession;
-                            carrier = throwResult.carrier;
-                            ball.position = { ...throwResult.position };
-                        }
-
-                        ball.possession = possession;
-                        ball.carrier = carrier;
-                        possessionTicks[possession] += 1;
-                        // Skip transition — instant turnover
-                        ball.possession = possession;
-                        const playerPositionsInt: Record<string, SpatialPosition> = {};
-                        activeHomePlayers.forEach((p) => { playerPositionsInt[p.id] = { ...p.position2D }; });
-                        activeAwayPlayers.forEach((p) => { playerPositionsInt[p.id] = { ...p.position2D }; });
-                        const frameDebugInterception = buildFrameDebug(
-                            { minute, tick, ball: { ...ball }, playerPositions: playerPositionsInt, events: frameEvents, ballTransitions: frameTransitions },
-                            homeIntents,
-                            awayIntents,
-                            homeDefensiveAssignment,
-                            awayDefensiveAssignment,
-                            lineHeightToX('home', teamContexts.home.lineHeight),
-                            lineHeightToX('away', teamContexts.away.lineHeight),
-                            activeHomePlayers,
-                            activeAwayPlayers,
+                if (isShortPass) {
+                    const laneBlocker = findShortPassLaneBlocker(
+                        action.from.position2D,
+                        action.to.position2D,
+                        defendingPlayers,
+                    );
+                    if (laneBlocker) {
+                        turnoverWinner = laneBlocker;
+                        turnoverReason = 'SHORT_PASS_BLOCKED';
+                    } else {
+                        const receiverContestWinner = resolveShortPassReceiverContest(
+                            action.from,
+                            action.to,
+                            defendingPlayers,
                         );
-                        frames.push({ minute, tick, ball: { ...ball, position: { ...ball.position }, velocity: { ...ball.velocity }, carrier: ball.carrier }, playerPositions: playerPositionsInt, events: frameEvents, ballTransitions: frameTransitions, debug: frameDebugInterception });
-                        telemetryCollector.recordFrame();
-                        continue;
+                        if (receiverContestWinner) {
+                            turnoverWinner = receiverContestWinner;
+                            turnoverReason = 'SHORT_PASS_RECEIVER_CONTEST_LOST';
+                        }
+                    }
+                } else {
+                    const longPassContestWinner = resolveLongPassArrivalContest(
+                        action.from,
+                        action.to,
+                        defendingPlayers,
+                        minute,
+                        passTravelTicks,
+                    );
+                    if (longPassContestWinner) {
+                        turnoverWinner = longPassContestWinner;
+                        turnoverReason = 'LONG_PASS_ARRIVAL_CONTEST_LOST';
                     }
                 }
 
-                const passFailureProbability = calculatePassFailureProbability(
-                    action.from.position2D,
-                    action.to.position2D,
-                    action.from,
-                    action.to,
-                    defendingPlayers,
-                );
+                if (turnoverWinner) {
+                    possession = possession === 'home' ? 'away' : 'home';
+                    carrier = turnoverWinner;
+                    ball.possession = possession;
+                    ball.carrier = carrier;
+                    ball.position = { ...turnoverWinner.position2D };
 
-                if (v2Random() < passFailureProbability) {
-                    const failedReceiverZone = findNearbyPlayers(action.to.position2D, defendingPlayers, 10);
-                    const winner = failedReceiverZone[0] || defendingPlayers[0];
-                    if (winner) {
-                        possession = possession === 'home' ? 'away' : 'home';
-                        carrier = winner;
-                        if (v2Random() < 0.2) {
-                            const throwResult = executeThrowInV2(
-                                possession,
-                                minute,
-                                tick,
-                                { ...ball.position },
-                                homeTeam,
-                                awayTeam,
-                                homePlayers,
-                                awayPlayers,
-                                playerStats,
-                                teamStats,
-                                frameEvents,
-                                visualEvents,
-                                events,
-                            );
-                            possession = throwResult.possession;
-                            carrier = throwResult.carrier;
-                            ball.position = { ...throwResult.position };
-                        }
-                        ball.possession = possession;
-                        ball.carrier = carrier;
-                        if (absoluteTick % TUNING_PARAMS.telemetryLogIntervalTicks === 0) {
-                            console.log(`[V2-PhaseC] Minute ${minute}: PASS ERROR turnover (p=${passFailureProbability.toFixed(2)})`);
-                        }
-                        const playerPositionsFail: Record<string, SpatialPosition> = {};
-                        activeHomePlayers.forEach((p) => { playerPositionsFail[p.id] = { ...p.position2D }; });
-                        activeAwayPlayers.forEach((p) => { playerPositionsFail[p.id] = { ...p.position2D }; });
-                        const frameDebugFail = buildFrameDebug(
-                            { minute, tick, ball: { ...ball }, playerPositions: playerPositionsFail, events: frameEvents, ballTransitions: frameTransitions },
-                            homeIntents,
-                            awayIntents,
-                            homeDefensiveAssignment,
-                            awayDefensiveAssignment,
-                            lineHeightToX('home', teamContexts.home.lineHeight),
-                            lineHeightToX('away', teamContexts.away.lineHeight),
-                            activeHomePlayers,
-                            activeAwayPlayers,
+                    const nearTouchline = action.to.position2D.y <= 2 || action.to.position2D.y >= FIELD.WIDTH - 2;
+                    if (nearTouchline) {
+                        const throwResult = executeThrowInV2(
+                            possession,
+                            minute,
+                            tick,
+                            { ...action.to.position2D },
+                            homeTeam,
+                            awayTeam,
+                            homePlayers,
+                            awayPlayers,
+                            playerStats,
+                            teamStats,
+                            frameEvents,
+                            visualEvents,
+                            events,
                         );
-                        frames.push({ minute, tick, ball: { ...ball, position: { ...ball.position }, velocity: { ...ball.velocity }, carrier: ball.carrier }, playerPositions: playerPositionsFail, events: frameEvents, ballTransitions: frameTransitions, debug: frameDebugFail });
-                        telemetryCollector.recordFrame();
-                        continue;
+                        possession = throwResult.possession;
+                        carrier = throwResult.carrier;
+                        ball.possession = throwResult.possession;
+                        ball.carrier = throwResult.carrier;
+                        ball.position = { ...throwResult.position };
                     }
+
+                    const failedPassEvent: VisualEvent = {
+                        id: `pass_fail_${absoluteTick}_${action.from.id}`,
+                        type: 'PASS',
+                        minute,
+                        tick,
+                        position: { ...action.from.position2D },
+                        playerId: action.from.id,
+                        playerName: action.from.name,
+                        teamId: attackingTeamId,
+                        targetPlayerId: action.to.id,
+                        metadata: {
+                            success: false,
+                            reason: `${turnoverReason}:${isShortPass ? 'SHORT' : 'LONG'}:${turnoverWinner.id}`,
+                            distance: passDistance,
+                        },
+                    };
+                    frameEvents.push(failedPassEvent);
+                    visualEvents.push(failedPassEvent);
+
+                    if (absoluteTick % TUNING_PARAMS.telemetryLogIntervalTicks === 0) {
+                        console.log(`[V2-PASS] Minute ${minute}: ${turnoverReason} by ${turnoverWinner.position}`);
+                    }
+
+                    const playerPositionsFail: Record<string, SpatialPosition> = {};
+                    activeHomePlayers.forEach((p) => { playerPositionsFail[p.id] = { ...p.position2D }; });
+                    activeAwayPlayers.forEach((p) => { playerPositionsFail[p.id] = { ...p.position2D }; });
+                    const frameDebugFail = buildFrameDebug(
+                        { minute, tick, ball: { ...ball }, playerPositions: playerPositionsFail, events: frameEvents, ballTransitions: frameTransitions },
+                        homeIntents,
+                        awayIntents,
+                        homeDefensiveAssignment,
+                        awayDefensiveAssignment,
+                        lineHeightToX('home', teamContexts.home.lineHeight),
+                        lineHeightToX('away', teamContexts.away.lineHeight),
+                        activeHomePlayers,
+                        activeAwayPlayers,
+                    );
+                    frames.push({ minute, tick, ball: { ...ball, position: { ...ball.position }, velocity: { ...ball.velocity }, carrier: ball.carrier }, playerPositions: playerPositionsFail, events: frameEvents, ballTransitions: frameTransitions, debug: frameDebugFail });
+                    telemetryCollector.recordFrame();
+                    continue;
                 }
 
                 // Pass succeeds
@@ -2653,7 +2988,7 @@ export function simulateMatch2D(
                 };
             }
             }
-        } else {
+        } else if (!pendingKickoff && !activeTransition) {
             // Loose-ball recovery: if no carrier, quickly assign nearest winner
             // so simulation does not stall in permanent "Loose ball" state.
             const nearestHome = [...homePlayers]
@@ -2687,6 +3022,18 @@ export function simulateMatch2D(
                     ball.position = { ...winner.position2D };
                 }
             }
+        }
+
+        enforcePerTickMovementCap(
+            [...homePlayers, ...awayPlayers],
+            previousPositionByPlayer,
+            minute,
+            carrier?.id || null,
+        );
+
+        if (carrier) {
+            ball.position = { ...carrier.position2D };
+            ball.carrier = carrier;
         }
 
         ball.possession = possession;
@@ -2758,6 +3105,10 @@ export function simulateMatch2D(
 
     // Clamp final ratings to realistic match range (1.0 - 10.0)
     Object.values(playerStats).forEach((stat) => {
+        if ((stat.minutes || 0) <= 0) {
+            stat.rating = 0;
+            return;
+        }
         const raw = typeof stat.rating === 'number' ? stat.rating : 6;
         const clamped = Math.max(1, Math.min(10, raw));
         stat.rating = Number(clamped.toFixed(2));
@@ -2851,6 +3202,38 @@ export function simulateMatch2D(
                 }),
             });
         }
+
+        [...homeTeamPlayers, ...awayTeamPlayers].forEach((playerPosition) => {
+            const playerTeamId = teamIdByPlayerId.get(playerPosition.playerId);
+            if (!playerTeamId) return;
+
+            v2ActionLogs.push({
+                playerId: playerPosition.playerId,
+                teamId: playerTeamId,
+                minute,
+                snapshotMinute: minute,
+                tick,
+                sequence: sequence++,
+                logType: 'MOVEMENT',
+                x: playerPosition.x,
+                y: playerPosition.y,
+                ballPosition: Math.max(0, Math.min(100, Math.round(playerPosition.x))),
+                zone: getZoneFromBallPosition(Math.max(0, Math.min(100, Math.round(playerPosition.x)))),
+                actionType: 'POSITION_SAMPLE',
+                trickGroup: 'MOVEMENT',
+                trick: 'POSITION_SAMPLE',
+                result: 'TRACK',
+                isSuccessful: true,
+                metadata: JSON.stringify({
+                    source: 'V2_PLAYER_POSITION',
+                    role: playerPosition.role,
+                    carrierPlayerId: frame.ball?.carrier?.id || null,
+                    isCarrier: frame.ball?.carrier?.id === playerPosition.playerId,
+                    ballX,
+                    ballY,
+                }),
+            });
+        });
 
         (frame.events || []).forEach((event) => {
             if (!event.playerId || !event.teamId) return;

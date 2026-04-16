@@ -48,6 +48,12 @@ function clonePosition(position?: XYPosition): XYPosition | undefined {
     return { x: position.x, y: position.y };
 }
 
+function distanceBetween(a: XYPosition, b: XYPosition): number {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
 function isImportantHighlight(eventType: string): boolean {
     return eventType === 'GOAL'
         || eventType === 'SHOT'
@@ -118,12 +124,23 @@ function interpolateFrame(currentFrame: MatchFrame, nextFrame?: MatchFrame, alph
         ...Object.keys(nextFrame.playerPositions || {}),
     ]);
 
+    const maxSafeInterpolationDistance = 9;
     allPlayerIds.forEach((playerId) => {
         const currentPosition = currentFrame.playerPositions[playerId] as XYPosition | undefined;
         const nextPosition = (nextFrame.playerPositions[playerId] as XYPosition | undefined) || currentPosition;
+
         if (currentPosition && nextPosition) {
-            playerPositions[playerId] = interpolatePosition(currentPosition, nextPosition, clampedAlpha);
-        } else if (currentPosition) {
+            const jumpDistance = distanceBetween(currentPosition, nextPosition);
+            if (jumpDistance <= maxSafeInterpolationDistance) {
+                playerPositions[playerId] = interpolatePosition(currentPosition, nextPosition, clampedAlpha);
+            } else {
+                // Large jumps (set-piece reset / warp prevention boundary) stay discrete to avoid perceived swaps.
+                playerPositions[playerId] = clonePosition(currentPosition)!;
+            }
+            return;
+        }
+
+        if (currentPosition) {
             playerPositions[playerId] = clonePosition(currentPosition)!;
         } else if (nextPosition) {
             playerPositions[playerId] = clonePosition(nextPosition)!;
@@ -1040,8 +1057,10 @@ export function MatchCanvas({
                             nextIndex = nextWindow.startIndex;
                         }
                     } else {
-                        const stepCount = Math.max(1, Math.floor(elapsed / frameDuration));
-                        nextIndex = prev + stepCount;
+                        // Normal playback favors visual smoothness over catch-up.
+                        // Advance one frame per animation step so interpolation can fill
+                        // the in-between motion cleanly even when ticks are sparse.
+                        nextIndex = prev + 1;
                     }
 
                     if (nextIndex >= totalFrames - 1) {

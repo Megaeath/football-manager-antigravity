@@ -69,7 +69,7 @@ The match engine now stores **raw action-level logs** (`PlayerActionLog`) for an
 
 - Every key action is logged with: minute, ballPosition (0-100), zone, actionType, result, expectedSuccessRate
 - Log timeline now supports tick-level sequencing for replay-grade fidelity: `minute`, `tick`, `sequence`
-- `PlayerActionLog.x` / `PlayerActionLog.y` are reserved for **BALL position only**
+- `TICK_SNAPSHOT` rows keep compact all-player positions in `metadata`; dedicated `POSITION_SAMPLE` movement rows now persist per-player `x` / `y` so a single player's path can be audited directly by `playerId`
 - Per-tick all-player positions are persisted as compact snapshot JSON in tick-snapshot rows (`actionType = TICK_SNAPSHOT`) to avoid per-player movement row explosion
 - Zones are normalized into 3 thirds:
     - **DEFENSIVE** = 1-30
@@ -132,6 +132,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - On `/match`, the V2 replay panel hides the old visualization header strip (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) to keep focus on scoreboard/canvas/highlight flow
 - Highlight commentary now promotes major incidents (goal/shot/cards) as large ticker-style text in the commentary area for quick readability
 - Live commentary box on `/match` should remain a single-line ticker (ellipsis for overflow) so replay controls/filter areas keep enough visible space on smaller screens
+- For unprocessed matches (`isPlayed = false`), `/match` should show only the top scoreboard state (typically `0-0`); replay/session panel and all lower tabs (`stats/events/home/away/heatmap`) must stay hidden until the match is processed
 - Replay panel on `/match` now includes an `Animation Event` filter (`all`, `SHOT`, `PASS`, `DRIBBLE`) that controls which on-canvas event markers and live ticker event texts are shown during playback
 - When `Animation Event` filter is not `all`, replay playback should prioritize filtered incident windows by playing the event minute plus the following minute, then skipping ahead to the next matching window
 - For already-played matches in authoritative mode, `PASS`/`DRIBBLE` animation filtering should use replay incident stream for visualization windows (persisted authoritative events typically do not include dense pass/dribble incidents)
@@ -141,6 +142,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Live commentary บน `/match` ควรคงข้อความเดิมไว้ในช่วง tick ว่างหลังเหตุการณ์ใหญ่ (อย่างน้อย 2 ticks)
 - V2 ball rendering now uses a football-style patterned sprite with spin animation (instead of a static white circle) so ball movement is easier to read
 - On `/match`, V2 canvas now shows always-on `x,y` labels for both every player marker and the ball so replay positions can be compared directly against persisted DB/action-log coordinates
+- V2 player marker rendering should remain visually continuous frame-to-frame using player-id-based interpolation, but must avoid blending across large jump frames (set-piece/reset-like jumps) to reduce number-swap illusions
 - Sent-off players should not remain as active on-field markers; `/match` now surfaces them in an off-field `Sent off` strip for clearer dismissal context
 
 - V2 now tracks continuous per-tick movement analytics per player (movement distance, carry distance/time, zone occupancy seconds), which can be used as base data for future heatmap features
@@ -214,15 +216,22 @@ Phase 6/7 realism hardening (current implementation):
 - Full-backs in possession can now overlap much higher when the ball is already advanced, giving clearer wide support lanes in sustained attacks
 - Out-of-possession first-line pressing is now more realistic: forwards drop below their high line to press passing lanes and support the midfield block instead of only hovering high
 - On-ball decision now includes progressive dribble behavior: wide/on-ball carriers can carry into space until pressure arrives, then resolve via pass/dribble duel with turnover risk under crowding
+- Goalkeepers should distribute quickly after claiming possession (no prolonged hold when not in major-event cooldown)
+- In advanced attacking zones, pass selection should avoid unrealistic deep back-passes (especially to own GK) and prefer nearest safe support options when lanes are available
 - Dribble/pass pressure windows are configurable in `TUNING_PARAMS` (default: immediate dribble pressure radius = 2, receiver open-space radius = 5, contested receiver window = 2..5)
 - Near-byline carriers can attempt early crosses into the box (configurable chance + byline zone), enabling cutback/cross chance creation for forwards
 - Shooting is role-zone gated (`shotMinXHomeByRole`) so low-probability own-half/long-range spam is suppressed by role
-- Passing can now fail without an interception event through contextual pass-error probability (pressure, distance, receiver crowding, passer/receiver quality)
+- Passing now uses deterministic short/long resolution in V2:
+  - **Short pass** checks lane blockers along segment `A→B` (defender within ~2 units of line ⇒ immediate turnover)
+  - **Short pass receive** checks nearest defender within ~2 units of target and resolves by defender `tackling+positioning` vs receiver secure score
+  - **Long pass** ignores lane blockers but runs arrival-time contest at target area: nearest defender must be able to reach the target radius by pace/acceleration-based travel distance (no random speed), then duel by `tackling+heading+positioning`
 - On-ball dribble displacement is capped by each player's pace-driven per-tick movement (`movementSpeed * movementTickSeconds`) to prevent unrealistic carrier teleporting and keep chasers relevant
+- After all per-tick updates, V2 now applies a final anti-warp clamp for **every player** using deterministic pace/acceleration reach for that tick, so direct assignment flows (set-pieces/restarts/etc.) cannot move a player farther than their physical reach in one tick
 - After a goal event resolves, V2 now performs a center-circle kickoff reset (ball to midfield with conceding side possession) to avoid post-goal stalled play
 - Kickoff reset ใน V2 ต้องจัดตำแหน่งผู้เล่นกลับฝั่งตัวเอง (forwards stay kickoff-safe at/behind halfway line)
 - Shots that finish off target should restart via explicit `GOAL_KICK` state (not loose-ball chaos behind goal)
 - V2 simulation cadence now runs at `10 ticks/minute` (config-driven). Carrier decisions are evaluated every tick, while movement remains hard-capped by pace-table + acceleration + fitness/stamina so players cannot warp or exceed speed limits
+- Non-major possession actions should now resolve continuously at tick cadence: outside cooldown windows, V2 can chain one action per tick (for example pass receipt → next decision on the same receiving tick), while major incidents like shots/goals/cards still apply cooldown for readability
 
 **Tuning note**: if V2 over-shoots volume, tune coefficients in `selectAction()` first before changing global movement constants.
 

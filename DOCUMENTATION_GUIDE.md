@@ -27,6 +27,7 @@
 - เข้าใจการนำทางไปหน้ารายละเอียดการแข่งขัน → ใช้หน้า `/fixtures` หรือการ์ด match ต่าง ๆ ที่ลิงก์ไป `/match?matchId=...`
 - ทดลอง replay แบบ spatial ในหน้าจริง → หน้า `/match` เลือก Visualization = `V2 Canvas` (โหลดจาก `/api/match/[id]/v2-sim`)
 - หน้า `/match` โหมด V2 replay ซ่อนแถบหัวข้อ visualization เดิม (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) เพื่อโฟกัสเฉพาะ scoreboard/canvas/highlight
+- ถ้าแมตช์ยังไม่ถูก process (`isPlayed=false`) หน้า `/match` ต้องแสดงเฉพาะ scoreboard ด้านบน (เช่น `0-0`) และซ่อนส่วน replay/session + tabs ทั้งหมดจนกว่าจะกด process match
 - ช่องคำบรรยายใต้ replay จะแสดงเหตุการณ์สำคัญ (GOAL/SHOT/CARD) แบบตัวใหญ่และ ticker-style เพื่อให้อ่านง่ายขึ้นระหว่างดูไฮไลต์
 - กล่องคำบรรยายใต้ replay ควรแสดงแบบบรรทัดเดียว (single-line ticker + ellipsis) เพื่อไม่กินพื้นที่แนวตั้งและไม่บังโซน control/filter
 - ใต้ scoreboard ของ replay มีตัวกรอง `Animation Event` (`all`, `SHOT`, `PASS`, `DRIBBLE`) สำหรับคุม marker/ข้อความเหตุการณ์ที่แสดงระหว่าง animation โดยตรง
@@ -47,6 +48,7 @@
 - เมื่อ audit marker source: `SHOT`/`PASS`/`DRIBBLE` มาจาก `v2Replay.visualEvents[].position`; `GOAL` marker ต้องอิง persisted `GOAL` events เป็นหลัก (ตำแหน่งใช้ replay goal ถ้ามี ไม่งั้น fallback)
 - Heat Map marker บนสนามจะแสดงป้าย minute ของ event ด้วย เพื่อให้ตรวจเทียบตำแหน่ง+เวลาได้ทันที (hover marker เพื่อดู source/raw/svg coordinate เพิ่มเติม)
 - เมื่อ debug replay scoreboard บน `/match` ให้ยึด goal progression จาก persisted match events และ final persisted score เป็นหลัก (ไม่ควรแกว่งตาม replay-generated goals เพียงอย่างเดียว)
+- ปุ่ม `Advance to Next Day` ต้องไม่ข้ามแมตช์ของผู้เล่น: ถ้ามี user pending match (today/overdue) flow ต้องพาเข้า `/match?matchId=...` ทันทีและคงบังคับเข้าแมตช์ทุกครั้งที่กดจนกว่าจะเล่นแมตช์นั้น
 - เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events แบบ strict สำหรับแมตช์ที่เล่นแล้ว: ไม่ควรดึง replay-generated incidents มาปะปนจนขัดกับ score/event ที่บันทึก
 - เวลาใน replay UI ของหน้า `/match` ควรแสดงนาทีแบบตัวเลขเดี่ยว `0` ... `90` (ใน player control และข้อความคำบรรยาย) และตัดบรรทัดหัว `Minute xx` เหนือคำบรรยายออกเพื่อลดความสูง UI; canonical minute ใน DB/events ยังคงเป็น `1..90`
 - แท็บผู้เล่นบนหน้า `/match` (`home`/`away`) ต้องเรียงข้อมูลแบบคงที่: ตัวจริง 11 คนก่อน แล้วค่อยตัวสำรอง โดยแต่ละกลุ่มเรียง `GK -> DF -> MF -> FW`; เมื่อมีการเปลี่ยนตัว ห้ามสลับแถวตัวจริงขึ้นลงตามตัวที่ลงมาใหม่ เพื่อให้เห็นชัดว่าตัวสำรองคนไหนได้ลงเล่น
