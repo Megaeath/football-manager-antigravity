@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { Circle, Group, Text } from 'react-konva';
+import { Circle, Group, Rect, Text } from 'react-konva';
 import type { MatchFrame, SpatialPosition } from '@/lib/engine/v2/types2d';
 
 interface PlayersLayerProps {
@@ -27,6 +27,10 @@ export function PlayersLayer({ frame, width, height, homePlayerIds, playerNames,
     
     const scale = (value: number, axis: 'x' | 'y' = 'x') => {
         return axis === 'x' ? value * scaleX : value * scaleY;
+    };
+
+    const formatCoordinateLabel = (position: SpatialPosition) => {
+        return `${position.x.toFixed(1)}, ${position.y.toFixed(1)}`;
     };
     
     // Convert Map or Object to array for rendering
@@ -53,6 +57,10 @@ export function PlayersLayer({ frame, width, height, homePlayerIds, playerNames,
                 const hasBall = frame.ball?.carrier?.id === playerId;
                 const jerseyNumber = playerNumbers?.[playerId];
                 const displayName = playerNames?.[playerId] || playerId;
+                const coordinateLabel = formatCoordinateLabel(position);
+                const coordinateLabelWidth = Math.max(60, coordinateLabel.length * 5.8);
+                const coordinateLabelX = scale(position.x) - (coordinateLabelWidth / 2);
+                const coordinateLabelY = scale(position.y, 'y') + 10;
                 
                 return (
                     <Group key={playerId}>
@@ -110,6 +118,26 @@ export function PlayersLayer({ frame, width, height, homePlayerIds, playerNames,
                                 listening={false}
                             />
                         )}
+
+                        <Rect
+                            x={coordinateLabelX}
+                            y={coordinateLabelY}
+                            width={coordinateLabelWidth}
+                            height={12}
+                            cornerRadius={3}
+                            fill="rgba(15, 23, 42, 0.78)"
+                            listening={false}
+                        />
+                        <Text
+                            x={coordinateLabelX}
+                            y={coordinateLabelY + 1}
+                            width={coordinateLabelWidth}
+                            text={coordinateLabel}
+                            fontSize={9}
+                            align="center"
+                            fill="#f8fafc"
+                            listening={false}
+                        />
                     </Group>
                 );
             })}

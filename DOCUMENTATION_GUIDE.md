@@ -28,16 +28,28 @@
 - ทดลอง replay แบบ spatial ในหน้าจริง → หน้า `/match` เลือก Visualization = `V2 Canvas` (โหลดจาก `/api/match/[id]/v2-sim`)
 - หน้า `/match` โหมด V2 replay ซ่อนแถบหัวข้อ visualization เดิม (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) เพื่อโฟกัสเฉพาะ scoreboard/canvas/highlight
 - ช่องคำบรรยายใต้ replay จะแสดงเหตุการณ์สำคัญ (GOAL/SHOT/CARD) แบบตัวใหญ่และ ticker-style เพื่อให้อ่านง่ายขึ้นระหว่างดูไฮไลต์
+- กล่องคำบรรยายใต้ replay ควรแสดงแบบบรรทัดเดียว (single-line ticker + ellipsis) เพื่อไม่กินพื้นที่แนวตั้งและไม่บังโซน control/filter
+- ใต้ scoreboard ของ replay มีตัวกรอง `Animation Event` (`all`, `SHOT`, `PASS`, `DRIBBLE`) สำหรับคุม marker/ข้อความเหตุการณ์ที่แสดงระหว่าง animation โดยตรง
+- เมื่อเลือก `Animation Event` ไม่ใช่ `all` replay จะเล่นเฉพาะช่วงนาทีของ event + นาทีถัดไป แล้วข้ามไปช่วง event ถัดไปอัตโนมัติ
+- สำหรับแมตช์ที่เล่นแล้ว โหมดกรอง `PASS`/`DRIBBLE` ของ animation จะอิง replay incident stream เพื่อให้มีช่วงเหตุการณ์ให้เล่นจริง (เพราะ persisted authoritative events มักไม่มีเหตุการณ์ละเอียดระดับ pass/dribble)
 - Ticker ใต้ replay จะค้างข้อความเหตุการณ์ตาม config ประมาณ 30 ticks (ปัจจุบันเน้น SHOT/FOUL context/YELLOW/RED) และถ้ามีเหตุการณ์ใหม่ในกลุ่มเดียวกันจะทับข้อความเดิมทันที
+- เมื่อเปิด `Animation Event` filter (ไม่ใช่ `all`) ticker ควรค้างข้อความของ event ที่ถูกกรองไว้ชั่วคราวด้วย (เช่น `PASS`/`DRIBBLE`) เพื่อให้อ่านช่วงที่ replay ข้ามเป็นหน้าต่าง event ได้ทัน
 - หน้า `/match` โหมด V2 Canvas ตัดแถวตัวเลข telemetry ด้านบนออกแล้ว เพื่อขยายกรอบ replay/highlight ให้สูงขึ้นและอ่านเหตุการณ์ง่ายกว่าเดิม
 - ใน V2 Canvas ลูกบอลแสดงเป็นลายฟุตบอลพร้อมการหมุนตามการเล่น; ถ้าเห็นลูกบอลเป็นจุดขาวคงที่ แปลว่ามี regression ใน `BallLayer`
+- ถ้าต้องเทียบตำแหน่ง replay กับ DB/action logs ให้ดู label `x,y` ที่แสดงตลอดบนตัวนักเตะทุกคนและลูกบอลในหน้า `/match` V2 canvas โดยตรง
 - ถ้า refresh หน้า `/match` แล้ว V2 Canvas telemetry เปลี่ยนเอง ให้ตรวจว่า route ถูกเรียกด้วย seed ปกติของ `matchId` หรือมี `variant` สำหรับ manual regenerate เท่านั้น
 - ถ้า V2 Canvas ของแมตช์ที่เล่นจบแล้วแสดงผู้เล่นผิดคนหรือยังเห็นผู้เล่นที่โดนแดงอยู่ ให้ตรวจว่า replay กำลังอิง persisted participants/minutes และ persisted `CARD_RED` ของแมตช์ ไม่ใช่ roster ปัจจุบัน
 - สำหรับผู้เล่นโดนแดง V2 Canvas ควรไม่วาดเป็นผู้เล่น active บนสนาม แต่แสดงในแถบ `Sent off (Off-field)` ใต้สนามแทน
-- วิเคราะห์ตำแหน่งครองบอล/ตำแหน่งเหตุการณ์บนสนาม → หน้า `/match` แท็บ `Heat Map` (รองรับ filter event: all/SHOT/PASS/DRIBBLE, team: all/home/away, และ player: all/ผู้เล่นรายคน โดยแสดงชื่อ+ตำแหน่ง, เรียงตำแหน่ง `GK -> DF -> MF -> FW`, จำกัดเฉพาะผู้เล่นที่ลงสนามจริง, และใช้การแรเงาแบบกระจายพื้นที่เพื่ออ่าน movement zone รายคนได้สมจริงขึ้น)
+- วิเคราะห์ตำแหน่งครองบอล/ตำแหน่งเหตุการณ์บนสนาม → หน้า `/match` แท็บ `Heat Map` (รองรับ filter event: all/SHOT/PASS/DRIBBLE, team: all/home/away, และ player: all/ผู้เล่นรายคน โดยแสดงชื่อ+ตำแหน่ง, เรียงตำแหน่ง `GK -> DF -> MF -> FW`, จำกัดเฉพาะผู้เล่นที่ลงสนามจริงจาก replay frame participants และ fallback เป็น persisted played-minutes สำหรับ legacy rows, พร้อมการแรเงาแบบกระจายพื้นที่เพื่ออ่าน movement zone รายคนได้สมจริงขึ้น)
+- Heat Map บน `/match` เก็บ marker coordinate ฝั่ง data เป็นค่า replay/action-log (`x,y` ช่วง `0..100`) และตอน render บน SVG สนาม `150x100` จะ map แบบเชิงเส้นเป็น `renderX = x * 1.5`, `renderY = y`
+- หน้า `/match` แท็บ `Events` และแท็บ `Heat Map` ใช้ชุดค่า event filter เดียวกันจาก master config (`all`, `SHOT`, `PASS`, `DRIBBLE`) เพื่อให้การกรองสอดคล้องกัน
 - เมื่อ debug Heat Map ให้ยึด score/event ที่ persisted แล้วเป็นหลัก: จำนวน goal markers ต้องตรงกับ persisted `GOAL` events/score ของแมตช์ ไม่ใช่ทุกประตูจาก replay V2 ที่ generate ใหม่
+- เมื่อ audit marker source: `SHOT`/`PASS`/`DRIBBLE` มาจาก `v2Replay.visualEvents[].position`; `GOAL` marker ต้องอิง persisted `GOAL` events เป็นหลัก (ตำแหน่งใช้ replay goal ถ้ามี ไม่งั้น fallback)
+- Heat Map marker บนสนามจะแสดงป้าย minute ของ event ด้วย เพื่อให้ตรวจเทียบตำแหน่ง+เวลาได้ทันที (hover marker เพื่อดู source/raw/svg coordinate เพิ่มเติม)
 - เมื่อ debug replay scoreboard บน `/match` ให้ยึด goal progression จาก persisted match events และ final persisted score เป็นหลัก (ไม่ควรแกว่งตาม replay-generated goals เพียงอย่างเดียว)
 - เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events แบบ strict สำหรับแมตช์ที่เล่นแล้ว: ไม่ควรดึง replay-generated incidents มาปะปนจนขัดกับ score/event ที่บันทึก
+- เวลาใน replay UI ของหน้า `/match` ควรแสดงนาทีแบบตัวเลขเดี่ยว `0` ... `90` (ใน player control และข้อความคำบรรยาย) และตัดบรรทัดหัว `Minute xx` เหนือคำบรรยายออกเพื่อลดความสูง UI; canonical minute ใน DB/events ยังคงเป็น `1..90`
+- แท็บผู้เล่นบนหน้า `/match` (`home`/`away`) ต้องเรียงข้อมูลแบบคงที่: ตัวจริง 11 คนก่อน แล้วค่อยตัวสำรอง โดยแต่ละกลุ่มเรียง `GK -> DF -> MF -> FW`; เมื่อมีการเปลี่ยนตัว ห้ามสลับแถวตัวจริงขึ้นลงตามตัวที่ลงมาใหม่ เพื่อให้เห็นชัดว่าตัวสำรองคนไหนได้ลงเล่น
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
 - Header หลักด้านบนจะย่อแรงขึ้นเมื่อ scroll ลง โดยโลโก้ `⚽ FOOTBALL MANAGER` จะเหลือประมาณครึ่งหนึ่งของขนาดปกติเพื่อคืนพื้นที่ให้ content
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)

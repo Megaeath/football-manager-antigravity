@@ -1,0 +1,121 @@
+@startuml
+actor User
+participant "Match UI\nmatch/page.tsx or SquadClient.tsx" as UI
+participant "POST /api/game/process\nroute.ts" as ProcessAPI
+participant "matchSimulator.ts\nprocessMatch()" as MatchSim
+participant "Prisma" as DB
+participant "V2 Engine\nsimulateMatch2D()" as V2
+participant "spatialEngine/helpers" as Spatial
+participant "POST Match Persist\nprocessMatchFinancials()" as Finance
+participant "GET /api/match/[id]/v2-sim" as ReplayAPI
+
+User -> UI : Click Start Match / Simulate Match
+UI -> ProcessAPI : POST { action:'simulate_match', matchId }
+
+ProcessAPI -> DB : find match by id
+ProcessAPI -> ProcessAPI : autoSelectTacticsForAITeams()
+ProcessAPI -> MatchSim : processMatch(matchId)
+
+MatchSim -> DB : findUnique(match + homeTeam + awayTeam + players + tactics)
+MatchSim -> MatchSim : check user lineup / AI lineup
+MatchSim -> MatchSim : autoSelectLineup() for AI
+MatchSim -> DB : update tacticalPosition for selected lineup
+MatchSim -> MatchSim : mapPlayer()
+MatchSim -> MatchSim : build TeamState home/away
+MatchSim -> V2 : simulateMatch2D(homeTeam, awayTeam, prepConfig)
+
+activate V2
+V2 -> V2 : init players / formations / playerStats / teamStats
+loop absoluteTick = 0 .. TOTAL_TICKS-1
+  V2 -> V2 : minute=floor(tick/10), subTick=tick%10
+  V2 -> Spatial : buildTeamContext()
+  V2 -> Spatial : assignDefensiveRoles()
+  loop each active player
+    V2 -> Spatial : getPlayerPhaseState()
+    V2 -> Spatial : generateMovementIntent()
+    V2 -> Spatial : generateSpecialistIntent()
+    V2 -> Spatial : blendRoleIntent()
+    V2 -> Spatial : updatePlayerPosition()
+  end
+
+  alt pendingKickoff
+    V2 -> V2 : resetBallForKickoff()
+  else activeTransition
+    V2 -> V2 : progress ball along trajectory
+    alt transition finished
+      alt SHOT
+        V2 -> V2 : applyMajorEventCooldown()
+      end
+      alt OFF_TARGET
+        V2 -> V2 : resetBallForGoalKick()
+      else GOAL
+        V2 -> V2 : homeScore/awayScore++
+        V2 -> V2 : schedule pendingKickoff
+      end
+    end
+  else carrier exists
+    alt cooldown or !shouldResolveCarrierAction()
+      V2 -> V2 : keep possession / no new action
+    else resolve action
+      V2 -> Spatial : findNearbyPlayers() for tackle duel
+      alt foul
+        V2 -> Spatial : applyCardFromFoulV2()
+        V2 -> Spatial : resolveFreeKickRestartV2()
+      else tackle won
+        V2 -> V2 : possession changes immediately
+      else choose action
+        alt shootBias triggered
+          V2 -> Spatial : createShotOutcome()
+          V2 -> V2 : createBallTransition(SHOT/GOAL)
+          V2 -> V2 : set activeTransition
+        else dribble path
+          V2 -> Spatial : pressure/blockers/byline logic
+          alt dribble fail
+            V2 -> V2 : turnover/foul
+          else dribble success
+            V2 -> V2 : update carrier position
+          end
+        else pass path
+          V2 -> Spatial : choosePassOption()
+          V2 -> Spatial : calculatePassLaneRisk()
+          V2 -> Spatial : calculatePassFailureProbability()
+          alt intercepted / failed
+            V2 -> V2 : turnover
+          else pass success
+            V2 -> V2 : createBallTransition(PASS)
+            V2 -> V2 : set activeTransition
+          end
+        end
+      end
+    end
+  else loose ball
+    V2 -> V2 : nearest player recovers ball
+  end
+
+  V2 -> V2 : record frame
+end
+V2 -> V2 : aggregate possession/team stats
+V2 -> V2 : convert frames -> PlayerActionLog[]
+deactivate V2
+
+V2 --> MatchSim : V2MatchState
+MatchSim -> MatchSim : remap event minute 0..89 -> 1..90
+MatchSim -> DB : update Match(homeScore, awayScore, stats, isPlayed)
+MatchSim -> DB : createMany MatchEvent
+MatchSim -> DB : createMany PlayerMatchStats
+MatchSim -> DB : createMany PlayerActionLog
+MatchSim --> ProcessAPI : match result
+
+ProcessAPI -> Finance : processMatchFinancials(matchId)
+Finance -> DB : update condition / popularity / reputation / finances
+ProcessAPI --> UI : JSON result
+
+UI -> ReplayAPI : GET /api/match/[id]/v2-sim
+ReplayAPI -> DB : load match + players + logs
+alt persisted tick snapshots exist
+  ReplayAPI -> ReplayAPI : buildReplayFromPersistedLogs()
+else generate fresh replay
+  ReplayAPI -> V2 : simulateMatch2D()
+end
+ReplayAPI --> UI : replay frames + visualEvents + telemetry
+@enduml

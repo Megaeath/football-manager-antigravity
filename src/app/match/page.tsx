@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PlayerModal from '@/components/PlayerModal';
 import { calculatePlayerPower, toPlayerAttributes } from '@/lib/engine/playerPower';
+import { MASTER_EVENT_FILTER_OPTIONS, type MasterEventFilterValue, toMasterEventCategory } from '@/lib/constants/matchEventFilters';
 import { PlaybackControls } from './components/PlaybackControls';
 import type { V2MatchState } from '@/lib/engine/v2/types2d';
 import type { MatchCanvasControls } from './components/MatchCanvas';
@@ -78,6 +79,12 @@ type MatchActionAnalytics = {
 };
 
 const IMPORTANT_EVENT_SET = new Set<string>(['GOAL', 'FOUL', 'FREE_KICK', 'CORNER']);
+const MAJOR_COMMENTARY_EVENT_SET = new Set<string>(['GOAL', 'SHOT', 'FREE_KICK', 'YELLOW_CARD', 'RED_CARD']);
+
+function getPlaybackDisplayMinute(minuteOneBased?: number | null): number {
+    const canonicalMinute = Math.max(1, Math.min(91, Number(minuteOneBased || 1)));
+    return Math.max(0, Math.min(90, canonicalMinute - 1));
+}
 
 export default function MatchPage() {
     return (
@@ -97,7 +104,9 @@ function MatchContent() {
     const [matchData, setMatchData] = useState<any | null>(null); // For the current simulation display
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'stats' | 'events' | 'home' | 'away' | 'heatmap'>('stats');
-    const [heatmapEventFilter, setHeatmapEventFilter] = useState<'all' | 'SHOT' | 'PASS' | 'DRIBBLE'>('all');
+    const [heatmapEventFilter, setHeatmapEventFilter] = useState<MasterEventFilterValue>('all');
+    const [eventsTabFilter, setEventsTabFilter] = useState<MasterEventFilterValue>('all');
+    const [animationEventFilter, setAnimationEventFilter] = useState<MasterEventFilterValue>('all');
     const [heatmapTeamFilter, setHeatmapTeamFilter] = useState<'all' | 'home' | 'away'>('all');
     const [heatmapPlayerFilter, setHeatmapPlayerFilter] = useState<string>('all');
     const [teamStandings, setTeamStandings] = useState<Record<string, { position: number; power: number }>>({});
@@ -119,6 +128,7 @@ function MatchContent() {
         eventTexts: string[];
     } | null>(null);
     const [v2LiveCommentary, setV2LiveCommentary] = useState<string>('Kick-off');
+    const [v2CommentaryHoldUntilFrame, setV2CommentaryHoldUntilFrame] = useState<number>(-1);
     const [v2CurrentFrameIndex, setV2CurrentFrameIndex] = useState(0);
     const [v2IsPlaying, setV2IsPlaying] = useState(false);
     const [v2PlaybackSpeed, setV2PlaybackSpeed] = useState(1.0);
@@ -356,6 +366,7 @@ function MatchContent() {
         setV2Error(null);
         setV2LiveFrame(null);
         setV2LiveCommentary('Kick-off');
+        setV2CommentaryHoldUntilFrame(-1);
     }, [matchData?.id]);
 
     useEffect(() => {
@@ -365,15 +376,27 @@ function MatchContent() {
 
     useEffect(() => {
         if (!v2LiveFrame) return;
+
         if (v2LiveFrame.eventTexts.length > 0) {
             setV2LiveCommentary(v2LiveFrame.eventTexts.join(' • '));
+
+            const hasMajorEvent = (v2LiveFrame.eventTypes || []).some((type) => MAJOR_COMMENTARY_EVENT_SET.has(String(type || '').toUpperCase()));
+            const hasFilteredEvent = animationEventFilter !== 'all'
+                && (v2LiveFrame.eventTypes || []).some((type) => toMasterEventCategory(type) === animationEventFilter);
+
+            if (hasMajorEvent || hasFilteredEvent) {
+                setV2CommentaryHoldUntilFrame(v2LiveFrame.frameIndex + 2);
+            }
             return;
         }
 
-        const displayMinute = Math.max(1, Number(v2LiveFrame.minute || 1));
-        const timeLabel = `${displayMinute}'`;
+        if (v2LiveFrame.frameIndex <= v2CommentaryHoldUntilFrame) {
+            return;
+        }
+
+        const timeLabel = `${getPlaybackDisplayMinute(v2LiveFrame.minute)}'`;
         setV2LiveCommentary(`⏱️ ${timeLabel} • Possession: ${v2LiveFrame.carrierName}`);
-    }, [v2LiveFrame]);
+    }, [v2LiveFrame, v2CommentaryHoldUntilFrame, animationEventFilter]);
 
     const currentImportantEventText = useMemo(() => {
         if (!v2LiveFrame) return null;
@@ -407,6 +430,13 @@ function MatchContent() {
         return ((matchData?.events as any[]) || []);
     }, [matchData]);
 
+    const filteredTimelineEvents = useMemo(() => {
+        const indexed = syncedEvents.map((event, originalIndex) => ({ event, originalIndex }));
+        if (eventsTabFilter === 'all') return indexed;
+
+        return indexed.filter(({ event }) => toMasterEventCategory(String(event?.type || '')) === eventsTabFilter);
+    }, [syncedEvents, eventsTabFilter]);
+
     const syncedPlayerStats = useMemo(() => {
         return ((matchData?.playerStats as Record<string, any>) || {});
     }, [matchData]);
@@ -438,6 +468,13 @@ function MatchContent() {
         };
 
         const playerMap = new Map<string, { id: string; name: string; teamId: string; position: string; minutes: number }>();
+        const onFieldPlayerIds = new Set<string>();
+
+        (v2Replay?.frames || []).forEach((frame) => {
+            Object.keys(frame.playerPositions || {}).forEach((playerId) => {
+                if (playerId) onFieldPlayerIds.add(playerId);
+            });
+        });
 
         const fromSyncedStats = Object.values((syncedPlayerStats as Record<string, any>) || {});
         fromSyncedStats.forEach((p: any) => {
@@ -446,7 +483,10 @@ function MatchContent() {
             const teamId = String(p?.teamId || '');
             const minutes = Number(p?.minutes || 0);
             if (!id || !teamId) return;
-            if (minutes <= 0) return; // only players who actually played (starter + sub)
+            // Prefer strict on-field participant check from replay frames.
+            // Fallback to minutes>0 for legacy rows that may not have replay frame ids.
+            const wasOnField = onFieldPlayerIds.size > 0 ? onFieldPlayerIds.has(id) : minutes > 0;
+            if (!wasOnField) return;
 
             const position = normalizePos(String(p?.tacticalPosition || p?.position || '').trim());
             playerMap.set(id, {
@@ -477,7 +517,7 @@ function MatchContent() {
             return b.minutes - a.minutes;
         });
         return players;
-    }, [syncedPlayerStats, heatmapTeamFilter, matchData?.homeTeamId, matchData?.awayTeamId]);
+    }, [syncedPlayerStats, heatmapTeamFilter, matchData?.homeTeamId, matchData?.awayTeamId, v2Replay?.frames]);
 
     useEffect(() => {
         if (heatmapPlayerFilter === 'all') return;
@@ -528,6 +568,10 @@ function MatchContent() {
         if (!v2Replay?.frames?.length) return null;
 
         const gridSize = 12;
+        const normalizePosition = (position?: { x?: number; y?: number } | null) => ({
+            x: Math.max(0, Math.min(100, Number(position?.x ?? 50))),
+            y: Math.max(0, Math.min(100, Number(position?.y ?? 50))),
+        });
         const clampGrid = (n: number) => Math.max(0, Math.min(gridSize - 1, n));
         const homeGrid: Record<string, number> = {};
         const awayGrid: Record<string, number> = {};
@@ -590,7 +634,20 @@ function MatchContent() {
 
         const authoritativeGoalMarkers = (Object.entries(persistedGoalEventsByTeam) as Array<[string, any[]]>).flatMap(([teamId, events]) => {
             const replayGoals = replayGoalEventsByTeam[teamId] || [];
-            return events.map((_, index: number) => replayGoals[index] || createFallbackGoalMarker(teamId, index));
+            return events.map((_, index: number) => {
+                const replayGoal = replayGoals[index];
+                if (replayGoal) {
+                    return {
+                        ...replayGoal,
+                        position: normalizePosition(replayGoal.position),
+                        markerSource: 'persisted_goal_with_replay_position',
+                    };
+                }
+                return {
+                    ...createFallbackGoalMarker(teamId, index),
+                    markerSource: 'persisted_goal_fallback_position',
+                };
+            });
         });
 
         v2Replay.frames.forEach((frame) => {
@@ -612,15 +669,33 @@ function MatchContent() {
             }
         });
 
+        // Persisted team shot totals for cross-validating V2 replay SHOT events
+        const persistedHomeShots: number = ((matchData?.teamStats as any)?.home?.shots) || 0;
+        const persistedAwayShots: number = ((matchData?.teamStats as any)?.away?.shots) || 0;
+
         const filteredNonGoalEvents = baseEvents.filter((e) => {
             if (heatmapTeamFilter === 'home' && e.teamId !== matchData?.homeTeamId) return false;
             if (heatmapTeamFilter === 'away' && e.teamId !== matchData?.awayTeamId) return false;
             if (selectedPlayerId && e.playerId !== selectedPlayerId) return false;
 
             if (e.type === 'GOAL') return false;
-            if (heatmapEventFilter === 'all') return e.type === 'SHOT' || e.type === 'PASS' || e.type === 'DRIBBLE';
-            return e.type === heatmapEventFilter;
-        });
+            const category = toMasterEventCategory(e.type);
+            const matchedCategory = heatmapEventFilter === 'all' ? category !== null : category === heatmapEventFilter;
+            if (!matchedCategory) return false;
+
+            // Cross-validate SHOT events against persisted stats so V2-only shots
+            // (that didn't happen in the real match) are hidden from the heatmap
+            if (category === 'SHOT' && matchData) {
+                const isHome = e.teamId === matchData.homeTeamId;
+                const persistedShots = isHome ? persistedHomeShots : persistedAwayShots;
+                if (persistedShots === 0) return false;
+            }
+            return true;
+        }).map((event) => ({
+            ...event,
+            position: normalizePosition(event.position),
+            markerSource: 'replay_visual_event',
+        }));
 
         const filteredGoalMarkers = authoritativeGoalMarkers.filter((event) => {
             if (heatmapTeamFilter === 'home' && event.teamId !== matchData?.homeTeamId) return false;
@@ -1028,8 +1103,13 @@ function MatchContent() {
     const unplayedMatches = todaysMatches.filter(m => !m.isPlayed);
 
     const getSubstitutionInfo = (teamId: string) => {
-        const subs = (matchData?.events || []).filter((e: any) => e.type === 'SUB' && e.teamId === teamId);
-        const subInIds = new Set(subs.map((e: any) => e.playerId).filter(Boolean));
+        const subs = (matchData?.events || []).filter((e: any) => (e.type === 'SUB' || e.type === 'SUBSTITUTION') && e.teamId === teamId);
+        const subInIds = new Set(
+            subs
+                .map((e: any) => e.playerId || e.metadata?.playerInId)
+                .filter(Boolean)
+                .map((id: any) => String(id))
+        );
         const subOutNames = new Set(
             subs.map((e: any) => {
                 const match = typeof e.text === 'string' ? e.text.match(/Substitution:\s*(.+)\s*off,\s*(.+)\s*on\.?/i) : null;
@@ -1377,12 +1457,44 @@ function MatchContent() {
                                             </div>
 
                                             {/* MIDDLE: Match Engine - hideControls=true to render below */}
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'flex-end',
+                                                    alignItems: 'center',
+                                                    gap: '0.45rem',
+                                                    padding: '0.15rem 0.2rem 0.05rem'
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#cbd5e1' }}>
+                                                    Animation Event:
+                                                </span>
+                                                <select
+                                                    value={animationEventFilter}
+                                                    onChange={(e) => setAnimationEventFilter(e.target.value as MasterEventFilterValue)}
+                                                    style={{
+                                                        border: '1px solid rgba(148,163,184,0.5)',
+                                                        borderRadius: '6px',
+                                                        background: 'rgba(15,23,42,0.9)',
+                                                        color: '#f8fafc',
+                                                        fontSize: '0.78rem',
+                                                        padding: '0.28rem 0.45rem',
+                                                        minWidth: '150px'
+                                                    }}
+                                                >
+                                                    {MASTER_EVENT_FILTER_OPTIONS.map((opt) => (
+                                                        <option key={`animation_${opt.value}`} value={opt.value}>{`Show: ${opt.label}`}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
                                             <div style={{ position: 'relative', zIndex: 2, minHeight: '360px' }}>
                                                 <MatchCanvas
                                                     matchData={v2DisplayReplay || v2Replay}
                                                     authoritativeEvents={matchData?.events || []}
                                                     authoritativeRawLogs={matchActionAnalytics?.rawLogs || []}
                                                     preferAuthoritativeEvents={Boolean(matchData?.isPlayed)}
+                                                    eventFilter={animationEventFilter}
                                                     width={900}
                                                     height={360}
                                                     hideOverlays
@@ -1441,9 +1553,9 @@ function MatchContent() {
                                             {/* BELOW FIELD: Live Commentary */}
                                             <div
                                                 style={{
-                                                    minHeight: '64px',
-                                                    maxHeight: '140px',
-                                                    overflowY: 'auto',
+                                                    minHeight: '40px',
+                                                    maxHeight: '40px',
+                                                    overflow: 'hidden',
                                                     borderRadius: '10px',
                                                     border: currentImportantEventText
                                                         ? '1px solid rgba(251,191,36,0.85)'
@@ -1454,15 +1566,23 @@ function MatchContent() {
                                                     boxShadow: currentImportantEventText
                                                         ? '0 0 0 1px rgba(245,158,11,0.35), 0 10px 24px rgba(120,53,15,0.35)'
                                                         : 'none',
-                                                    padding: '0.6rem 0.8rem',
-                                                    fontSize: '0.9rem',
-                                                    lineHeight: 1.45
+                                                    padding: '0.45rem 0.75rem',
+                                                    fontSize: '0.88rem',
+                                                    lineHeight: 1.1,
+                                                    display: 'flex',
+                                                    alignItems: 'center'
                                                 }}
+                                                title={v2LiveCommentary}
                                             >
-                                                <div style={{ fontSize: '0.76rem', opacity: currentImportantEventText ? 0.95 : 0.82, marginBottom: '4px', color: currentImportantEventText ? '#fef3c7' : '#cbd5e1', fontWeight: 600 }}>
-                                                    {v2LiveFrame ? `Minute ${Math.max(1, Number(v2LiveFrame.minute || 1))}` : 'Minute 1'}
-                                                </div>
-                                                <div style={{ fontWeight: currentImportantEventText ? 800 : 650, color: currentImportantEventText ? '#fff7ed' : '#f8fafc', fontSize: currentImportantEventText ? '1.02rem' : '0.92rem' }}>
+                                                <div style={{
+                                                    fontWeight: currentImportantEventText ? 800 : 650,
+                                                    color: currentImportantEventText ? '#fff7ed' : '#f8fafc',
+                                                    fontSize: currentImportantEventText ? '0.98rem' : '0.9rem',
+                                                    width: '100%',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
                                                     {v2LiveCommentary}
                                                 </div>
                                             </div>
@@ -1575,7 +1695,19 @@ function MatchContent() {
 
                         {activeTab === 'events' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} className="md:gap-3">
-                                {syncedEvents.map((e: any, i: number) => {
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem' }}>
+                                    <select
+                                        value={eventsTabFilter}
+                                        onChange={(e) => setEventsTabFilter(e.target.value as MasterEventFilterValue)}
+                                        style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.65rem', background: 'white', minWidth: '200px' }}
+                                    >
+                                        {MASTER_EVENT_FILTER_OPTIONS.map((opt) => (
+                                            <option key={`timeline_${opt.value}`} value={opt.value}>{`Events: ${opt.label}`}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {filteredTimelineEvents.map(({ event: e, originalIndex }, i: number) => {
                                     const getEventIcon = (type: string) => {
                                         switch (type) {
                                             case 'GOAL': return '⚽';
@@ -1588,7 +1720,9 @@ function MatchContent() {
                                             case 'FOUL': return '🔔';
                                             case 'FREE_KICK': return '🟡';
                                             case 'THROW_IN': return '↔️';
-                                            case 'SUB': return '🔁';
+                                            case 'SUB':
+                                            case 'SUBSTITUTION':
+                                                return '🔁';
                                             default: return '●';
                                         }
                                     };
@@ -1601,7 +1735,7 @@ function MatchContent() {
                                         let homeScore = 0;
                                         let awayScore = 0;
                                         // Count all goals before and including this one
-                                        for (let j = 0; j <= i; j++) {
+                                        for (let j = 0; j <= originalIndex; j++) {
                                             if (syncedEvents[j].type === 'GOAL') {
                                                 if (syncedEvents[j].teamId === matchData.homeTeamId) {
                                                     homeScore++;
@@ -1615,7 +1749,7 @@ function MatchContent() {
                                     
                                     // Extract player names from substitution text
                                     let displayText = e.text;
-                                    if (e.type === 'SUB' && e.text) {
+                                    if ((e.type === 'SUB' || e.type === 'SUBSTITUTION') && e.text) {
                                         const match = e.text.match(/Substitution:\s*(.+?)\s+off,\s*(.+?)\s+on/i);
                                         if (match) {
                                             displayText = (
@@ -1644,7 +1778,7 @@ function MatchContent() {
                                                 alignItems: 'center',
                                                 gap: '8px',
                                                 padding: '6px 0',
-                                                borderBottom: i < syncedEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                borderBottom: i < filteredTimelineEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
                                                 fontSize: '0.8rem'
                                             }} className="flex md:hidden">
                                                 <div style={{
@@ -1683,7 +1817,7 @@ function MatchContent() {
                                                 alignItems: 'center',
                                                 gap: '6px',
                                                 padding: '4px 0',
-                                                borderBottom: i < syncedEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                                borderBottom: i < filteredTimelineEvents.length - 1 ? '1px solid #e5e7eb' : 'none',
                                                 fontSize: '0.8rem'
                                             }} className="hidden md:flex md:gap-4 md:py-2 md:text-base">
                                                 {/* Left side - Home team events */}
@@ -1762,13 +1896,12 @@ function MatchContent() {
                                         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
                                             <select
                                                 value={heatmapEventFilter}
-                                                onChange={(e) => setHeatmapEventFilter(e.target.value as 'all' | 'SHOT' | 'PASS' | 'DRIBBLE')}
+                                                onChange={(e) => setHeatmapEventFilter(e.target.value as MasterEventFilterValue)}
                                                 style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.65rem', background: 'white' }}
                                             >
-                                                <option value="all">Event: All</option>
-                                                <option value="SHOT">Event: Shoot</option>
-                                                <option value="PASS">Event: Pass</option>
-                                                <option value="DRIBBLE">Event: Dribble</option>
+                                                {MASTER_EVENT_FILTER_OPTIONS.map((opt) => (
+                                                    <option key={`heatmap_${opt.value}`} value={opt.value}>{`Event: ${opt.label}`}</option>
+                                                ))}
                                             </select>
 
                                             <select
@@ -1795,8 +1928,8 @@ function MatchContent() {
                                             </select>
                                         </div>
                                         
-                                        {/* SVG Pitch with Heatmap (matches MatchCanvas FieldLayer geometry) */}
-                                        <svg viewBox="0 0 150 100" style={{ 
+                                        {/* SVG Pitch with Heatmap (3:2 display, 150x100 render space) */}
+                                        <svg viewBox="0 0 150 100" preserveAspectRatio="xMidYMid meet" style={{ 
                                             width: '100%', 
                                             maxWidth: '900px', 
                                             aspectRatio: '3 / 2',
@@ -1894,15 +2027,36 @@ function MatchContent() {
 
                                                     {/* Event markers */}
                                                     {heatmapData.filteredEvents.map((ev, i) => {
-                                                        const xPos = (ev.position?.x ?? 50) * 1.5;
+                                                        const rawX = ev.position?.x ?? 50;
+                                                        const xPos = rawX * 1.5;
                                                         const yPos = ev.position?.y ?? 50;
                                                         const markerColor = ev.teamId === matchData.homeTeamId ? '#3b82f6' : '#ef4444';
+                                                        const sourceLabel = String(ev.markerSource || 'unknown_source');
+                                                        const minuteLabel = Number.isFinite(Number(ev.minute)) ? `${Number(ev.minute)}'` : '-';
+                                                        const minuteText = Number.isFinite(Number(ev.minute)) ? `${Number(ev.minute)}'` : '';
+                                                        const title = `${ev.type} • ${sourceLabel} • minute ${minuteLabel} • raw(${Number(rawX).toFixed(2)}, ${Number(yPos).toFixed(2)}) • svg(${Number(xPos).toFixed(2)}, ${Number(yPos).toFixed(2)})`;
 
                                                         if (ev.type === 'GOAL') {
                                                             return (
                                                                 <g key={`goal_${i}`}>
+                                                                    <title>{title}</title>
                                                                     <circle cx={xPos} cy={yPos} r="1.8" fill="#fbbf24" stroke="#7c2d12" strokeWidth="0.45" />
                                                                     <circle cx={xPos} cy={yPos} r="0.55" fill="#fff7d6" />
+                                                                    {minuteText && (
+                                                                        <text
+                                                                            x={xPos + 2.1}
+                                                                            y={yPos - 1.8}
+                                                                            textAnchor="start"
+                                                                            fill="#111827"
+                                                                            fontSize="2.1"
+                                                                            fontWeight="700"
+                                                                            stroke="#ffffff"
+                                                                            strokeWidth="0.45"
+                                                                            paintOrder="stroke"
+                                                                        >
+                                                                            {minuteText}
+                                                                        </text>
+                                                                    )}
                                                                 </g>
                                                             );
                                                         }
@@ -1910,8 +2064,24 @@ function MatchContent() {
                                                         const glyph = ev.type === 'SHOT' ? 'S' : ev.type === 'PASS' ? 'P' : 'D';
                                                         return (
                                                             <g key={`ev_${i}`}>
+                                                                <title>{title}</title>
                                                                 <circle cx={xPos} cy={yPos} r="1.2" fill={markerColor} stroke="#333" strokeWidth="0.35" />
                                                                 <text x={xPos} y={yPos + 0.45} textAnchor="middle" fill="white" fontSize="0.9" fontWeight="700">{glyph}</text>
+                                                                {minuteText && (
+                                                                    <text
+                                                                        x={xPos + 1.6}
+                                                                        y={yPos - 1.3}
+                                                                        textAnchor="start"
+                                                                        fill="#111827"
+                                                                        fontSize="1.9"
+                                                                        fontWeight="700"
+                                                                        stroke="#ffffff"
+                                                                        strokeWidth="0.4"
+                                                                        paintOrder="stroke"
+                                                                    >
+                                                                        {minuteText}
+                                                                    </text>
+                                                                )}
                                                             </g>
                                                         );
                                                     })}
@@ -1941,6 +2111,11 @@ function MatchContent() {
                                                 <div style={{ width: '16px', height: '16px', backgroundColor: '#111827', borderRadius: '50%', border: '1px solid #fff' }} />
                                                 <span>Event Markers: S / P / D</span>
                                             </div>
+                                        </div>
+
+                                        <div style={{ marginTop: '0.8rem', textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem' }}>
+                                            Marker audit: S/P/D use <strong>v2Replay.visualEvents[].position (x,y)</strong>; GOAL markers use <strong>persisted GOAL events</strong> as authority,
+                                            with replay position fallback or deterministic fallback position when replay markers are missing.
                                         </div>
                                     </div>
                                 ) : (
@@ -1987,51 +2162,58 @@ function MatchContent() {
                                     const trustCurrentTacticalPositions = !matchData.isPlayed;
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
-                                    const allPlayers = Object.values(syncedPlayerStats || {}) as any[];
+                                    const replayPlayerStats = (v2Replay?.playerStats || {}) as Record<string, any>;
+                                    const syncedPlayerStatsMap = (syncedPlayerStats || {}) as Record<string, any>;
+
+                                    const mergedPlayerById = new Map<string, any>();
+
+                                    Object.entries(replayPlayerStats).forEach(([playerId, replayRow]) => {
+                                        const syncedRow = syncedPlayerStatsMap[playerId] || {};
+                                        mergedPlayerById.set(playerId, {
+                                            ...replayRow,
+                                            ...syncedRow,
+                                            playerId,
+                                            teamId: String(replayRow?.teamId || syncedRow?.teamId || ''),
+                                        });
+                                    });
+
+                                    Object.entries(syncedPlayerStatsMap).forEach(([playerId, syncedRow]) => {
+                                        if (mergedPlayerById.has(playerId)) return;
+                                        mergedPlayerById.set(playerId, {
+                                            ...syncedRow,
+                                            playerId,
+                                            teamId: String(syncedRow?.teamId || ''),
+                                        });
+                                    });
+
+                                    const allPlayers = Array.from(mergedPlayerById.values()) as any[];
                                     const teamPlayers = allPlayers.filter((p: any) => String(p.teamId || '') === String(teamId || '')) as any[];
 
-                                    // Backward-compat fallback: some legacy rows may miss teamId.
-                                    // If strict filter is empty, keep rendering by splitting rows using match side heuristics.
+                                    const firstAppearanceTickByPlayerId = new Map<string, number>();
+                                    (v2Replay?.frames || []).forEach((frame, frameIndex) => {
+                                        const absoluteTick = frameIndex;
+                                        Object.keys(frame.playerPositions || {}).forEach((playerId) => {
+                                            const player = mergedPlayerById.get(playerId);
+                                            if (String(player?.teamId || '') !== String(teamId || '')) return;
+                                            const existing = firstAppearanceTickByPlayerId.get(playerId);
+                                            if (existing === undefined || absoluteTick < existing) {
+                                                firstAppearanceTickByPlayerId.set(playerId, absoluteTick);
+                                            }
+                                        });
+                                    });
+
+                                    // Backward-compat fallback: if authoritative rows are incomplete,
+                                    // use replay player stats with explicit team ownership only.
                                     const resolvedTeamPlayers = teamPlayers.length > 0
                                         ? teamPlayers
-                                        : allPlayers.filter((p: any) => {
-                                            const pid = String(p.playerId || '');
-                                            if (!pid) return false;
-                                            // Deterministic split by playerId hash to avoid fully empty table on bad legacy data
-                                            const code = pid.charCodeAt(pid.length - 1) || 0;
-                                            return activeTab === 'home' ? code % 2 === 0 : code % 2 === 1;
-                                        });
-
-                                    // Tactical slot order mirrors formation definition (GK→DR→DC_R→DC_L→DL→MR/MC_R→...→FW)
-                                    const TACTICAL_SLOT_ORDER: Record<string, number> = {
-                                        'GK': 0,
-                                        'DR': 1,
-                                        'DC_R': 2, 'DC': 3, 'DC_L': 4,
-                                        'DL': 5,
-                                        'DMR': 6, 'DMC': 7, 'DML': 8,
-                                        'MR': 10,
-                                        'MC_R': 11, 'MC': 12, 'MC_L': 13,
-                                        'ML': 14,
-                                        'AMR': 15, 'AMC': 16, 'AML': 17,
-                                        'FW_R': 20, 'FW': 21, 'FW_L': 22,
-                                    };
-
-                                    const MIRROR_TACTICAL_SLOT: Record<string, string> = {
-                                        DR: 'DL',
-                                        DL: 'DR',
-                                        DMR: 'DML',
-                                        DML: 'DMR',
-                                        DC_R: 'DC_L',
-                                        DC_L: 'DC_R',
-                                        MR: 'ML',
-                                        ML: 'MR',
-                                        MC_R: 'MC_L',
-                                        MC_L: 'MC_R',
-                                        AMR: 'AML',
-                                        AML: 'AMR',
-                                        FW_R: 'FW_L',
-                                        FW_L: 'FW_R',
-                                    };
+                                        : (Object.entries(replayPlayerStats)
+                                            .filter(([, row]) => String(row?.teamId || '') === String(teamId || ''))
+                                            .map(([playerId, row]) => ({
+                                                ...row,
+                                                ...(syncedPlayerStatsMap[playerId] || {}),
+                                                playerId,
+                                                teamId: String(row?.teamId || ''),
+                                            })) as any[]);
 
                                     const normalizePosForDisplay = (pos?: string | null) => {
                                         if (!pos) return '-';
@@ -2042,93 +2224,58 @@ function MatchContent() {
                                         return pos;
                                     };
 
-                                    // Derive match-played tactical slot per player (helps subs show actual played position)
-                                    const playedSlotByPlayerId = new Map<string, string>();
-                                    for (const p of resolvedTeamPlayers) {
-                                        if (trustCurrentTacticalPositions && p.tacticalPosition) {
-                                            playedSlotByPlayerId.set(p.playerId, p.tacticalPosition);
-                                        }
-                                    }
-
-                                    const subEvents = (syncedEvents || [])
-                                        .filter((e: any) => e.teamId === teamId && e.type === 'SUB')
-                                        .sort((a: any, b: any) => (a.minute || 0) - (b.minute || 0));
-
-                                    for (const e of subEvents) {
-                                        const text = String(e.text || '');
-                                        const m = text.match(/^Substitution:\s(.+?)\soff,\s(.+?)\son\.?$/i);
-                                        if (!m) continue;
-                                        const outName = m[1]?.trim();
-                                        const inPlayerId = e.playerId;
-                                        if (!outName || !inPlayerId) continue;
-
-                                        const outCandidates = resolvedTeamPlayers.filter(
-                                            (p: any) => p.name === outName && p.playerId !== inPlayerId
-                                        );
-                                        const outPlayer = outCandidates
-                                            .sort((a: any, b: any) => {
-                                                const aScore =
-                                                    (playedSlotByPlayerId.has(a.playerId) ? 100 : 0) +
-                                                    (trustCurrentTacticalPositions && a.tacticalPosition ? 50 : 0) +
-                                                    (Number(a.minutes || 0));
-                                                const bScore =
-                                                    (playedSlotByPlayerId.has(b.playerId) ? 100 : 0) +
-                                                    (trustCurrentTacticalPositions && b.tacticalPosition ? 50 : 0) +
-                                                    (Number(b.minutes || 0));
-                                                return bScore - aScore;
-                                            })[0];
-                                        const outPlayerId = outPlayer?.playerId;
-                                        const outSlot = outPlayerId
-                                            ? (playedSlotByPlayerId.get(outPlayerId) || (trustCurrentTacticalPositions ? outPlayer?.tacticalPosition : null) || null)
-                                            : null;
-
-                                        if (outSlot) {
-                                            playedSlotByPlayerId.set(inPlayerId, outSlot);
-                                        }
-                                    }
-
-                                    const getPlayedPos = (p: any) => playedSlotByPlayerId.get(p.playerId) || (trustCurrentTacticalPositions ? p.tacticalPosition : null) || p.position || '-';
-                                    const getSortPos = (p: any) => {
-                                        const pos = getPlayedPos(p);
-                                        if (activeTab === 'away') {
-                                            return MIRROR_TACTICAL_SLOT[pos] || pos;
-                                        }
-                                        return pos;
+                                    const getDisplayPos = (p: any) => {
+                                        return (trustCurrentTacticalPositions ? p.tacticalPosition : null) || p.position || '-';
                                     };
                                     const getPlayerGroup = (p: any) => {
-                                        const hasPlayedMinutes = Number(p.minutes || 0) > 0;
-                                        const isStarter = trustCurrentTacticalPositions
-                                            ? !!p.tacticalPosition
-                                            : (hasPlayedMinutes && !subInIds.has(p.playerId));
+                                        if (trustCurrentTacticalPositions) {
+                                            const hasPlayedMinutes = Number(p.minutes || 0) > 0;
+                                            if (!!p.tacticalPosition) return 0;
+                                            if (hasPlayedMinutes) return 1;
+                                            return 2;
+                                        }
 
-                                        // Group 0 = starting XI (initial tactical slot)
-                                        // Group 1 = non-starters who played (subs/re-entry edge cases)
+                                        const firstAppearanceTick = firstAppearanceTickByPlayerId.get(String(p.playerId || ''));
+
+                                        // For played matches, replay frame participation is authoritative for
+                                        // starter/sub/unused grouping and must override noisy persisted minutes.
+                                        if (firstAppearanceTickByPlayerId.size > 0) {
+                                            if (typeof firstAppearanceTick === 'number' && firstAppearanceTick === 0) return 0; // starter
+                                            if (typeof firstAppearanceTick === 'number' && firstAppearanceTick > 0) return 1; // sub-in
+                                            return 2; // never appeared on-field
+                                        }
+
+                                        const hasPlayedMinutes = Number(p.minutes || 0) > 0;
+                                        // Group 0 = starters that began the match
+                                        // Group 1 = reserves/subs who played
                                         // Group 2 = unused bench
-                                        if (isStarter) return 0;
-                                        if (hasPlayedMinutes) return 1;
-                                        return 2;
+                                        if (!hasPlayedMinutes) return 2;
+                                        if (subInIds.has(String(p.playerId || ''))) return 1;
+                                        return 0;
                                     };
                                     // Category order for bench/subs by naturalPosition: GK→DF→MF→FW
                                     const getNaturalPosOrder = (pos: string) => {
-                                        if (pos === 'GK') return 0;
+                                        const normalizedPos = normalizePosForDisplay(pos);
+                                        if (normalizedPos === 'GK') return 0;
                                         if (['DR', 'DL', 'DC', 'DMC', 'DMR', 'DML'].includes(pos)) return 1;
                                         if (['MR', 'ML', 'MC', 'AMR', 'AML', 'AMC'].includes(pos)) return 2;
                                         if (['FWR', 'FWL', 'FWC', 'FW'].includes(pos)) return 3;
+                                        if (normalizedPos === 'DC') return 1;
+                                        if (normalizedPos === 'MC') return 2;
+                                        if (normalizedPos === 'FW') return 3;
                                         return 9;
                                     };
 
                                     const renderBasicPlayerRows = (playersToRender: any[]) => {
                                         return [...playersToRender]
                                             .sort((a: any, b: any) => {
-                                                const aPos = getSortPos(a);
-                                                const bPos = getSortPos(b);
-                                                const aTacOrder = TACTICAL_SLOT_ORDER[aPos] ?? (getNaturalPosOrder(aPos) * 10 + 50);
-                                                const bTacOrder = TACTICAL_SLOT_ORDER[bPos] ?? (getNaturalPosOrder(bPos) * 10 + 50);
-                                                if (aTacOrder !== bTacOrder) return aTacOrder - bTacOrder;
+                                                const aOrder = getNaturalPosOrder(getDisplayPos(a));
+                                                const bOrder = getNaturalPosOrder(getDisplayPos(b));
+                                                if (aOrder !== bOrder) return aOrder - bOrder;
                                                 return a.name.localeCompare(b.name);
                                             })
                                             .map((p: any) => {
-                                                const displayPos = normalizePosForDisplay(getPlayedPos(p));
+                                                const displayPos = normalizePosForDisplay(getDisplayPos(p));
                                                 const displayRating = (p.minutes || 0) <= 0 ? '-' : Number(p.rating || 0).toFixed(1);
                                                 return (
                                                     <div
@@ -2181,22 +2328,14 @@ function MatchContent() {
                                             const bGroup = getPlayerGroup(b);
                                             if (aGroup !== bGroup) return aGroup - bGroup;
 
-                                            if (aGroup === 0 || aGroup === 1) {
-                                                // Starters/Sub-ins: sort by actual played tactical slot (GK→DR→DC→...)
-                                                const aPos = getSortPos(a);
-                                                const bPos = getSortPos(b);
-                                                const aTacOrder = TACTICAL_SLOT_ORDER[aPos] ?? (getNaturalPosOrder(aPos) * 10 + 50);
-                                                const bTacOrder = TACTICAL_SLOT_ORDER[bPos] ?? (getNaturalPosOrder(bPos) * 10 + 50);
-                                                if (aTacOrder !== bTacOrder) return aTacOrder - bTacOrder;
+                                            // Keep fixed role order in each bucket: GK→DF→MF→FW
+                                            const aOrder = getNaturalPosOrder(getDisplayPos(a));
+                                            const bOrder = getNaturalPosOrder(getDisplayPos(b));
+                                            if (aOrder !== bOrder) return aOrder - bOrder;
 
-                                                // Same slot: more minutes first
-                                                if (a.minutes !== b.minutes) return b.minutes - a.minutes;
-                                            } else {
-                                                // Unused bench: sort by natural position category GK→DF→MF→FW
-                                                const aOrder = getNaturalPosOrder(a.position);
-                                                const bOrder = getNaturalPosOrder(b.position);
-                                                if (aOrder !== bOrder) return aOrder - bOrder;
-                                            }
+                                            // For reserve players who got minutes, show active subs first
+                                            if (aGroup === 1 && a.minutes !== b.minutes) return b.minutes - a.minutes;
+
                                             return a.name.localeCompare(b.name);
                                         })
                                         .map((p: any) => {
@@ -2204,7 +2343,7 @@ function MatchContent() {
                                             const isSubOut = subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
-                                            const displayPos = normalizePosForDisplay(getPlayedPos(p));
+                                            const displayPos = normalizePosForDisplay(getDisplayPos(p));
                                             const didNotPlay = (p.minutes || 0) <= 0;
                                             const displayRating = didNotPlay ? '-' : Number(p.rating || 0).toFixed(1);
                                             const analytics = matchActionAnalytics?.byPlayer?.[p.playerId];

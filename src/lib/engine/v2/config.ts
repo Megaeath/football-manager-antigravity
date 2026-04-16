@@ -509,6 +509,9 @@ export const TUNING_PARAMS = {
     // Carrier action cadence (evaluate every tick)
     actionDecisionIntervalTicks: 1,
 
+    // Cooldown after major incidents (GOAL/SHOT/FOUL/CARDS) to keep replay readable
+    majorEventCooldownTicks: 2,
+
     // Anti-collapse
     minTeammateDistance: 3.2,
 

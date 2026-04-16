@@ -266,12 +266,15 @@
 
 - Replay frames may include `ballTransitions` for smooth pass/shot travel on the canvas
 - V2 simulation cadence is config-driven and currently runs at `10 ticks/minute`
+- หลังเหตุการณ์สำคัญ (`GOAL`, `SHOT`, `FOUL`, `CARD_YELLOW`, `CARD_RED`) V2 จะเว้น action decision `2 ticks` เพื่อให้ replay/animation อ่านง่ายและ sync ได้ลื่นขึ้น
 - Saved shots stay visible by ending the trajectory at the goalkeeper instead of instantly snapping possession
 - Replay frames may include `debug` overlay payload (intent vectors + defensive assignment) for V2 tuning mode
 - Top-level `telemetry.engineSummary` mirrors replay telemetry summary for quick API-side diagnostics
 - `replay.playerMovementAnalytics` summarizes per-player continuous movement/carry data sampled every tick (ready for future heatmap)
 - V2 dribble counting distinguishes **carry** vs **dribble duel**: simple lane-carry is not counted as `dribblesWon`; only opponent-beating dribbles are counted
 - V2 replay now emits set-piece/discipline incidents with V1-like conditions (`THROW_IN`, `CORNER`, `FOUL`, `CARD_YELLOW`, `CARD_RED`) so match event/state tabs can show non-shot incidents from simulation output
+- ช็อตที่ `OFF_TARGET` จะรีสตาร์ตเป็น `GOAL_KICK` (ฝั่งรับ) แทนการปล่อย loose-ball ด้านหลังประตู
+- หลัง `GOAL` รีสตาร์ตด้วย kickoff กลางสนาม และจะจัดผู้เล่นให้อยู่ฝั่งของตัวเอง (forwards ไม่ล้ำเส้นครึ่งสนามตอนเริ่ม)
 - สำหรับแมตช์ที่ถูกเล่นและ persisted แล้ว ค่า score ใน replay response จะถูกล็อกให้ตรงกับผลที่บันทึกใน `Match.homeScore` / `Match.awayScore` และ team stats ที่บันทึกไว้ เพื่อไม่ให้หน้า `/match` แสดงผลแข่งแกว่งตาม replay ที่ generate ใหม่
 - สำหรับ persisted match การเรียก route แบบปกติจะใช้ deterministic seed จาก `matchId` ทำให้ refresh หน้าแล้ว replay / telemetry เดิมไม่เปลี่ยนเอง; ถ้ากด regenerate จึงค่อยส่ง `variant` เพื่อขอ replay seed ใหม่โดยตั้งใจ
 - สำหรับ already-played match route จะ prefer ผู้เล่นที่มี persisted minutes เป็น participants ของ replay และจะถอดผู้เล่นที่มี persisted `CARD_RED` ออกจาก active replay หลังนาทีที่โดนไล่ออก

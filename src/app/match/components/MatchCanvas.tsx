@@ -24,6 +24,7 @@ import { EventsLayer } from './EventsLayer';
 import { PlaybackControls } from './PlaybackControls';
 import { DebugLayer } from './DebugLayer';
 import type { VisualEvent } from '@/lib/engine/v2/types2d';
+import { toMasterEventCategory, type MasterEventFilterValue } from '@/lib/constants/matchEventFilters';
 
 type XYPosition = { x: number; y: number };
 
@@ -68,6 +69,11 @@ function findNextHighlightFrameIndex(
 
 type HighlightStoryWindow = {
     highlightIndex: number;
+    startIndex: number;
+    endIndex: number;
+};
+
+type FrameWindowRange = {
     startIndex: number;
     endIndex: number;
 };
@@ -178,6 +184,7 @@ interface MatchCanvasProps {
     hideOverlays?: boolean;
     hideControls?: boolean;
     showDebugLayer?: boolean;
+    eventFilter?: MasterEventFilterValue;
     controlsRef?: React.MutableRefObject<MatchCanvasControls | null>;
 }
 
@@ -225,6 +232,7 @@ export function MatchCanvas({
     hideOverlays = false,
     hideControls = false,
     showDebugLayer = false,
+    eventFilter = 'all',
     controlsRef,
 }: MatchCanvasProps) {
     // Return an object with both canvas and controls for flexible layout
@@ -497,6 +505,86 @@ export function MatchCanvas({
 
         return Array.from(result).sort((a, b) => a - b);
     }, [matchData.frames, authoritativeEventsForFrame, strictAuthoritativeMode]);
+
+    const useReplayStreamForFilter = strictAuthoritativeMode
+        && (eventFilter === 'PASS' || eventFilter === 'DRIBBLE');
+
+    const minuteFrameRanges = useMemo(() => {
+        const ranges = new Map<number, FrameWindowRange>();
+        matchData.frames.forEach((frame, frameIndex) => {
+            const minute = Number(frame.minute || 0);
+            const existing = ranges.get(minute);
+            if (!existing) {
+                ranges.set(minute, { startIndex: frameIndex, endIndex: frameIndex });
+            } else {
+                existing.endIndex = frameIndex;
+            }
+        });
+        return ranges;
+    }, [matchData.frames]);
+
+    const filteredEventWindows = useMemo(() => {
+        if (eventFilter === 'all') return [] as FrameWindowRange[];
+
+        const eventMinutes = new Set<number>();
+        const maxMinute = Math.max(0, ...Array.from(minuteFrameRanges.keys()));
+        const addMinuteWithWindow = (minute: number) => {
+            const clampedMinute = Math.max(0, Math.min(maxMinute, minute));
+            eventMinutes.add(clampedMinute);
+            eventMinutes.add(Math.max(0, Math.min(maxMinute, clampedMinute + 1)));
+        };
+
+        if (strictAuthoritativeMode && !useReplayStreamForFilter) {
+            authoritativeVisualEventsForFrame.forEach((events, frameIndex) => {
+                const frame = matchData.frames[frameIndex];
+                if (!frame || !events || events.length === 0) return;
+                const hasMatch = events.some((event) => toMasterEventCategory(event.type) === eventFilter);
+                if (hasMatch) addMinuteWithWindow(Number(frame.minute || 0));
+            });
+        } else {
+            const hasAuthoritativeCandidates = authoritativeVisualEventsForFrame.size > 0 && !useReplayStreamForFilter;
+            if (hasAuthoritativeCandidates) {
+                authoritativeVisualEventsForFrame.forEach((events, frameIndex) => {
+                    const frame = matchData.frames[frameIndex];
+                    if (!frame || !events || events.length === 0) return;
+                    const hasMatch = events.some((event) => toMasterEventCategory(event.type) === eventFilter);
+                    if (hasMatch) addMinuteWithWindow(Number(frame.minute || 0));
+                });
+            } else {
+                matchData.frames.forEach((frame) => {
+                    if (!frame.events || frame.events.length === 0) return;
+                    const hasMatch = frame.events.some((event) => toMasterEventCategory(event.type) === eventFilter);
+                    if (hasMatch) addMinuteWithWindow(Number(frame.minute || 0));
+                });
+            }
+        }
+
+        const ranges = Array.from(eventMinutes)
+            .sort((left, right) => left - right)
+            .map((minute) => minuteFrameRanges.get(minute))
+            .filter((range): range is FrameWindowRange => !!range)
+            .sort((left, right) => left.startIndex - right.startIndex);
+
+        if (ranges.length === 0) return [] as FrameWindowRange[];
+
+        const merged: FrameWindowRange[] = [];
+        ranges.forEach((range) => {
+            const last = merged[merged.length - 1];
+            if (!last) {
+                merged.push({ ...range });
+                return;
+            }
+            if (range.startIndex <= last.endIndex + 1) {
+                last.endIndex = Math.max(last.endIndex, range.endIndex);
+                return;
+            }
+            merged.push({ ...range });
+        });
+
+        return merged;
+    }, [authoritativeVisualEventsForFrame, eventFilter, matchData.frames, minuteFrameRanges, strictAuthoritativeMode, useReplayStreamForFilter]);
+
+    const filteredEventSkipMode = eventFilter !== 'all';
     const renderFrame = useMemo(
         () => (currentFrame ? interpolateFrame(currentFrame, nextFrame, frameBlend) : undefined),
         [currentFrame, nextFrame, frameBlend],
@@ -596,19 +684,24 @@ export function MatchCanvas({
 
     const visibleFrameEvents = useMemo(() => {
         const authoritativeVisualEvents = authoritativeVisualEventsForFrame.get(currentFrameIndex) || [];
-        if (strictAuthoritativeMode) {
-            return authoritativeVisualEvents as MatchFrame['events'];
+        const applyEventFilter = (events: MatchFrame['events'] = [] as MatchFrame['events']) => {
+            if (eventFilter === 'all') return events;
+            return events.filter((event) => toMasterEventCategory(event.type) === eventFilter);
+        };
+
+        if (strictAuthoritativeMode && !useReplayStreamForFilter) {
+            return applyEventFilter(authoritativeVisualEvents as MatchFrame['events']);
         }
 
-        if (authoritativeVisualEvents.length > 0) {
-            return authoritativeVisualEvents as MatchFrame['events'];
+        if (authoritativeVisualEvents.length > 0 && !useReplayStreamForFilter) {
+            return applyEventFilter(authoritativeVisualEvents as MatchFrame['events']);
         }
 
         if (!currentFrame?.events?.length) return [] as MatchFrame['events'];
-        if (!highSpeedHighlightsOnly) return currentFrame.events;
-        if (isWithinHighlightStoryWindow) return currentFrame.events;
-        return currentFrame.events.filter((event) => isImportantHighlight(event.type));
-    }, [currentFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow, authoritativeVisualEventsForFrame, currentFrameIndex, strictAuthoritativeMode]);
+        if (!highSpeedHighlightsOnly) return applyEventFilter(currentFrame.events);
+        if (isWithinHighlightStoryWindow) return applyEventFilter(currentFrame.events);
+        return applyEventFilter(currentFrame.events.filter((event) => isImportantHighlight(event.type)));
+    }, [currentFrame, highSpeedHighlightsOnly, isWithinHighlightStoryWindow, authoritativeVisualEventsForFrame, currentFrameIndex, strictAuthoritativeMode, eventFilter, useReplayStreamForFilter]);
 
     const renderFrameForBallLayer = useMemo(() => {
         if (!renderFrame) return renderFrame;
@@ -717,7 +810,7 @@ export function MatchCanvas({
             return event.text || `• ${type} (${event.minute}')`;
         });
 
-        const merged = strictAuthoritativeMode
+        const merged = (strictAuthoritativeMode && !useReplayStreamForFilter)
             ? authoritativeTexts
             : (authoritativeTexts.length > 0 ? [...authoritativeTexts, ...replayTexts] : replayTexts);
         const seen = new Set<string>();
@@ -730,7 +823,7 @@ export function MatchCanvas({
         });
 
         return deduped;
-    }, [visibleFrameEvents, authoritativeEventsForFrame, currentFrameIndex, strictAuthoritativeMode]);
+    }, [visibleFrameEvents, authoritativeEventsForFrame, currentFrameIndex, strictAuthoritativeMode, useReplayStreamForFilter]);
 
     const sentOffTimeline = useMemo(() => {
         const byPlayerId = new Map<string, { playerId: string; teamId?: string; minute: number }>();
@@ -870,7 +963,43 @@ export function MatchCanvas({
                 setCurrentFrameIndex(prev => {
                     let nextIndex: number;
 
-                    if (highSpeedHighlightsOnly) {
+                    if (filteredEventSkipMode) {
+                        const stepCount = Math.max(1, Math.floor(elapsed / frameDuration));
+                        const windows = filteredEventWindows;
+
+                        if (windows.length === 0) {
+                            running = false;
+                            setIsPlaying(false);
+                            setFrameBlend(0);
+                            return prev;
+                        }
+
+                        const currentWindow = windows.find((window) => prev >= window.startIndex && prev <= window.endIndex);
+                        if (currentWindow) {
+                            const stepped = prev + stepCount;
+                            if (stepped <= currentWindow.endIndex) {
+                                nextIndex = stepped;
+                            } else {
+                                const nextWindow = windows.find((window) => window.startIndex > currentWindow.endIndex);
+                                if (!nextWindow) {
+                                    running = false;
+                                    setIsPlaying(false);
+                                    setFrameBlend(0);
+                                    return currentWindow.endIndex;
+                                }
+                                nextIndex = nextWindow.startIndex;
+                            }
+                        } else {
+                            const nextWindow = windows.find((window) => window.startIndex > prev) || windows[0];
+                            if (!nextWindow) {
+                                running = false;
+                                setIsPlaying(false);
+                                setFrameBlend(0);
+                                return prev;
+                            }
+                            nextIndex = nextWindow.startIndex;
+                        }
+                    } else if (highSpeedHighlightsOnly) {
                         const stepCount = Math.max(1, Math.floor(elapsed / frameDuration));
                         const currentWindow = highlightStoryWindowRef.current;
 
@@ -946,7 +1075,7 @@ export function MatchCanvas({
                 animationRef.current = null;
             }
         };
-    }, [isPlaying, frameDuration, totalFrames, highSpeedHighlightsOnly, highlightFrameIndexes, ticksPerMinute]);
+    }, [isPlaying, frameDuration, totalFrames, highSpeedHighlightsOnly, highlightFrameIndexes, ticksPerMinute, filteredEventSkipMode, filteredEventWindows]);
 
     useEffect(() => {
         if (!currentFrame || !onFrameChange) return;
@@ -961,7 +1090,7 @@ export function MatchCanvas({
             carrierName,
             homeScore: currentReplayScore.home,
             awayScore: currentReplayScore.away,
-            eventTypes: strictAuthoritativeMode
+            eventTypes: (strictAuthoritativeMode && !useReplayStreamForFilter)
                 ? (authoritativeEventsForFrame.get(currentFrameIndex) || []).map((event) => canonicalizeAuthoritativeType(event.type))
                 : [
                     ...visibleFrameEvents.map((event) => event.type),
@@ -969,7 +1098,7 @@ export function MatchCanvas({
                 ],
             eventTexts: currentEventTexts,
         });
-    }, [currentFrame, currentEventTexts, onFrameChange, playerIdentity.playerNames, currentFrameIndex, currentReplayScore.home, currentReplayScore.away, visibleFrameEvents, authoritativeEventsForFrame, strictAuthoritativeMode]);
+    }, [currentFrame, currentEventTexts, onFrameChange, playerIdentity.playerNames, currentFrameIndex, currentReplayScore.home, currentReplayScore.away, visibleFrameEvents, authoritativeEventsForFrame, strictAuthoritativeMode, useReplayStreamForFilter]);
     
     if (!currentFrame || !renderFrame) {
         return (
@@ -1024,6 +1153,7 @@ export function MatchCanvas({
                             frame={frameForEventsLayer || currentFrame}
                             width={width}
                             height={height}
+                            eventFilter={eventFilter}
                         />
                     </Layer>
 

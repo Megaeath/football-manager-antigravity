@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { Circle, Group, Line, RegularPolygon } from 'react-konva';
+import { Circle, Group, Line, Rect, RegularPolygon, Text } from 'react-konva';
 import type { MatchFrame } from '@/lib/engine/v2/types2d';
 import { TUNING_PARAMS } from '@/lib/engine/v2/config';
 
@@ -57,6 +57,10 @@ export function BallLayer({ frame, width, height }: BallLayerProps) {
     
     // Shadow offset based on height
     const shadowOffset = frame.ball.z * 2;
+    const coordinateLabel = `${renderedBallPos.x.toFixed(1)}, ${renderedBallPos.y.toFixed(1)}`;
+    const coordinateLabelWidth = Math.max(64, coordinateLabel.length * 5.8);
+    const coordinateLabelX = scale(renderedBallPos.x) - (coordinateLabelWidth / 2);
+    const coordinateLabelY = scale(renderedBallPos.y, 'y') - (ballRadius + 20);
     
     return (
         <>
@@ -126,6 +130,27 @@ export function BallLayer({ frame, width, height }: BallLayerProps) {
                     lineCap="round"
                 />
             </Group>
+
+            <Rect
+                x={coordinateLabelX}
+                y={coordinateLabelY}
+                width={coordinateLabelWidth}
+                height={12}
+                cornerRadius={3}
+                fill="rgba(245, 158, 11, 0.92)"
+                listening={false}
+            />
+            <Text
+                x={coordinateLabelX}
+                y={coordinateLabelY + 1}
+                width={coordinateLabelWidth}
+                text={coordinateLabel}
+                fontSize={9}
+                align="center"
+                fill="#111827"
+                fontStyle="bold"
+                listening={false}
+            />
         </>
     );
 }

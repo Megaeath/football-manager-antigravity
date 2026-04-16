@@ -10,14 +10,16 @@
 import React from 'react';
 import { Circle, Text, Group } from 'react-konva';
 import type { MatchFrame } from '@/lib/engine/v2/types2d';
+import { toMasterEventCategory, type MasterEventFilterValue } from '@/lib/constants/matchEventFilters';
 
 interface EventsLayerProps {
     frame: MatchFrame;
     width: number;
     height: number;
+    eventFilter?: MasterEventFilterValue;
 }
 
-export function EventsLayer({ frame, width, height }: EventsLayerProps) {
+export function EventsLayer({ frame, width, height, eventFilter = 'all' }: EventsLayerProps) {
     // Scale factors
     const scaleX = width / 100;
     const scaleY = height / 100;
@@ -29,10 +31,19 @@ export function EventsLayer({ frame, width, height }: EventsLayerProps) {
     if (!frame.events || frame.events.length === 0) {
         return null;
     }
+
+    const filteredEvents = frame.events.filter((event) => {
+        if (eventFilter === 'all') return true;
+        return toMasterEventCategory(event.type) === eventFilter;
+    });
+
+    if (filteredEvents.length === 0) {
+        return null;
+    }
     
     return (
         <>
-            {frame.events.map((event, index) => {
+            {filteredEvents.map((event, index) => {
                 const eventPos = event.position;
                 
                 // Skip if position is invalid
@@ -52,8 +63,6 @@ export function EventsLayer({ frame, width, height }: EventsLayerProps) {
                                 x={scale(eventPos.x)}
                                 y={scale(eventPos.y, 'y')}
                                 radius={scale(2)}
-                                fill="#fbbf24"
-                                stroke="#f59e0b"
                                 strokeWidth={2}
                             />
                         );
@@ -115,6 +124,54 @@ export function EventsLayer({ frame, width, height }: EventsLayerProps) {
                             </Group>
                         );
                         }
+
+                        case 'PASS':
+                        return (
+                            <Group key={`${event.id}-${index}`}>
+                                <Circle
+                                    x={scale(eventPos.x)}
+                                    y={scale(eventPos.y, 'y')}
+                                    radius={scale(1.5)}
+                                    fill="rgba(59, 130, 246, 0.22)"
+                                    stroke="#3b82f6"
+                                    strokeWidth={1.5}
+                                />
+                                <Text
+                                    x={scale(eventPos.x) - 4}
+                                    y={scale(eventPos.y, 'y') - 6}
+                                    text="P"
+                                    fontSize={11}
+                                    fontStyle="bold"
+                                    fill="#bfdbfe"
+                                    stroke="#0f172a"
+                                    strokeWidth={1}
+                                />
+                            </Group>
+                        );
+
+                    case 'DRIBBLE':
+                        return (
+                            <Group key={`${event.id}-${index}`}>
+                                <Circle
+                                    x={scale(eventPos.x)}
+                                    y={scale(eventPos.y, 'y')}
+                                    radius={scale(1.5)}
+                                    fill="rgba(34, 197, 94, 0.2)"
+                                    stroke="#22c55e"
+                                    strokeWidth={1.5}
+                                />
+                                <Text
+                                    x={scale(eventPos.x) - 4}
+                                    y={scale(eventPos.y, 'y') - 6}
+                                    text="D"
+                                    fontSize={11}
+                                    fontStyle="bold"
+                                    fill="#dcfce7"
+                                    stroke="#0f172a"
+                                    strokeWidth={1}
+                                />
+                            </Group>
+                        );
                     
                     default:
                         return null;

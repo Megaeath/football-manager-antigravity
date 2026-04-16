@@ -33,7 +33,8 @@ export function PlaybackControls({
     onReset,
 }: PlaybackControlsProps) {
     const speedOptions = [2.0, 4.0, 8.0, 10.0, 15.0, 20.0];
-    const displayCurrentMinute = Math.max(1, Number(currentMinute || 1));
+    // Shift display by -1 so the timeline starts at 0' (kickoff) instead of 1'
+    const displayCurrentMinute = Math.max(0, Math.min(90, Number(currentMinute || 1) - 1));
     const displayEndMinute = 90;
     
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {

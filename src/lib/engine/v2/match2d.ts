@@ -654,6 +654,92 @@ function pickKickoffCarrier(players: V2PlayerState[]): V2PlayerState | null {
         .sort((left, right) => getDistance(left.position2D, center) - getDistance(right.position2D, center))[0] || null;
 }
 
+function normalizeKickoffHalfShape(
+    homePlayers: V2PlayerState[],
+    awayPlayers: V2PlayerState[],
+    kickoffCarrierId?: string,
+): void {
+    const isForwardLineRole = (player: V2PlayerState) => (
+        player.position === 'FWC'
+        || player.position === 'FWL'
+        || player.position === 'FWR'
+        || player.position === 'AMC'
+        || player.position === 'AMR'
+        || player.position === 'AML'
+    );
+
+    homePlayers.forEach((player) => {
+        if (!isPlayerActive(player)) return;
+        const maxX = 50;
+        const clampedX = Math.min(maxX, player.position2D.x);
+        const kickoffSafeX = isForwardLineRole(player) ? Math.min(50, clampedX) : clampedX;
+        player.position2D = clampToField({ x: kickoffSafeX, y: player.position2D.y });
+        player.targetPosition = { ...player.position2D };
+        player.velocity = { dx: 0, dy: 0 };
+    });
+
+    awayPlayers.forEach((player) => {
+        if (!isPlayerActive(player)) return;
+        const minX = 50;
+        const clampedX = Math.max(minX, player.position2D.x);
+        const kickoffSafeX = isForwardLineRole(player) ? Math.max(50, clampedX) : clampedX;
+        player.position2D = clampToField({ x: kickoffSafeX, y: player.position2D.y });
+        player.targetPosition = { ...player.position2D };
+        player.velocity = { dx: 0, dy: 0 };
+    });
+
+    if (kickoffCarrierId) {
+        const kickoffCarrier = homePlayers.find((player) => player.id === kickoffCarrierId)
+            || awayPlayers.find((player) => player.id === kickoffCarrierId);
+        if (kickoffCarrier) {
+            kickoffCarrier.position2D = { x: FIELD.LENGTH / 2, y: FIELD.WIDTH / 2 };
+            kickoffCarrier.targetPosition = { ...kickoffCarrier.position2D };
+            kickoffCarrier.velocity = { dx: 0, dy: 0 };
+        }
+    }
+}
+
+function pickGoalKickCarrier(players: V2PlayerState[]): V2PlayerState | null {
+    const activePlayers = players.filter((player) => isPlayerActive(player));
+    if (activePlayers.length === 0) return null;
+    const goalkeeper = activePlayers.find((player) => player.position === 'GK');
+    return goalkeeper || activePlayers[0] || null;
+}
+
+function resetBallForGoalKick(
+    goalKickSide: TeamKey,
+    homePlayers: V2PlayerState[],
+    awayPlayers: V2PlayerState[],
+    ball: V2BallState,
+    targetY?: number,
+): { possession: TeamKey; carrier: V2PlayerState | null; position: SpatialPosition } {
+    const goalKickPlayers = goalKickSide === 'home' ? homePlayers : awayPlayers;
+    const goalKickCarrier = pickGoalKickCarrier(goalKickPlayers);
+    const goalKickY = Math.max(18, Math.min(82, Number.isFinite(targetY as number) ? Number(targetY) : FIELD.WIDTH / 2));
+    const goalKickPosition: SpatialPosition = {
+        x: goalKickSide === 'home' ? 6 : FIELD.LENGTH - 6,
+        y: goalKickY,
+    };
+
+    if (goalKickCarrier) {
+        goalKickCarrier.position2D = { ...goalKickPosition };
+        goalKickCarrier.targetPosition = { ...goalKickPosition };
+        goalKickCarrier.velocity = { dx: 0, dy: 0 };
+    }
+
+    ball.position = { ...goalKickPosition };
+    ball.velocity = { dx: 0, dy: 0 };
+    ball.z = 0;
+    ball.possession = goalKickSide;
+    ball.carrier = goalKickCarrier;
+
+    return {
+        possession: goalKickSide,
+        carrier: goalKickCarrier,
+        position: goalKickPosition,
+    };
+}
+
 function resetBallForKickoff(
     kickoffTeam: TeamKey,
     homePlayers: V2PlayerState[],
@@ -663,6 +749,8 @@ function resetBallForKickoff(
     const center = { x: FIELD.LENGTH / 2, y: FIELD.WIDTH / 2 };
     const kickoffPlayers = kickoffTeam === 'home' ? homePlayers : awayPlayers;
     const kickoffCarrier = pickKickoffCarrier(kickoffPlayers);
+
+    normalizeKickoffHalfShape(homePlayers, awayPlayers, kickoffCarrier?.id);
 
     if (kickoffCarrier) {
         kickoffCarrier.position2D = { ...center };
@@ -1439,6 +1527,7 @@ export function simulateMatch2D(
     let awayScore = 0;
     let activeTransition: ActiveTransition | null = null;
     let pendingKickoff: { executeAtTick: number; possession: TeamKey } | null = null;
+    let actionCooldownUntilTick = -1;
     let possession: 'home' | 'away' = 'home';
     let carrier: V2PlayerState | null = homePlayers[Math.floor(homePlayers.length / 2)] || homePlayers[0] || null;
 
@@ -1525,6 +1614,49 @@ export function simulateMatch2D(
         const defendingPlayers: V2PlayerState[] = possession === 'home' ? activeAwayPlayers : activeHomePlayers;
         const attackingTeamId = possession === 'home' ? homeTeam.id : awayTeam.id;
         const goalkeeper: V2PlayerState | null = defendingPlayers.find((player: V2PlayerState) => player.position === 'GK') || null;
+        const pushCurrentFrameSnapshot = () => {
+            const playerPositionsSnapshot: Record<string, SpatialPosition> = {};
+            activeHomePlayers.forEach((player) => {
+                playerPositionsSnapshot[player.id] = { ...player.position2D };
+            });
+            activeAwayPlayers.forEach((player) => {
+                playerPositionsSnapshot[player.id] = { ...player.position2D };
+            });
+
+            const frameDebugSnapshot = buildFrameDebug(
+                { minute, tick, ball: { ...ball }, playerPositions: playerPositionsSnapshot, events: frameEvents, ballTransitions: frameTransitions },
+                homeIntents,
+                awayIntents,
+                homeDefensiveAssignment,
+                awayDefensiveAssignment,
+                lineHeightToX('home', teamContexts.home.lineHeight),
+                lineHeightToX('away', teamContexts.away.lineHeight),
+                activeHomePlayers,
+                activeAwayPlayers,
+            );
+
+            frames.push({
+                minute,
+                tick,
+                ball: {
+                    ...ball,
+                    position: { ...ball.position },
+                    velocity: { ...ball.velocity },
+                    carrier: ball.carrier,
+                },
+                playerPositions: playerPositionsSnapshot,
+                events: frameEvents,
+                ballTransitions: frameTransitions,
+                debug: frameDebugSnapshot,
+            });
+            telemetryCollector.recordFrame();
+        };
+        const applyMajorEventCooldown = (fromTick: number) => {
+            actionCooldownUntilTick = Math.max(
+                actionCooldownUntilTick,
+                fromTick + Math.max(0, Number(TUNING_PARAMS.majorEventCooldownTicks || 2)),
+            );
+        };
         const homeDefensiveAssignment: DefensiveAssignment = assignDefensiveRoles(activeHomePlayers, activeAwayPlayers, 'home', teamContexts.home, ball);
         const awayDefensiveAssignment: DefensiveAssignment = assignDefensiveRoles(activeAwayPlayers, activeHomePlayers, 'away', teamContexts.away, ball);
         telemetryCollector.countDefensiveAssignment(homeDefensiveAssignment);
@@ -1727,6 +1859,7 @@ export function simulateMatch2D(
                 ball.carrier = carrier;
                 possessionTicks[possession] += 1;
                 pendingKickoff = null;
+                applyMajorEventCooldown(absoluteTick);
             }
         } else if (activeTransition) {
             const progressTick = absoluteTick - activeTransition.startedAtTick;
@@ -1766,6 +1899,50 @@ export function simulateMatch2D(
                 ball.carrier = carrier;
                 frameEvents.push(activeTransition.event);
 
+                if (activeTransition.event.type === 'SHOT') {
+                    applyMajorEventCooldown(absoluteTick);
+                }
+
+                if (activeTransition.outcome === 'OFF_TARGET') {
+                    const goalKickSide: TeamKey = activeTransition.resultingPossession;
+                    const goalKickRestart = resetBallForGoalKick(
+                        goalKickSide,
+                        homePlayers,
+                        awayPlayers,
+                        ball,
+                        activeTransition.transition.toPosition.y,
+                    );
+                    possession = goalKickRestart.possession;
+                    carrier = goalKickRestart.carrier;
+                    ball.possession = goalKickRestart.possession;
+                    ball.carrier = goalKickRestart.carrier;
+                    ball.position = { ...goalKickRestart.position };
+
+                    const goalKickTeamId = goalKickSide === 'home' ? homeTeam.id : awayTeam.id;
+                    const goalKickEvent: VisualEvent = {
+                        id: `goal_kick_${minute}_${tick}_${goalKickRestart.carrier?.id || goalKickTeamId}`,
+                        type: 'GOAL_KICK',
+                        minute,
+                        tick,
+                        position: { ...goalKickRestart.position },
+                        playerId: goalKickRestart.carrier?.id,
+                        playerName: goalKickRestart.carrier?.name,
+                        teamId: goalKickTeamId,
+                        metadata: { reason: 'OFF_TARGET_RESTART' },
+                    };
+                    frameEvents.push(goalKickEvent);
+                    visualEvents.push(goalKickEvent);
+                    events.push({
+                        minute,
+                        type: 'GOAL_KICK',
+                        text: `Goal kick for ${goalKickSide === 'home' ? homeTeam.name : awayTeam.name}.`,
+                        teamId: goalKickTeamId,
+                        playerId: goalKickRestart.carrier?.id,
+                    });
+
+                    applyMajorEventCooldown(absoluteTick);
+                }
+
                 if (activeTransition.transition.type === 'GOAL') {
                     if (activeTransition.resultingPossession === 'away') homeScore += 1;
                     else awayScore += 1;
@@ -1782,7 +1959,11 @@ export function simulateMatch2D(
                 activeTransition = null;
             }
         } else if (carrier) {
-            if (!shouldResolveCarrierAction(absoluteTick, carrier, defendingPlayers)) {
+            if (absoluteTick < actionCooldownUntilTick) {
+                ball.position = { ...carrier.position2D };
+                ball.carrier = carrier;
+                ball.possession = possession;
+            } else if (!shouldResolveCarrierAction(absoluteTick, carrier, defendingPlayers)) {
                 ball.position = { ...carrier.position2D };
                 ball.carrier = carrier;
                 ball.possession = possession;
@@ -1876,6 +2057,8 @@ export function simulateMatch2D(
                         teamId: possession === 'home' ? homeTeam.id : awayTeam.id,
                         playerId: freeKickRestart.carrier?.id,
                     });
+                    applyMajorEventCooldown(absoluteTick);
+                    pushCurrentFrameSnapshot();
                     continue;
                 }
 
@@ -2083,6 +2266,8 @@ export function simulateMatch2D(
                                         teamId: attackingTeamKey === 'home' ? homeTeam.id : awayTeam.id,
                                         playerId: freeKickRestart.carrier?.id,
                                     });
+                                    applyMajorEventCooldown(absoluteTick);
+                                    pushCurrentFrameSnapshot();
                                     continue;
                                 }
 

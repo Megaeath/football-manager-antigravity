@@ -131,8 +131,16 @@ The `/match` page provides deep player performance analysis with interactive vis
 - On `/match`, the V2 panel prioritizes replay viewport height; top telemetry cards are removed so the canvas/highlight area can be taller and easier to read
 - On `/match`, the V2 replay panel hides the old visualization header strip (`Visualization`, `V2 Canvas`, `Regenerate V2 Replay`) to keep focus on scoreboard/canvas/highlight flow
 - Highlight commentary now promotes major incidents (goal/shot/cards) as large ticker-style text in the commentary area for quick readability
+- Live commentary box on `/match` should remain a single-line ticker (ellipsis for overflow) so replay controls/filter areas keep enough visible space on smaller screens
+- Replay panel on `/match` now includes an `Animation Event` filter (`all`, `SHOT`, `PASS`, `DRIBBLE`) that controls which on-canvas event markers and live ticker event texts are shown during playback
+- When `Animation Event` filter is not `all`, replay playback should prioritize filtered incident windows by playing the event minute plus the following minute, then skipping ahead to the next matching window
+- For already-played matches in authoritative mode, `PASS`/`DRIBBLE` animation filtering should use replay incident stream for visualization windows (persisted authoritative events typically do not include dense pass/dribble incidents)
 - Highlight ticker on `/match` should be event-config driven (currently: `SHOT`, `FREE_KICK`/foul context, `YELLOW_CARD`, `RED_CARD`) and persist for ~30 ticks unless a new configured event arrives (then replace/reset window)
+- When `Animation Event` filter is active (not `all`), ticker hold logic should also retain the selected filtered event text briefly so `PASS` / `DRIBBLE` windows remain readable
+- หลังเหตุการณ์สำคัญของ replay (`GOAL`, `SHOT`, `FREE_KICK/FOUL`, `YELLOW_CARD`, `RED_CARD`) ควรมี action-cooldown ~2 ticks เพื่อกันข้อความ/เหตุการณ์วิ่งเร็วเกินอ่าน
+- Live commentary บน `/match` ควรคงข้อความเดิมไว้ในช่วง tick ว่างหลังเหตุการณ์ใหญ่ (อย่างน้อย 2 ticks)
 - V2 ball rendering now uses a football-style patterned sprite with spin animation (instead of a static white circle) so ball movement is easier to read
+- On `/match`, V2 canvas now shows always-on `x,y` labels for both every player marker and the ball so replay positions can be compared directly against persisted DB/action-log coordinates
 - Sent-off players should not remain as active on-field markers; `/match` now surfaces them in an off-field `Sent off` strip for clearer dismissal context
 
 - V2 now tracks continuous per-tick movement analytics per player (movement distance, carry distance/time, zone occupancy seconds), which can be used as base data for future heatmap features
@@ -140,18 +148,26 @@ The `/match` page provides deep player performance analysis with interactive vis
 - Heat Map tab supports dropdown filters:
   - Event filter: `all`, `SHOT`, `PASS`, `DRIBBLE`
   - Team filter: `all`, `home`, `away`
-  - Player filter: `all` (default) or specific on-field player (options follow current team filter, sorted by role group `GK -> DF -> MF -> FW`, show `name + position`, and include only players with persisted played minutes)
+  - Player filter: `all` (default) or specific on-field player (options follow current team filter, sorted by role group `GK -> DF -> MF -> FW`, show `name + position`, and include only players who actually appeared on-field in replay frames, with persisted played-minutes fallback for legacy rows)
+- Event dropdown values ควรอิงจาก master config ชุดเดียวกันระหว่าง Heat Map และ event list filter
   - Goal markers remain visible on the pitch and respect selected team filtering
 - Heat Map density uses spread/smoothing across neighboring cells so single-player traces look like realistic movement zones instead of thin straight bars
   - For already-persisted matches, Heat Map goal-marker count must follow authoritative persisted `GOAL` events/score, not all regenerated V2 replay goals
 - Heat Map pitch drawing should follow the same field geometry/proportions as V2 canvas FieldLayer (3:2 display ratio, matching penalty/goal box and corner arc layout)
+- Heat Map marker/source data should keep replay raw coordinates in `0..100`; rendering uses a 150x100 SVG pitch (`3:2`) with linear mapping `renderX = rawX * 1.5`, `renderY = rawY`
+- Heat Map marker data sources:
+  - `SHOT`/`PASS`/`DRIBBLE` markers use `v2Replay.visualEvents[].position`
+  - `GOAL` markers are authoritative from persisted match `GOAL` events, with replay-goal position as preferred placement and deterministic fallback position when replay marker is missing
+- Heat Map event markers should show their event minute label on the pitch to support quick timeline-vs-position audit (alongside hover tooltip source details)
 - On `/match`, authoritative score/event/player-stat/team-stat data must come from persisted match tables (`GET /api/match/[id]`), not from on-demand V2 replay generation; V2 replay is visualization-only and may be regenerated without replacing saved result data
 - Replay scoreboard in `/match` should follow authoritative persisted goal progression and reconcile with final persisted score (so late/missing replay-only events do not drift from saved result)
 - Replay highlight/commentary flow on `/match` should be **authoritative-first** for played matches: only persisted match events drive ticker/commentary/highlight labels, so replay-generated incidents never contradict saved score/events
 - Replay timeline bar in `/match` should include a +1 minute display window (showing up to ~91) so 90th-minute incidents remain reachable/visible on slider endpoints
+- On `/match`, playback time labels should use single-minute display (`0` ... `90`) for replay UX; canonical persisted event minute remains `1..90` in DB/API
 - For already-played matches, V2 replay should prefer the authoritative match participants (players with persisted minutes) so current squad changes or stale tactical assignments do not introduce players who did not actually appear in that match
 - If an `AI vs AI` match is opened directly before another scheduler step processes it, the match detail route may simulate and persist that AI-only match first so the page still renders saved results rather than ephemeral replay-only values
 - Dribble metrics now count only opponent-beating dribble duels; simple lane carries are treated as possession-space progression, not `dribblesWon`
+- On `/match` player tabs (`home`/`away`), list ordering should stay stable by bucket: starting XI first, then reserves; each bucket sorts by role group `GK -> DF -> MF -> FW`, and substitutions must not reshuffle starter rows so reserve players who came on remain visible as reserve entries
 
 ### 1.3 V2 Spatial Decision Model (Develop Mode)
 
@@ -204,6 +220,8 @@ Phase 6/7 realism hardening (current implementation):
 - Passing can now fail without an interception event through contextual pass-error probability (pressure, distance, receiver crowding, passer/receiver quality)
 - On-ball dribble displacement is capped by each player's pace-driven per-tick movement (`movementSpeed * movementTickSeconds`) to prevent unrealistic carrier teleporting and keep chasers relevant
 - After a goal event resolves, V2 now performs a center-circle kickoff reset (ball to midfield with conceding side possession) to avoid post-goal stalled play
+- Kickoff reset ใน V2 ต้องจัดตำแหน่งผู้เล่นกลับฝั่งตัวเอง (forwards stay kickoff-safe at/behind halfway line)
+- Shots that finish off target should restart via explicit `GOAL_KICK` state (not loose-ball chaos behind goal)
 - V2 simulation cadence now runs at `10 ticks/minute` (config-driven). Carrier decisions are evaluated every tick, while movement remains hard-capped by pace-table + acceleration + fitness/stamina so players cannot warp or exceed speed limits
 
 **Tuning note**: if V2 over-shoots volume, tune coefficients in `selectAction()` first before changing global movement constants.
