@@ -94,10 +94,12 @@ The `/match` page provides deep player performance analysis with interactive vis
 - **Action Breakdown**: Percentage distribution of action types (PASS_SHORT, PASS_LONG, DRIBBLE, SHOOT)
   - Always totals to 100% based on `totalAttempts` across 4 action types
   - Shows: percentage (bold), attempt count, success rate
+  - If raw action logs are missing/partial, breakdown falls back to persisted player match stats so expanded cards never show all-zero action blocks for players who clearly have attempts in row stats
   - Grid layout: 4 columns, fixed width for scanning
 
 - **Detailed Action Stats**: Per-action success metrics
   - Success rate %, success count / attempts
+  - Uses the same fallback source as Action Breakdown (analytics-first, persisted stats fallback)
   - Shows difference between action types (e.g., 88% PASS_SHORT vs 45% DRIBBLE)
 
 **Column Header** (before player cards):
@@ -110,6 +112,7 @@ The `/match` page provides deep player performance analysis with interactive vis
 - State: `selectedZoneFilter` (future zone filtering)
 - Calculation: Zone percentages use `analytics?.zones` with fallback to `playerMatchStats` thirds
 - Action breakdown: Iterates actions array, calculates `(attempts / totalAttempts) * 100`
+- Data source priority for action cards: `analytics.actions` first; if empty, derive from persisted row stats (`passes/crosses/dribbles/shots`) so UI remains consistent on authoritative persisted matches
 - Visual: Responsive grid, hover effects, border highlights for selected zones
 
 **V2 Replay Integration (Develop Mode)**:

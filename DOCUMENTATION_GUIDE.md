@@ -52,6 +52,7 @@
 - เมื่อ debug highlight/commentary บน `/match` ให้ยึด persisted match events แบบ strict สำหรับแมตช์ที่เล่นแล้ว: ไม่ควรดึง replay-generated incidents มาปะปนจนขัดกับ score/event ที่บันทึก
 - เวลาใน replay UI ของหน้า `/match` ควรแสดงนาทีแบบตัวเลขเดี่ยว `0` ... `90` (ใน player control และข้อความคำบรรยาย) และตัดบรรทัดหัว `Minute xx` เหนือคำบรรยายออกเพื่อลดความสูง UI; canonical minute ใน DB/events ยังคงเป็น `1..90`
 - แท็บผู้เล่นบนหน้า `/match` (`home`/`away`) ต้องเรียงข้อมูลแบบคงที่: ตัวจริง 11 คนก่อน แล้วค่อยตัวสำรอง โดยแต่ละกลุ่มเรียง `GK -> DF -> MF -> FW`; เมื่อมีการเปลี่ยนตัว ห้ามสลับแถวตัวจริงขึ้นลงตามตัวที่ลงมาใหม่ เพื่อให้เห็นชัดว่าตัวสำรองคนไหนได้ลงเล่น
+- ในแท็บผู้เล่นหน้า `/match` เมื่อกด expand การ์ดนักเตะ (`Action Breakdown`/`Detailed Action Stats`) ให้ยึดค่า analytics จาก raw logs เป็นหลัก และ fallback เป็น persisted row stats (`passes/crosses/dribbles/shots`) เมื่อ raw logs ไม่มี/ไม่ครบ เพื่อเลี่ยงเคสตัวเลข 0 ทั้งบล็อกทั้งที่แถวหลักมีสถิติ
 - เข้าใจการนำทางจากหน้า Home → `/` (Top Scorers คลิกชื่อนักเตะเปิด modal, ตารางลีกคลิกชื่อทีมไปหน้า `/team/[id]`)
 - Header หลักด้านบนจะย่อแรงขึ้นเมื่อ scroll ลง โดยโลโก้ `⚽ FOOTBALL MANAGER` จะเหลือประมาณครึ่งหนึ่งของขนาดปกติเพื่อคืนพื้นที่ให้ content
 - เข้าใจ Cup standings และการกดดูทีม → หน้า `/cup` (คลิกชื่อทีมในตารางไปหน้า `/team/[id]`)

@@ -1258,7 +1258,12 @@ function attemptV2Substitutions(
         (p) => p.tacticalPosition !== null && p.position !== 'GK' && !subbedInIds.has(p.id) && !isPlayerSentOff(p),
     );
     const availableBench = players.filter(
-        (p) => p.tacticalPosition === null && p.position !== 'GK' && !isPlayerSentOff(p),
+        (p) =>
+            p.tacticalPosition === null &&
+            p.position !== 'GK' &&
+            !isPlayerSentOff(p) &&
+            !p.isInjured &&
+            !p.isSuspended,
     );
 
     if (availableBench.length === 0) return subsUsed;
@@ -1311,7 +1316,10 @@ function attemptV2Substitutions(
             teamId,
             metadata: {
                 playerOutId: outPlayer.id,
+                playerOutName: outPlayer.name,
                 playerInId: bestBench.id,
+                playerInName: bestBench.name,
+                text: `🔄 Substitution: ${outPlayer.name} off, ${bestBench.name} on (${minute}')`,
             },
         };
 
@@ -3064,6 +3072,23 @@ export function simulateMatch2D(
             }
 
             previousPositionByPlayer.set(player.id, { ...player.position2D });
+
+            // --- Condition decay per tick ---
+            // Only active (on-field) players lose condition; bench players stay at initial condition.
+            if (player.tacticalPosition !== null || isPlayerSentOff(player)) {
+                const staminaVal = clampAttribute20(player.attributes?.stamina);
+                // staminaFactor: high stamina (20) → 0.70, average (10) → 1.00, low (5) → 1.15
+                const staminaFactor = 1.30 - (staminaVal / 20) * 0.60;
+                // Base decay per tick: 0.042 → ×900 ticks = 37.8 for avg stamina (final ~62)
+                const baseDecay = 0.042 * staminaFactor;
+                // Movement decay: each unit of distance per tick adds a tiny fatigue cost
+                const movementDecay = movementDistance * 0.003;
+                // Carrier bonus: ball carrier expends extra energy this tick
+                const carrierDecay = carrier?.id === player.id ? 0.010 : 0;
+                const totalDecay = baseDecay + movementDecay + carrierDecay;
+                player.condition = Math.max(0, (player.condition || 100) - totalDecay);
+            }
+            // --------------------------------
         });
 
         const playerPositions: Record<string, SpatialPosition> = {};
@@ -3102,6 +3127,13 @@ export function simulateMatch2D(
         });
         telemetryCollector.recordFrame();
     }
+
+    // Write final decayed condition into playerStats.fitnessEnd for each player
+    [...homePlayers, ...awayPlayers].forEach((player) => {
+        if (playerStats[player.id]) {
+            playerStats[player.id].fitnessEnd = Math.round(player.condition);
+        }
+    });
 
     // Clamp final ratings to realistic match range (1.0 - 10.0)
     Object.values(playerStats).forEach((stat) => {

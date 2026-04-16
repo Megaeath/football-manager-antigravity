@@ -277,7 +277,10 @@ export interface VisualEvent {
         
         // For substitutions
         playerOutId?: string;
+        playerOutName?: string;
         playerInId?: string;
+        playerInName?: string;
+        text?: string;
     };
 }
 

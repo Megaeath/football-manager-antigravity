@@ -1111,14 +1111,22 @@ function MatchContent() {
                 .filter(Boolean)
                 .map((id: any) => String(id))
         );
+        // Prefer playerOutId from metadata; fall back to name-text parsing
+        const subOutIds = new Set(
+            subs.map((e: any) => {
+                if (e.metadata?.playerOutId) return String(e.metadata.playerOutId);
+                return null;
+            }).filter(Boolean)
+        );
         const subOutNames = new Set(
             subs.map((e: any) => {
-                const match = typeof e.text === 'string' ? e.text.match(/Substitution:\s*(.+)\s*off,\s*(.+)\s*on\.?/i) : null;
-                return match ? match[1].trim() : null;
+                if (e.metadata?.playerOutId) return null; // already captured by ID
+                const m = typeof e.text === 'string' ? e.text.match(/Substitution:\s*(.+?)\s+off,\s*(.+?)\s+on/i) : null;
+                return m ? m[1].trim() : null;
             }).filter(Boolean)
         );
 
-        return { subInIds, subOutNames };
+        return { subInIds, subOutIds, subOutNames };
     };
 
     const getTeamInfo = (teamId: string) => {
@@ -2170,7 +2178,7 @@ function MatchContent() {
 
                                 {(() => {
                                     const teamId = activeTab === 'home' ? matchData.homeTeamId : matchData.awayTeamId;
-                                    const { subInIds, subOutNames } = getSubstitutionInfo(teamId);
+                                    const { subInIds, subOutIds, subOutNames } = getSubstitutionInfo(teamId);
                                     const trustCurrentTacticalPositions = !matchData.isPlayed;
                                     const rawLogsForSpace = matchActionAnalytics?.rawLogs || [];
                                     const nextTeamBallPosByIndex = buildNextTeamBallPositionMap(rawLogsForSpace);
@@ -2352,7 +2360,7 @@ function MatchContent() {
                                         })
                                         .map((p: any) => {
                                             const isSubIn = subInIds.has(p.playerId);
-                                            const isSubOut = subOutNames.has(p.name);
+                                            const isSubOut = subOutIds.has(String(p.playerId || '')) || subOutNames.has(p.name);
                                             const isMotM = p.playerId === matchData.motmPlayerId;
                                             const isExpanded = expandedPlayerId === p.playerId;
                                             const displayPos = normalizePosForDisplay(getDisplayPos(p));
@@ -2372,6 +2380,49 @@ function MatchContent() {
                                             const defPct = Math.round(((analytics?.zones?.defensive ?? p.defensiveThirdTouches ?? 0) / totalZoneTouches) * 100);
                                             const midPct = Math.round(((analytics?.zones?.middle ?? p.middleThirdTouches ?? 0) / totalZoneTouches) * 100);
                                             const attPct = Math.round(((analytics?.zones?.attacking ?? p.attackingThirdTouches ?? 0) / totalZoneTouches) * 100);
+
+                                            const safeNum = (v: any) => Number(v || 0);
+                                            const passAttempts = Math.max(0, safeNum(p.passesAttempted));
+                                            const passCompleted = Math.max(0, safeNum(p.passesCompleted));
+                                            const crossAttempts = Math.max(0, safeNum(p.crossesAttempted));
+                                            const crossCompleted = Math.max(0, safeNum(p.crossesCompleted));
+                                            const derivedShortAttempts = Math.max(0, passAttempts - crossAttempts);
+                                            const derivedShortCompleted = Math.max(0, passCompleted - crossCompleted);
+
+                                            const fallbackActionStats: Record<string, { attempts: number; success: number; fail: number; successRate: number }> = {
+                                                PASS_SHORT: {
+                                                    attempts: derivedShortAttempts,
+                                                    success: Math.min(derivedShortCompleted, derivedShortAttempts),
+                                                    fail: Math.max(0, derivedShortAttempts - derivedShortCompleted),
+                                                    successRate: derivedShortAttempts > 0 ? Math.round((derivedShortCompleted / derivedShortAttempts) * 100) : 0,
+                                                },
+                                                PASS_LONG: {
+                                                    attempts: crossAttempts,
+                                                    success: Math.min(crossCompleted, crossAttempts),
+                                                    fail: Math.max(0, crossAttempts - crossCompleted),
+                                                    successRate: crossAttempts > 0 ? Math.round((crossCompleted / crossAttempts) * 100) : 0,
+                                                },
+                                                DRIBBLE: {
+                                                    attempts: Math.max(0, safeNum(p.dribblesAttempted)),
+                                                    success: Math.max(0, safeNum(p.dribblesWon)),
+                                                    fail: Math.max(0, safeNum(p.dribblesAttempted) - safeNum(p.dribblesWon)),
+                                                    successRate: safeNum(p.dribblesAttempted) > 0 ? Math.round((safeNum(p.dribblesWon) / safeNum(p.dribblesAttempted)) * 100) : 0,
+                                                },
+                                                SHOOT: {
+                                                    attempts: Math.max(0, safeNum(p.shots)),
+                                                    success: Math.max(0, safeNum(p.shotsOnTarget)),
+                                                    fail: Math.max(0, safeNum(p.shots) - safeNum(p.shotsOnTarget)),
+                                                    successRate: safeNum(p.shots) > 0 ? Math.round((safeNum(p.shotsOnTarget) / safeNum(p.shots)) * 100) : 0,
+                                                },
+                                            };
+
+                                            const getResolvedActionStat = (actionType: string) => {
+                                                const fromAnalytics = analytics?.actions?.[actionType];
+                                                if (fromAnalytics && (fromAnalytics.attempts > 0 || fromAnalytics.success > 0 || fromAnalytics.fail > 0)) {
+                                                    return fromAnalytics;
+                                                }
+                                                return fallbackActionStats[actionType] || { attempts: 0, success: 0, fail: 0, successRate: 0 };
+                                            };
 
                                             // Calculate action breakdown percentages with zone filtering
                                             const actions = ['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'];
@@ -2425,14 +2476,14 @@ function MatchContent() {
                                                         : 0
                                                 }));
                                             } else {
-                                                // Use overall stats
-                                                const totalAttempts = actions.reduce((sum, a) => sum + (analytics?.actions?.[a]?.attempts ?? 0), 0);
+                                                // Use analytics when available, otherwise fallback to player match stats
+                                                const totalAttempts = actions.reduce((sum, a) => sum + (getResolvedActionStat(a).attempts ?? 0), 0);
                                                 actionBreakdown = actions.map(a => ({
                                                     type: a,
-                                                    attempts: analytics?.actions?.[a]?.attempts ?? 0,
-                                                    percentage: totalAttempts > 0 ? Math.round(((analytics?.actions?.[a]?.attempts ?? 0) / totalAttempts) * 100) : 0,
-                                                    success: analytics?.actions?.[a]?.success ?? 0,
-                                                    successRate: analytics?.actions?.[a]?.successRate ?? 0
+                                                    attempts: getResolvedActionStat(a).attempts ?? 0,
+                                                    percentage: totalAttempts > 0 ? Math.round(((getResolvedActionStat(a).attempts ?? 0) / totalAttempts) * 100) : 0,
+                                                    success: getResolvedActionStat(a).success ?? 0,
+                                                    successRate: getResolvedActionStat(a).successRate ?? 0
                                                 }));
                                             }
 
@@ -2616,7 +2667,7 @@ function MatchContent() {
                                                                 <div style={{ fontWeight: '600', marginBottom: '4px' }}>Detailed Action Stats</div>
                                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(80px, 1fr))', gap: '8px' }}>
                                                                     {['PASS_SHORT', 'PASS_LONG', 'DRIBBLE', 'SHOOT'].map((a) => {
-                                                                        const st = analytics?.actions?.[a] || { attempts: 0, success: 0, fail: 0, successRate: 0 };
+                                                                        const st = getResolvedActionStat(a);
                                                                         return (
                                                                             <div key={a} style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '6px', background: '#f8fafc' }}>
                                                                                 <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontWeight: '600' }}>{a.replace('_', ' ')}</div>
@@ -2643,13 +2694,10 @@ function MatchContent() {
 
                                                                     {(['DRIBBLE', 'PASS_SHORT', 'PASS_LONG'] as const).map((actionType) => {
                                                                         const st = spaceCreation.actions[actionType];
-                                                                        // For pass stats, use analytics (action logs) to match "Detailed Action Stats" above
-                                                                        const attempts = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.attempts !== undefined) 
-                                                                            ? analytics.actions[actionType].attempts 
-                                                                            : st.attempts;
-                                                                        const success = (actionType !== 'DRIBBLE' && analytics?.actions?.[actionType]?.success !== undefined) 
-                                                                            ? analytics.actions[actionType].success 
-                                                                            : st.success;
+                                                                        // Keep attempts/success consistent with the resolved action stats used above
+                                                                        const resolved = getResolvedActionStat(actionType);
+                                                                        const attempts = resolved.attempts;
+                                                                        const success = resolved.success;
                                                                         return (
                                                                             <>
                                                                                 <div key={`${actionType}-name`} style={{ fontWeight: 600 }}>{actionType.replace('_', ' ')}</div>
