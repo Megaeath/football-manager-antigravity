@@ -330,7 +330,8 @@ Phase 6/7 realism hardening (current implementation):
 
 **Role Movement Config** (`src/lib/engine/v2/roleMovementConfig.ts`):
 - Single source of truth for V2 spatial movement bias per role (28 configs)
-- Each config: `targetXRange`, `yBehavior` (center/hug_left/hug_right/half_width), `pressHighLine`, `deepBlockLine`
+- Each config includes dynamic-relative positioning fields: `targetXRange` (hard X limits), `bpf_attack`, `bpf_defense`, `yBehavior`, `yTrackStrength`, `pressRadius`, `carryForwardBias`
+- BPF equation in role specialist layer: `targetX = ball.x + (bpf_factor * distanceMultiplier)` with team-direction mirroring, offside guard for positive attacking BPF, and lerp smoothing before final movement execution
 - `getActiveRoleConfig(attackingPreset, defensivePreset, phaseState)` — selects config by in/out-of-possession phase
 - Applied in `roleSpecialists/index.ts` via `applyRoleMovementConfig()` after base specialist intent is generated
 

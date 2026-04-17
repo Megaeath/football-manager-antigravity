@@ -6,6 +6,8 @@
  *
  * TUNING GUIDE:
  *  - targetXRange: [min, max] — the X corridor this role should occupy (0=own goal, 100=opp goal)
+ *  - bpf_attack: Ball-Position Factor while team is in possession (-1..1)
+ *  - bpf_defense: Ball-Position Factor while team is out of possession (-1..1)
  *  - yBehavior:
  *      'track_ball'  — Y slides toward ball Y (strength controlled by yTrackStrength)
  *      'hug_left'    — stay near Y:5 (left touchline for home / right for away)
@@ -23,6 +25,10 @@
 export interface RoleMovementConfig {
   /** X coordinate range [min, max] this role occupies (0-100) */
   targetXRange: [number, number];
+  /** Ball-Position Factor while in possession (-1..1): targetX = ball.x + bpf * multiplier */
+  bpf_attack: number;
+  /** Ball-Position Factor while out of possession (-1..1): targetX = ball.x + bpf * multiplier */
+  bpf_defense: number;
   /** Y positioning style */
   yBehavior: 'track_ball' | 'hug_left' | 'hug_right' | 'center' | 'half_width' | 'free';
   /** How strongly Y tracks ball Y (0=ignore, 1=tight) */
@@ -44,6 +50,8 @@ export interface RoleMovementConfig {
 /** GK attacking role: stay deep, long kicks upfield */
 export const ROLE_CONFIG_traditional_distributor: RoleMovementConfig = {
   targetXRange: [2, 5],
+  bpf_attack: -0.95,
+  bpf_defense: -1.0,
   yBehavior: 'center',
   yTrackStrength: 0.1,
   pressRadius: 999, // GK never presses outfield
@@ -53,6 +61,8 @@ export const ROLE_CONFIG_traditional_distributor: RoleMovementConfig = {
 /** GK attacking role: push up as extra CB in build-up */
 export const ROLE_CONFIG_sweeper_support: RoleMovementConfig = {
   targetXRange: [15, 22],
+  bpf_attack: -0.65,
+  bpf_defense: -0.8,
   yBehavior: 'track_ball',
   yTrackStrength: 0.4,
   pressRadius: 999,
@@ -62,6 +72,8 @@ export const ROLE_CONFIG_sweeper_support: RoleMovementConfig = {
 /** GK defending role: hug goal line, angle narrowing */
 export const ROLE_CONFIG_line_keeper: RoleMovementConfig = {
   targetXRange: [1, 3],
+  bpf_attack: -1.0,
+  bpf_defense: -1.0,
   yBehavior: 'track_ball',
   yTrackStrength: 0.9, // follow ball Y tightly for angle closing
   pressRadius: 999,
@@ -72,6 +84,8 @@ export const ROLE_CONFIG_line_keeper: RoleMovementConfig = {
 /** GK defending role: sweeper/libero — intercept through balls */
 export const ROLE_CONFIG_sweeper_defender: RoleMovementConfig = {
   targetXRange: [10, 15],
+  bpf_attack: -0.75,
+  bpf_defense: -0.9,
   yBehavior: 'track_ball',
   yTrackStrength: 0.6,
   pressRadius: 25, // will charge out to intercept long balls
@@ -85,6 +99,8 @@ export const ROLE_CONFIG_sweeper_defender: RoleMovementConfig = {
 /** DC attacking: anchor point, safe distribution */
 export const ROLE_CONFIG_safe_passer: RoleMovementConfig = {
   targetXRange: [25, 35],
+  bpf_attack: -0.55,
+  bpf_defense: -0.7,
   yBehavior: 'half_width',
   yTrackStrength: 0.2,
   pressRadius: 15,
@@ -94,6 +110,8 @@ export const ROLE_CONFIG_safe_passer: RoleMovementConfig = {
 /** DC attacking: ball-playing CB, drives forward */
 export const ROLE_CONFIG_ball_carrier: RoleMovementConfig = {
   targetXRange: [45, 55],
+  bpf_attack: -0.2,
+  bpf_defense: -0.55,
   yBehavior: 'track_ball',
   yTrackStrength: 0.35,
   pressRadius: 10,
@@ -103,6 +121,8 @@ export const ROLE_CONFIG_ball_carrier: RoleMovementConfig = {
 /** DC defending: aggressive stopper, tight marking */
 export const ROLE_CONFIG_stopper: RoleMovementConfig = {
   targetXRange: [18, 30],
+  bpf_attack: -0.15,
+  bpf_defense: -0.2,
   yBehavior: 'track_ball',
   yTrackStrength: 0.8,
   pressRadius: 8,
@@ -113,6 +133,8 @@ export const ROLE_CONFIG_stopper: RoleMovementConfig = {
 /** DC defending: coverage/sweeper behind stopper */
 export const ROLE_CONFIG_cover: RoleMovementConfig = {
   targetXRange: [15, 22],
+  bpf_attack: -0.4,
+  bpf_defense: -0.55,
   yBehavior: 'track_ball',
   yTrackStrength: 0.5,
   pressRadius: 15,
@@ -125,7 +147,9 @@ export const ROLE_CONFIG_cover: RoleMovementConfig = {
 
 /** FB attacking: invert into midfield rather than overlapping */
 export const ROLE_CONFIG_inverted_back: RoleMovementConfig = {
-  targetXRange: [45, 100],
+  targetXRange: [45, 60],
+  bpf_attack: 0.2,
+  bpf_defense: -0.3,
   yBehavior: 'half_width', // y:30 (left) or y:70 (right), specialist resolves
   yTrackStrength: 0.3,
   pressRadius: 12,
@@ -134,7 +158,9 @@ export const ROLE_CONFIG_inverted_back: RoleMovementConfig = {
 
 /** FB attacking: overlap high up the flank */
 export const ROLE_CONFIG_wing_back: RoleMovementConfig = {
-  targetXRange: [70, 100],
+  targetXRange: [70, 85],
+  bpf_attack: 0.8,
+  bpf_defense: -0.2,
   yBehavior: 'hug_left', // specialist swaps to hug_right for DR
   yTrackStrength: 0.2,
   pressRadius: 12,
@@ -144,6 +170,8 @@ export const ROLE_CONFIG_wing_back: RoleMovementConfig = {
 /** FB defending: hold defensive line, contain winger */
 export const ROLE_CONFIG_defensive_fullback: RoleMovementConfig = {
   targetXRange: [20, 30],
+  bpf_attack: -0.1,
+  bpf_defense: -0.4,
   yBehavior: 'hug_left', // specialist swaps for DR
   yTrackStrength: 0.2,
   pressRadius: 10,
@@ -154,6 +182,8 @@ export const ROLE_CONFIG_defensive_fullback: RoleMovementConfig = {
 /** FB defending: sprint back, clear everything */
 export const ROLE_CONFIG_no_nonsense_fullback: RoleMovementConfig = {
   targetXRange: [15, 22],
+  bpf_attack: -0.3,
+  bpf_defense: -0.6,
   yBehavior: 'hug_left',
   yTrackStrength: 0.15,
   pressRadius: 8,
@@ -167,7 +197,9 @@ export const ROLE_CONFIG_no_nonsense_fullback: RoleMovementConfig = {
 
 /** DMC/MC attacking: quarterback distributor, stays deep */
 export const ROLE_CONFIG_deep_lying_playmaker: RoleMovementConfig = {
-  targetXRange: [35, 60],
+  targetXRange: [35, 45],
+  bpf_attack: -0.15,
+  bpf_defense: -0.35,
   yBehavior: 'track_ball',
   yTrackStrength: 0.4,
   pressRadius: 20,
@@ -177,6 +209,8 @@ export const ROLE_CONFIG_deep_lying_playmaker: RoleMovementConfig = {
 /** MC attacking: box-to-box engine, late runs into box */
 export const ROLE_CONFIG_box_to_box: RoleMovementConfig = {
   targetXRange: [40, 80],
+  bpf_attack: 0.25,
+  bpf_defense: -0.1,
   yBehavior: 'track_ball',
   yTrackStrength: 0.45,
   pressRadius: 14,
@@ -186,6 +220,8 @@ export const ROLE_CONFIG_box_to_box: RoleMovementConfig = {
 /** AMC attacking: shadow striker / advanced playmaker */
 export const ROLE_CONFIG_shadow_striker: RoleMovementConfig = {
   targetXRange: [65, 75],
+  bpf_attack: 0.45,
+  bpf_defense: 0.05,
   yBehavior: 'track_ball',
   yTrackStrength: 0.55,
   pressRadius: 10,
@@ -195,6 +231,8 @@ export const ROLE_CONFIG_shadow_striker: RoleMovementConfig = {
 /** DMC defending: protective screen, does NOT chase wide */
 export const ROLE_CONFIG_anchor_man: RoleMovementConfig = {
   targetXRange: [30, 35],
+  bpf_attack: -0.35,
+  bpf_defense: -0.45,
   yBehavior: 'track_ball',
   yTrackStrength: 0.6,
   pressRadius: 18,
@@ -205,6 +243,8 @@ export const ROLE_CONFIG_anchor_man: RoleMovementConfig = {
 /** DMC/MC defending: aggressive ball winner, roams */
 export const ROLE_CONFIG_ball_winning_mid: RoleMovementConfig = {
   targetXRange: [30, 60],
+  bpf_attack: -0.05,
+  bpf_defense: -0.2,
   yBehavior: 'track_ball',
   yTrackStrength: 0.7,
   pressRadius: 10,
@@ -213,7 +253,9 @@ export const ROLE_CONFIG_ball_winning_mid: RoleMovementConfig = {
 
 /** AMC defending: counter-press trigger in high line */
 export const ROLE_CONFIG_enganche_presser: RoleMovementConfig = {
-  targetXRange: [60, 100],
+  targetXRange: [60, 65],
+  bpf_attack: 0.3,
+  bpf_defense: 0.1,
   yBehavior: 'track_ball',
   yTrackStrength: 0.7,
   pressRadius: 8,
@@ -226,7 +268,9 @@ export const ROLE_CONFIG_enganche_presser: RoleMovementConfig = {
 
 /** ML/MR attacking: traditional winger, hug line and cross */
 export const ROLE_CONFIG_traditional_winger: RoleMovementConfig = {
-  targetXRange: [70, 100],
+  targetXRange: [70, 90],
+  bpf_attack: 0.65,
+  bpf_defense: -0.15,
   yBehavior: 'hug_left', // specialist swaps to hug_right for MR
   yTrackStrength: 0.15,
   pressRadius: 20,
@@ -235,7 +279,9 @@ export const ROLE_CONFIG_traditional_winger: RoleMovementConfig = {
 
 /** ML/MR attacking: inside forward, cut inside to shoot */
 export const ROLE_CONFIG_inside_forward: RoleMovementConfig = {
-  targetXRange: [65, 100],
+  targetXRange: [65, 85],
+  bpf_attack: 0.55,
+  bpf_defense: -0.05,
   yBehavior: 'half_width', // cuts inside toward Y:35 or Y:65
   yTrackStrength: 0.3,
   pressRadius: 18,
@@ -244,7 +290,9 @@ export const ROLE_CONFIG_inside_forward: RoleMovementConfig = {
 
 /** ML/MR attacking: wide playmaker, tuck inside to create */
 export const ROLE_CONFIG_wide_playmaker: RoleMovementConfig = {
-  targetXRange: [50, 100],
+  targetXRange: [50, 70],
+  bpf_attack: 0.35,
+  bpf_defense: -0.1,
   yBehavior: 'half_width',
   yTrackStrength: 0.35,
   pressRadius: 20,
@@ -253,7 +301,9 @@ export const ROLE_CONFIG_wide_playmaker: RoleMovementConfig = {
 
 /** ML/MR defending: track back, double-up on fullback */
 export const ROLE_CONFIG_wide_midfielder: RoleMovementConfig = {
-  targetXRange: [30, 100],
+  targetXRange: [30, 45],
+  bpf_attack: 0.1,
+  bpf_defense: -0.25,
   yBehavior: 'hug_left',
   yTrackStrength: 0.2,
   pressRadius: 10,
@@ -263,7 +313,9 @@ export const ROLE_CONFIG_wide_midfielder: RoleMovementConfig = {
 
 /** ML/MR defending: high press, counter outlet */
 export const ROLE_CONFIG_high_presser: RoleMovementConfig = {
-  targetXRange: [55, 100],
+  targetXRange: [55, 65],
+  bpf_attack: 0.2,
+  bpf_defense: 0.05,
   yBehavior: 'track_ball',
   yTrackStrength: 0.5,
   pressRadius: 10,
@@ -276,7 +328,9 @@ export const ROLE_CONFIG_high_presser: RoleMovementConfig = {
 
 /** ST attacking: pin high, run in behind */
 export const ROLE_CONFIG_advanced_forward: RoleMovementConfig = {
-  targetXRange: [82, 100],
+  targetXRange: [82, 95],
+  bpf_attack: 0.9,
+  bpf_defense: 0.25,
   yBehavior: 'track_ball',
   yTrackStrength: 0.4,
   pressRadius: 25,
@@ -285,7 +339,9 @@ export const ROLE_CONFIG_advanced_forward: RoleMovementConfig = {
 
 /** ST attacking: target man, hold-up and lay off */
 export const ROLE_CONFIG_target_man: RoleMovementConfig = {
-  targetXRange: [75, 100],
+  targetXRange: [75, 85],
+  bpf_attack: 0.65,
+  bpf_defense: 0.15,
   yBehavior: 'center',
   yTrackStrength: 0.3,
   pressRadius: 20,
@@ -295,7 +351,9 @@ export const ROLE_CONFIG_target_man: RoleMovementConfig = {
 
 /** ST attacking: false 9, drops deep to link play */
 export const ROLE_CONFIG_false_9: RoleMovementConfig = {
-  targetXRange: [65, 100],
+  targetXRange: [65, 75],
+  bpf_attack: 0.35,
+  bpf_defense: 0.05,
   yBehavior: 'track_ball',
   yTrackStrength: 0.5,
   pressRadius: 25,
@@ -304,7 +362,9 @@ export const ROLE_CONFIG_false_9: RoleMovementConfig = {
 
 /** ST defending: pressing forward, chase DC/GK */
 export const ROLE_CONFIG_pressing_forward: RoleMovementConfig = {
-  targetXRange: [60, 100], // opponent's build-up zone (mirrored to opp coords in specialist)
+  targetXRange: [60, 75], // opponent's build-up zone (mirrored to opp coords in specialist)
+  bpf_attack: 0.4,
+  bpf_defense: 0.15,
   yBehavior: 'track_ball',
   yTrackStrength: 0.7,
   pressRadius: 12,
@@ -313,7 +373,9 @@ export const ROLE_CONFIG_pressing_forward: RoleMovementConfig = {
 
 /** ST defending: poacher/poised, wait for counter */
 export const ROLE_CONFIG_poacher: RoleMovementConfig = {
-  targetXRange: [55, 100],
+  targetXRange: [55, 65],
+  bpf_attack: 0.55,
+  bpf_defense: 0.2,
   yBehavior: 'track_ball',
   yTrackStrength: 0.4,
   pressRadius: 30, // doesn't press actively
